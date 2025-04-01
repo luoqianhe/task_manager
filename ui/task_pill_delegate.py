@@ -17,14 +17,11 @@ class TaskPillDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.text_padding = 10  # Padding between text and pill edge
-        self.pill_height = 60   # Height of the pill
+        self.pill_height = 80   # Reduced height of the pill
         self.pill_radius = 15   # Corner radius for the pill
         self.item_margin = 5    # Margin between items
-        
-        # Status colors are now loaded from database
-        
-        # Priority colors are loaded from database
-        self.priority_colors = {}  # Initialize as empty dict
+        self.left_section_width = 100  # Width of the left section - slightly reduced
+        self.right_section_width = 100  # Width of the right section - slightly reduced
     
     def get_status_color(self, status):
         """Get color for a status from the database"""
@@ -53,7 +50,7 @@ class TaskPillDelegate(QStyledItemDelegate):
     def get_priority_color(self, priority):
         """Get color for a priority from the database"""
         if not priority:
-            return QColor("#000000")  # Default black
+            return QColor("#E0E0E0")  # Default light gray
             
         try:
             with self.get_connection() as conn:
@@ -71,38 +68,52 @@ class TaskPillDelegate(QStyledItemDelegate):
             'Medium': '#FFC107',   # Amber
             'Low': '#4CAF50'       # Green
         }
-        return QColor(default_priority_colors.get(priority, "#000000"))
+        return QColor(default_priority_colors.get(priority, "#E0E0E0"))
+    
+    def get_category_color(self, category):
+        """Get color for a category from the database"""
+        if not category:
+            return QColor("#E0E0E0")  # Default light gray
+            
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT color FROM categories WHERE name = ?", (category,))
+                result = cursor.fetchone()
+                if result:
+                    return QColor(result[0])
+        except Exception as e:
+            print(f"Error getting category color: {e}")
+        
+        # Fallback to a default color if not found
+        return QColor("#E0E0E0")  # Light gray
     
     def paint(self, painter, option, index):
-        # Get data for this item
-        title = index.model().data(index.model().index(index.row(), 0, index.parent()))
-        description = index.model().data(index.model().index(index.row(), 1, index.parent()))
-        link = index.model().data(index.model().index(index.row(), 2, index.parent()))
-        status = index.model().data(index.model().index(index.row(), 3, index.parent()))
-        priority = index.model().data(index.model().index(index.row(), 4, index.parent()))
-        due_date_str = index.model().data(index.model().index(index.row(), 5, index.parent()))
-        category = index.model().data(index.model().index(index.row(), 6, index.parent()))
+        # Get data directly from UserRole since we're using a single column tree
+        user_data = index.data(Qt.ItemDataRole.UserRole)
         
-        # Get category colors from database
-        category_color = QColor(245, 245, 245)  # Default light gray if no category
-        if category:
-            try:
-                with self.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT color FROM categories WHERE name = ?", (category,))
-                    result = cursor.fetchone()
-                    if result and result[0]:
-                        color_str = result[0]
-                        category_color = QColor(color_str)
-                        print(f"Found category color: {color_str} for category: {category}")  # Debug
-                    else:
-                        print(f"No color found for category: {category}")  # Debug
-            except Exception as e:
-                print(f"Error getting category color: {e}")
-
-        # Create transparent version for background
-        transparent_category_color = QColor(category_color)
-        transparent_category_color.setAlpha(80)  # Increase alpha for more visibility (0-255)
+        # Extract all data from the dictionary stored in UserRole
+        if isinstance(user_data, dict):
+            title = user_data.get('title', '')
+            description = user_data.get('description', '')
+            link = user_data.get('link', '')
+            status = user_data.get('status', 'Not Started')
+            priority = user_data.get('priority', '')
+            due_date_str = user_data.get('due_date', '')
+            category = user_data.get('category', '')
+        else:
+            # Fallback if UserRole data is missing or malformed
+            title = index.data(Qt.ItemDataRole.DisplayRole) or ""
+            description = link = ""
+            status = "Not Started"
+            priority = ""
+            due_date_str = ""
+            category = ""
+        
+        # Get colors for status, priority, and category
+        status_color = self.get_status_color(status)
+        priority_color = self.get_priority_color(priority)
+        category_color = self.get_category_color(category)
         
         # Save painter state
         painter.save()
@@ -120,7 +131,7 @@ class TaskPillDelegate(QStyledItemDelegate):
         
         # Create the pill path
         path = QPainterPath()
-        rectF = QRectF(rect)  # Convert QRect to QRectF
+        rectF = QRectF(rect)
         path.addRoundedRect(rectF, self.pill_radius, self.pill_radius)
         
         # Draw selection highlight if item is selected
@@ -129,84 +140,151 @@ class TaskPillDelegate(QStyledItemDelegate):
             painter.setBrush(QBrush(QColor(0, 120, 215, 40)))  # Light blue transparent
             painter.drawPath(path)
         
-        # Calculate section widths
-        status_section_width = 120  # Width of the status section
-        details_section_width = 150  # Width of the details section
-        content_section_width = rect.width() - status_section_width - details_section_width
+        # Calculate section positions and heights
+        left_section_width = self.left_section_width
+        right_section_width = self.right_section_width
+        content_section_width = rect.width() - left_section_width - right_section_width
+        section_height = rect.height() / 3  # Divide left panel into 3 equal sections
         
-        # Get status color from database
-        status_color = self.get_status_color(status)
+        # Note: The main pill is drawn right before drawing the priority section
         
-        # Draw pill background with category color for better visibility
-        painter.setPen(QPen(QColor("#cccccc"), 1))
-        painter.setBrush(QBrush(transparent_category_color))
-        painter.drawPath(path)
-        
-        # Draw status section (left section)
-        status_rect = QRectF(
+        # Draw priority section (top left)
+        priority_rect = QRectF(
             rect.left(),
             rect.top(),
-            status_section_width,
-            rect.height()
+            left_section_width,
+            section_height
         )
-        status_path = QPainterPath()
-        status_path.addRoundedRect(status_rect, self.pill_radius, self.pill_radius)
         
-        # Clip to left part of the pill
-        painter.setClipRect(QRectF(rect.left(), rect.top(), status_section_width + self.pill_radius, rect.height()))
+        # Draw the main pill first
+        painter.setPen(QPen(QColor("#cccccc"), 1))
+        painter.setBrush(QBrush(QColor("#f5f5f5")))
+        painter.drawPath(path)
+        
+        # Draw priority section (top left)
+        priority_rect = QRectF(
+            rect.left(),
+            rect.top(),
+            left_section_width,
+            section_height
+        )
+        
+        # Create a path for the top-left section with top-left corner rounded
+        priority_path = QPainterPath()
+        priority_path.addRoundedRect(priority_rect, self.pill_radius, self.pill_radius)
+        
+        # Use clipping to only show the part within the main pill
+        painter.setClipPath(path)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(priority_color))
+        painter.drawRect(priority_rect)
+        
+        # Draw category section (middle left) - simple rectangle for middle section
+        category_rect = QRectF(
+            rect.left(),
+            rect.top() + section_height,
+            left_section_width,
+            section_height
+        )
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(category_color))
+        painter.drawRect(category_rect)
+        
+        # Draw status section (bottom left)
+        status_rect = QRectF(
+            rect.left(),
+            rect.top() + section_height * 2,
+            left_section_width,
+            section_height
+        )
+        
+        # Draw status section (bottom left)
+        status_rect = QRectF(
+            rect.left(),
+            rect.top() + section_height * 2,
+            left_section_width,
+            section_height
+        )
+        
+        # Use the same clipping approach for consistency
+        painter.setClipPath(path)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(status_color))
-        painter.drawPath(status_path)
-        painter.setClipping(False)
+        painter.drawRect(status_rect)
         
         # Draw first vertical divider
         painter.setPen(QPen(QColor("#cccccc"), 1))
         painter.drawLine(
-            rect.left() + status_section_width,
+            rect.left() + left_section_width,
             rect.top(),
-            rect.left() + status_section_width,
+            rect.left() + left_section_width,
             rect.bottom()
         )
         
-        # Draw details section (right section)
+        # Draw right details section
         details_rect = QRectF(
-            rect.right() - details_section_width,
+            rect.right() - right_section_width,
             rect.top(),
-            details_section_width,
+            right_section_width,
             rect.height()
         )
-        details_path = QPainterPath()
-        details_path.addRoundedRect(details_rect, self.pill_radius, self.pill_radius)
         
-        # Clip to right part of the pill
-        painter.setClipRect(QRectF(rect.right() - details_section_width - self.pill_radius, rect.top(), details_section_width + self.pill_radius, rect.height()))
+        # Use the same clipping approach
+        painter.setClipPath(path)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(QColor("#f5f5f5")))  # Light gray background
-        painter.drawPath(details_path)
+        painter.drawRect(details_rect)
         painter.setClipping(False)
         
         # Draw second vertical divider
         painter.setPen(QPen(QColor("#cccccc"), 1))
         painter.drawLine(
-            rect.right() - details_section_width,
+            rect.right() - right_section_width,
             rect.top(),
-            rect.right() - details_section_width,
+            rect.right() - right_section_width,
             rect.bottom()
         )
         
-        # Draw status text in status section
-        status_font = QFont(option.font)
-        status_font.setPointSize(10)
-        painter.setFont(status_font)
+        # Draw priority text in priority section
+        font = QFont(option.font)
+        font.setPointSize(10)
+        painter.setFont(font)
         painter.setPen(QColor("white"))  # White text on colored background
         
-        status_text_rect = QRectF(
-            rect.left(),
-            rect.top(),
-            status_section_width,
-            rect.height()
+        painter.drawText(
+            QRectF(
+                rect.left(),
+                rect.top(),
+                left_section_width,
+                section_height
+            ),
+            Qt.AlignmentFlag.AlignCenter,
+            priority or "No Priority"
         )
-        painter.drawText(status_text_rect, Qt.AlignmentFlag.AlignCenter, status or "Not Started")
+        
+        # Draw category text in category section
+        painter.drawText(
+            QRectF(
+                rect.left(),
+                rect.top() + section_height,
+                left_section_width,
+                section_height
+            ),
+            Qt.AlignmentFlag.AlignCenter,
+            category or "No Category"
+        )
+        
+        # Draw status text in status section
+        painter.drawText(
+            QRectF(
+                rect.left(),
+                rect.top() + section_height * 2,
+                left_section_width,
+                section_height
+            ),
+            Qt.AlignmentFlag.AlignCenter,
+            status or "Not Started"
+        )
         
         # Draw task content in the middle section
         # Title - bold
@@ -217,10 +295,10 @@ class TaskPillDelegate(QStyledItemDelegate):
         painter.setPen(QColor(0, 0, 0))  # Black text
         
         title_rect = QRectF(
-            rect.left() + status_section_width + self.text_padding,
-            rect.top() + 5,
+            rect.left() + left_section_width + self.text_padding,
+            rect.top() + 10,
             content_section_width - self.text_padding * 2,
-            20  # Height for title
+            30  # Height for title
         )
         painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, title or "")
         
@@ -232,83 +310,67 @@ class TaskPillDelegate(QStyledItemDelegate):
             painter.setPen(QColor(100, 100, 100))  # Gray text
             
             desc_rect = QRectF(
-                rect.left() + status_section_width + self.text_padding,
-                rect.top() + 25,
+                rect.left() + left_section_width + self.text_padding,
+                rect.top() + 40,
                 content_section_width - self.text_padding * 2,
-                20  # Height for description
+                40  # Height for description
             )
-            # Truncate description if too long
+            # Truncate description if too long and add ellipsis
             elidedText = painter.fontMetrics().elidedText(
                 description, Qt.TextElideMode.ElideRight, int(desc_rect.width()))
-            painter.drawText(desc_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elidedText)
+            painter.drawText(desc_rect, Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, elidedText)
         
-        # Draw priority text
-        if priority:
-            priority_font = QFont(option.font)
-            priority_font.setPointSize(8)
-            painter.setFont(priority_font)
+        # Draw due date if available
+        if due_date_str:
+            date_font = QFont(option.font)
+            date_font.setPointSize(8)
+            painter.setFont(date_font)
+            painter.setPen(QColor(100, 100, 100))  # Gray text
             
-            # Use the priority color for the text
-            priority_color = self.get_priority_color(priority)
-            painter.setPen(priority_color)
-            
-            priority_text_rect = QRectF(
-                rect.left() + status_section_width + self.text_padding,
-                rect.top() + rect.height() - 18,
+            date_rect = QRectF(
+                rect.left() + left_section_width + self.text_padding,
+                rect.top() + rect.height() - 30,
                 content_section_width,
-                15
+                20
             )
-            painter.drawText(priority_text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"Priority: {priority}")
+            painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"Due: {due_date_str}")
         
-        # Draw details section (URL or attached files)
+        # Draw details section (Link)
         if link:
             link_font = QFont(option.font)
-            link_font.setPointSize(8)
+            link_font.setPointSize(10)
             painter.setFont(link_font)
             painter.setPen(QColor(0, 0, 255))  # Blue text for link
             
             # Draw link icon
             link_icon_rect = QRectF(
-                rect.right() - details_section_width + 10,
-                rect.top() + (rect.height() - 16) / 2,
-                16, 16
+                rect.right() - right_section_width + 25,
+                rect.top() + (rect.height() - 20) / 2,
+                20, 20
             )
-            # You could draw a custom icon here, but for simplicity we'll just use a colored circle
+            # Draw a simple link icon as a circle
             painter.setBrush(QBrush(QColor(0, 0, 255, 50)))  # Transparent blue
             painter.setPen(QPen(QColor(0, 0, 255), 1))
             painter.drawEllipse(link_icon_rect)
             
-            # Draw link text
+            # Draw "Link" text
             link_text_rect = QRectF(
-                rect.right() - details_section_width + 30,
+                rect.right() - right_section_width + 50,
                 rect.top(),
-                details_section_width - 40,
+                right_section_width - 60,
                 rect.height()
             )
-            
-            # Truncate link if too long
-            display_link = link
-            if len(display_link) > 25:
-                if display_link.startswith("http://"):
-                    display_link = display_link[7:]
-                elif display_link.startswith("https://"):
-                    display_link = display_link[8:]
-                
-                # Further truncate if still too long
-                if len(display_link) > 25:
-                    display_link = display_link[:22] + "..."
-                    
-            painter.drawText(link_text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, display_link)
+            painter.drawText(link_text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "Link")
         else:
-            # Draw "No details" text
+            # Draw "No Link" text
             font = QFont(option.font)
             font.setPointSize(8)
             painter.setFont(font)
             painter.setPen(QColor(150, 150, 150))  # Light gray text
             painter.drawText(
-                QRectF(rect.right() - details_section_width, rect.top(), details_section_width, rect.height()),
+                QRectF(rect.right() - right_section_width, rect.top(), right_section_width, rect.height()),
                 Qt.AlignmentFlag.AlignCenter,
-                "No details"
+                "No Link"
             )
         
         # Restore painter
@@ -316,4 +378,5 @@ class TaskPillDelegate(QStyledItemDelegate):
     
     def sizeHint(self, option, index):
         # Return a size that accounts for our custom drawing
+        # Increased height to accommodate the three sections on the left
         return QSize(option.rect.width(), self.pill_height + self.item_margin * 2)

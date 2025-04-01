@@ -204,6 +204,9 @@ class TaskTreeWidget(QTreeWidget):
         # Create a single-column item
         item = QTreeWidgetItem([title or ""])
         
+        # Debug: Print the status to see if it's being passed in correctly
+        print(f"Adding task: {title} with status: {status}")
+        
         # Store all data as item data
         item.setData(0, Qt.ItemDataRole.UserRole, {
             'title': title or "",
