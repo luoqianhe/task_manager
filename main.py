@@ -183,16 +183,6 @@ class MainWindow(QMainWindow):
         settings_button.clicked.connect(self.show_settings)
         button_layout.addWidget(settings_button)
         
-        # Toggle View button
-        toggle_view_button = QPushButton("Toggle View")
-        toggle_view_button.setFixedHeight(40)
-        toggle_view_button.setStyleSheet("""
-            background-color: #607D8B;
-        """)
-        toggle_view_button.clicked.connect(self.toggle_task_view)
-        toggle_view_button.setToolTip("Toggle between compact and full view")
-        button_layout.addWidget(toggle_view_button)
-        
         # Add buttons to main layout
         layout.addLayout(button_layout)
 
@@ -388,200 +378,53 @@ class MainWindow(QMainWindow):
                 except Exception as e:
                     QMessageBox.critical(self, "Error", f"Error creating template: {str(e)}")
 
-    def toggle_task_view(self):
-        print("Toggle view button clicked")
-        
-        # Get the delegate
-        delegate = self.tree.itemDelegate()
-        
-        # Make sure the delegate is the right type
-        print(f"Delegate type: {type(delegate).__name__}")
-        
-        # Toggle the mode and update items
-        if isinstance(delegate, TaskPillDelegate):
-            # Explicitly set compact mode attribute
-            if not hasattr(delegate, 'compact_mode'):
-                delegate.compact_mode = False
-            
-            # Toggle and print the new state
-            delegate.compact_mode = not delegate.compact_mode
-            print(f"Compact mode: {delegate.compact_mode}")
-            
-            # Update button text
-            sender = self.sender()
-            if sender:
-                sender.setText("Full View" if delegate.compact_mode else "Compact View")
-            
-            # Force a repaint
-            self.tree.viewport().update()
-            
-            # Apply to all items
-            for i in range(self.tree.topLevelItemCount()):
-                self.toggle_item_view(self.tree.topLevelItem(i), delegate.compact_mode)
-            
-            # Force layout update
-            self.tree.scheduleDelayedItemsLayout()
-        else:
-            print("Delegate is not a TaskPillDelegate instance")
-
-    def toggle_item_view(self, item, compact_mode):
-        # Set item size
-        height = 40 if compact_mode else 80  # Compact or full height
-        item.setSizeHint(0, QSize(self.tree.viewport().width(), height + 10))
-        
-        # Process children
-        for i in range(item.childCount()):
-            self.toggle_item_view(item.child(i), compact_mode)
-
 def main():
     app = QApplication(sys.argv)
+    
+    # Create main window (this initializes settings)
     window = MainWindow()
     
-    # Get the database path from settings
-    db_path = Path(window.db_path)
+    # Import and configure the database path
+    from database.db_config import db_config, ensure_db_exists
     
-    # Ensure database directory exists
-    db_dir = db_path.parent
-    if not db_dir.exists():
-        db_dir.mkdir(parents=True, exist_ok=True)
+    # Set the database path from the settings
+    db_config.set_path(window.db_path)
+    print(f"Main using database path: {db_config.path}")
     
-    # Check if database exists, if not initialize it
-    if not db_path.exists():
-        from database.db_setup import init_database
-       
-        # Update the DB_PATH to use our settings path
-        import database.db_setup
-        database.db_setup.DB_PATH = db_path
-        init_database()
-        
-        # Insert test data
-        from database.insert_test_data import insert_test_tasks
-       
-        # Update the DB_PATH in test data too
-        import database.insert_test_data
-        database.insert_test_data.DB_PATH = db_path
-        insert_test_tasks()
-    else:
-        # Import and configure the database manager first
-        from database.database_manager import get_db_manager
-        db_manager = get_db_manager()
-        
-        # Update DB_PATH in the database manager
-        if hasattr(db_manager, 'set_db_path'):
-            db_manager.set_db_path(db_path)
-        else:
-            db_manager._db_path = db_path
-        
-        # Get connection from the database manager
-        with db_manager.get_connection() as conn:
-            # Set timeouts to avoid database locked errors
-            conn.execute("PRAGMA busy_timeout = 5000")
-            conn.execute("PRAGMA journal_mode = WAL")
-            
-            cursor = conn.cursor()
-            
-            # Check if statuses table exists
-            cursor.execute("""
-                SELECT name FROM sqlite_master 
-                WHERE type='table' AND name='statuses'
-            """)
-            if not cursor.fetchone():
-                # Create statuses table
-                cursor.execute("""
-                    CREATE TABLE statuses (
-                        id INTEGER PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        color TEXT NOT NULL,
-                        display_order INTEGER NOT NULL
-                    )
-                """)
-                
-                # Insert default statuses
-                default_statuses = [
-                    ('Not Started', '#F44336', 1),  # Red
-                    ('In Progress', '#FFC107', 2),  # Amber
-                    ('On Hold', '#9E9E9E', 3),      # Gray
-                    ('Completed', '#4CAF50', 4)     # Green
-                ]
-                
-                cursor.executemany("""
-                    INSERT INTO statuses (name, color, display_order)
-                    VALUES (?, ?, ?)
-                """, default_statuses)
-                
-                print("Created statuses table with default values")
-            
-            # Check if priorities table exists
-            cursor.execute("""
-                SELECT name FROM sqlite_master 
-                WHERE type='table' AND name='priorities'
-            """)
-            if not cursor.fetchone():
-                # Create priorities table
-                cursor.execute("""
-                    CREATE TABLE priorities (
-                        id INTEGER PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        color TEXT NOT NULL,
-                        display_order INTEGER NOT NULL
-                    )
-                """)
-                
-                # Insert default priorities
-                default_priorities = [
-                    ('High', '#F44336', 1),     # Red (highest priority)
-                    ('Medium', '#FFC107', 2),   # Amber (medium priority)
-                    ('Low', '#4CAF50', 3)       # Green (lowest priority)
-                ]
-                
-                cursor.executemany("""
-                    INSERT INTO priorities (name, color, display_order)
-                    VALUES (?, ?, ?)
-                """, default_priorities)
-                
-                print("Created priorities table with default values")
-            else:
-                # Check if display_order column exists
-                try:
-                    cursor.execute("SELECT display_order FROM priorities LIMIT 1")
-                except sqlite3.OperationalError:
-                    # Add display_order column
-                    cursor.execute("ALTER TABLE priorities ADD COLUMN display_order INTEGER DEFAULT 0")
-                    
-                    # Set default display order values
-                    priority_order = {
-                        'High': 1,
-                        'Medium': 2, 
-                        'Low': 3
-                    }
-                    
-                    # Get existing priorities
-                    cursor.execute("SELECT id, name FROM priorities")
-                    for priority_id, name in cursor.fetchall():
-                        order = priority_order.get(name, 99)  # Default to end of list
-                        cursor.execute(
-                            "UPDATE priorities SET display_order = ? WHERE id = ?", 
-                            (order, priority_id)
-                        )
-                    
-                    print("Added display_order column to priorities table")
-            
-            conn.commit()
+    # Ensure the database exists and is initialized
+    if not ensure_db_exists():
+        # Database creation failed
+        QMessageBox.critical(
+            window,
+            "Database Error",
+            "Failed to create the database. Please check permissions and try again."
+        )
+        return 1
     
-    # Import and configure the database manager
+    # If database was just created, ask about sample data
+    if not db_config.path.exists():
+        reply = QMessageBox.question(
+            window, 
+            'Initialize Database',
+            'Would you like to add sample tasks to the new database?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                from database.insert_test_data import insert_test_tasks
+                insert_test_tasks()
+                print("Sample tasks added to database")
+            except Exception as e:
+                QMessageBox.warning(
+                    window,
+                    "Sample Data Error",
+                    f"Could not add sample data: {e}\n\nThe database was created but will be empty."
+                )
+    
+    # Import database manager 
     from database.database_manager import get_db_manager
     db_manager = get_db_manager()
-    
-    # Make sure we close any existing connections before updating paths
-    if hasattr(db_manager, '_connection') and db_manager._connection is not None:
-        db_manager._connection.close()
-        db_manager._connection = None
-    
-    # Update DB_PATH in the database manager
-    if hasattr(db_manager, 'set_db_path'):
-        db_manager.set_db_path(db_path)
-    else:
-        db_manager._db_path = db_path
     
     # Define a function for getting the connection
     def get_connection():
@@ -595,21 +438,6 @@ def main():
     from ui.task_dialogs import AddTaskDialog, EditTaskDialog
     from ui.task_pill_delegate import TaskPillDelegate
     
-    # Set the DB_PATH for backward compatibility
-    TaskTreeWidget.DB_PATH = db_path
-    CategoryManager.DB_PATH = db_path
-    CategoryItem.DB_PATH = db_path
-    EditCategoryDialog.DB_PATH = db_path
-    PriorityManager.DB_PATH = db_path
-    PriorityItem.DB_PATH = db_path
-    EditPriorityDialog.DB_PATH = db_path
-    StatusManager.DB_PATH = db_path
-    StatusItem.DB_PATH = db_path
-    EditStatusDialog.DB_PATH = db_path
-    AddTaskDialog.DB_PATH = db_path
-    EditTaskDialog.DB_PATH = db_path
-    TaskPillDelegate.DB_PATH = db_path
-    
     # Add get_connection method to all classes
     for cls in [TaskTreeWidget, CategoryManager, CategoryItem, EditCategoryDialog,
                PriorityManager, PriorityItem, EditPriorityDialog,
@@ -620,6 +448,6 @@ def main():
     # Show the window and start the application
     window.show()
     sys.exit(app.exec())
-    
+
 if __name__ == "__main__":
     main()

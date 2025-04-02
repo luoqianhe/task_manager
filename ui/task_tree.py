@@ -34,8 +34,13 @@ class TaskTreeWidget(QTreeWidget):
         self.setHeaderHidden(True)
         self.setIndentation(40)  # Increased indentation for better hierarchy view
         
-        # Apply the custom delegate
-        self.setItemDelegate(TaskPillDelegate(self))
+        # Enable mouse tracking for hover effects
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)  # IMPORTANT: Set on viewport too
+        
+        # Apply the custom delegate - ensure it's created after mouse tracking is enabled
+        custom_delegate = TaskPillDelegate(self)
+        self.setItemDelegate(custom_delegate)
         
         # Set a clean style
         self.setStyleSheet("""
@@ -71,7 +76,10 @@ class TaskTreeWidget(QTreeWidget):
             self.load_tasks()
         except Exception as e:
             print(f"Error loading tasks: {e}")
-
+        
+        # Debug delegate setup
+        self.debug_delegate_setup()
+    
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return:
             selected_items = self.selectedItems()
@@ -200,7 +208,7 @@ class TaskTreeWidget(QTreeWidget):
             print(f"Error changing task priority: {e}")
             QMessageBox.critical(self, "Error", f"Failed to change task priority: {str(e)}")
 
-    def add_task_item(self, task_id, title, description, link, status, priority, due_date, category):
+    def add_task_item(self, task_id, title, description, link, status, priority, due_date, category, is_compact=0):
         # Create a single-column item
         item = QTreeWidgetItem([title or ""])
         
@@ -209,6 +217,7 @@ class TaskTreeWidget(QTreeWidget):
         
         # Store all data as item data
         item.setData(0, Qt.ItemDataRole.UserRole, {
+            'id': task_id,  # Store ID in user data too for easier access
             'title': title or "",
             'description': description or "",
             'link': link or "", 
@@ -221,10 +230,16 @@ class TaskTreeWidget(QTreeWidget):
         item.task_id = task_id
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled)
         
-        # Set item height
+        # Set item height based on compact state
         delegate = self.itemDelegate()
         if isinstance(delegate, TaskPillDelegate):
-            item.setSizeHint(0, QSize(100, delegate.pill_height + delegate.item_margin * 2))
+            # If this item is marked as compact in the database, add it to delegate's compact set
+            if is_compact:
+                delegate.compact_items.add(task_id)
+            
+            # Set appropriate height
+            height = delegate.compact_height if is_compact else delegate.pill_height
+            item.setSizeHint(0, QSize(100, height + delegate.item_margin * 2))
         
         # Apply background color based on category
         if category:
@@ -302,6 +317,13 @@ class TaskTreeWidget(QTreeWidget):
         
         # Get current data from the item's user role data
         data = item.data(0, Qt.ItemDataRole.UserRole)
+        
+        # Get compact state from delegate
+        delegate = self.itemDelegate()
+        is_compact = False
+        if isinstance(delegate, TaskPillDelegate):
+            is_compact = item.task_id in delegate.compact_items
+        
         task_data = {
             'id': item.task_id,
             'title': data['title'],
@@ -311,7 +333,8 @@ class TaskTreeWidget(QTreeWidget):
             'priority': data['priority'],
             'due_date': data['due_date'],
             'category': data['category'],
-            'parent_id': item.parent().task_id if item.parent() else None
+            'parent_id': item.parent().task_id if item.parent() else None,
+            'is_compact': is_compact  # Include compact state
         }
         
         # Open edit dialog
@@ -336,7 +359,8 @@ class TaskTreeWidget(QTreeWidget):
                     if result and result[0]:
                         category_id = result[0][0]
                 
-                # Update database
+                # Update database - is_compact state is preserved since we're not updating it here
+                # The compact state is handled separately by the TaskPillDelegate
                 db_manager.execute_update(
                     """
                     UPDATE tasks 
@@ -360,6 +384,7 @@ class TaskTreeWidget(QTreeWidget):
                 # Update item directly
                 item.setText(0, updated_data['title'])
                 item.setData(0, Qt.ItemDataRole.UserRole, {
+                    'id': updated_data['id'],  # Include the ID in user data
                     'title': updated_data['title'],
                     'description': updated_data['description'],
                     'link': updated_data['link'],
@@ -444,6 +469,17 @@ class TaskTreeWidget(QTreeWidget):
             from database.database_manager import get_db_manager
             db_manager = get_db_manager()
             
+            # Check if is_compact column exists
+            conn = db_manager.get_connection()
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT is_compact FROM tasks LIMIT 1")
+            except sqlite3.OperationalError:
+                # Column doesn't exist, need to add it
+                cursor.execute("ALTER TABLE tasks ADD COLUMN is_compact INTEGER NOT NULL DEFAULT 0")
+                conn.commit()
+                print("Added is_compact column to tasks table")
+            
             # Get priority order map
             priority_order = {}
             result = db_manager.execute_query(
@@ -456,7 +492,7 @@ class TaskTreeWidget(QTreeWidget):
             top_level_tasks = db_manager.execute_query(
                 """
                 SELECT t.id, t.title, t.description, t.link, t.status, t.priority, 
-                    t.due_date, c.name 
+                    t.due_date, c.name, t.is_compact
                 FROM tasks t
                 LEFT JOIN categories c ON t.category_id = c.id
                 LEFT JOIN priorities p ON t.priority = p.name
@@ -467,7 +503,7 @@ class TaskTreeWidget(QTreeWidget):
             
             items = {}
             for row in top_level_tasks:
-                item = self.add_task_item(*row)
+                item = self.add_task_item(*row)  # Pass all parameters including is_compact
                 items[row[0]] = item
                 self.addTopLevelItem(item)
             
@@ -475,7 +511,7 @@ class TaskTreeWidget(QTreeWidget):
             child_tasks = db_manager.execute_query(
                 """
                 SELECT t.id, t.title, t.description, t.link, t.status, t.priority, 
-                    t.due_date, c.name, t.parent_id
+                    t.due_date, c.name, t.is_compact, t.parent_id
                 FROM tasks t
                 LEFT JOIN categories c ON t.category_id = c.id
                 LEFT JOIN priorities p ON t.priority = p.name
@@ -485,8 +521,11 @@ class TaskTreeWidget(QTreeWidget):
             )
             
             for row in child_tasks:
-                item = self.add_task_item(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7])
-                parent_id = row[8]
+                # The last parameter is the parent_id, which is at index 9
+                parent_id = row[9]
+                # The first 9 parameters are for add_task_item
+                item = self.add_task_item(*row[:9])
+                
                 if parent_id in items:
                     items[parent_id].addChild(item)
                     items[row[0]] = item  # Add this child to the items dict too
@@ -535,12 +574,24 @@ class TaskTreeWidget(QTreeWidget):
                 max_order = result[0] if result and result[0] else 0
                 display_order = max_order + 1
                 
+                # Check if is_compact column exists
+                try:
+                    cursor.execute("SELECT is_compact FROM tasks LIMIT 1")
+                except sqlite3.OperationalError:
+                    # Column doesn't exist, need to add it
+                    cursor.execute("ALTER TABLE tasks ADD COLUMN is_compact INTEGER NOT NULL DEFAULT 0")
+                    conn.commit()
+                    print("Added is_compact column to tasks table")
+                
+                # Default is_compact value (new tasks are expanded by default)
+                is_compact = 0
+                
                 # Insert new task
                 cursor.execute(
                     """
                     INSERT INTO tasks (title, description, link, status, priority, 
-                                    due_date, category_id, parent_id, display_order)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    due_date, category_id, parent_id, display_order, is_compact)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, 
                     (
                         data.get('title', ''),
@@ -551,7 +602,8 @@ class TaskTreeWidget(QTreeWidget):
                         data.get('due_date', ''),
                         category_id,
                         parent_id,
-                        display_order
+                        display_order,
+                        is_compact
                     )
                 )
                 
@@ -571,7 +623,8 @@ class TaskTreeWidget(QTreeWidget):
                 data.get('status', 'Not Started'),
                 data.get('priority', 'Medium'),
                 data.get('due_date', ''),
-                category_name
+                category_name,
+                is_compact  # Pass the is_compact value
             )
             
             # Add to appropriate parent
@@ -598,7 +651,7 @@ class TaskTreeWidget(QTreeWidget):
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(None, "Error", f"Failed to add task: {str(e)}")
             return None
-        
+    
     def _find_parent_and_add_child(self, parent_item, parent_id, new_item):
         """Helper method to recursively find a parent item and add a child to it"""
         # Check if this is the parent
@@ -667,3 +720,43 @@ class TaskTreeWidget(QTreeWidget):
             child = parent_item.child(i)
             items_list.append(child)
             self._collect_child_items(child, items_list)
+    
+    def debug_delegate_setup(self):
+        """Debug method to verify delegate installation and hover tracking"""
+        print("\n===== DELEGATE SETUP DEBUG =====")
+        
+        # Check if delegate is set
+        delegate = self.itemDelegate()
+        if delegate is None:
+            print("ERROR: No delegate installed")
+            return
+        
+        print(f"Delegate class: {type(delegate).__name__}")
+        
+        # Check if it's the right type
+        if not isinstance(delegate, TaskPillDelegate):
+            print(f"ERROR: Wrong delegate type: {type(delegate).__name__}")
+            return
+        
+        print("TaskPillDelegate is correctly installed")
+        
+        # Check mouse tracking
+        print(f"TreeWidget mouse tracking: {self.hasMouseTracking()}")
+        print(f"Viewport mouse tracking: {self.viewport().hasMouseTracking()}")
+        
+        # Check event filter installation - fixed to not use eventFilters()
+        print("Event filters cannot be directly inspected, but should be installed")
+        
+        # Check if compact_items set exists and is loaded
+        if hasattr(delegate, 'compact_items'):
+            print(f"compact_items set exists with {len(delegate.compact_items)} items")
+            print(f"Items in compact state: {delegate.compact_items}")
+        else:
+            print("ERROR: No compact_items set found in delegate")
+        
+        print("===== END DEBUG =====\n")
+        
+        # Force a viewport update to ensure proper redrawing
+        self.viewport().update()
+        
+        

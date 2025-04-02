@@ -14,6 +14,8 @@ class TaskPillDelegate(QStyledItemDelegate):
         from database.database_manager import get_db_manager
         return get_db_manager().get_connection()
     
+    # Key updates to TaskPillDelegate class
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.text_padding = 10  # Padding between text and pill edge
@@ -29,13 +31,113 @@ class TaskPillDelegate(QStyledItemDelegate):
         self.hover_rect = None
         self.toggle_button_rect = None
         
-        # Track compact/expanded state for each item
+        # Track compact/expanded state for each item - will be loaded from DB
         self.compact_items = set()
+        
+        # Load initial compact states from database
+        self.load_compact_states()
         
         # Install event filter on parent for hover tracking
         if parent:
             parent.setMouseTracking(True)
+            parent.viewport().setMouseTracking(True)  # IMPORTANT: Set on viewport too
             parent.installEventFilter(self)
+            print("Event filter installed on parent widget")
+
+    def eventFilter(self, source, event):
+        """Handle mouse events for button clicks"""
+        if event.type() == event.Type.MouseButtonPress:
+            print("Mouse button press detected")
+            # Get position
+            try:
+                if hasattr(event, 'position'):
+                    pos = event.position().toPoint()
+                elif hasattr(event, 'pos'):
+                    pos = event.pos()
+                else:
+                    pos = event.globalPos()
+            except Exception as e:
+                print(f"Error getting mouse position: {e}")
+                return super().eventFilter(source, event)
+                
+            # Check if click was on any toggle button
+            if hasattr(self, 'all_button_rects'):
+                for item_id, (button_rect, index) in self.all_button_rects.items():
+                    if button_rect.contains(pos):
+                        print(f"Toggle button clicked for item ID: {item_id}")
+                        
+                        # Toggle compact state for this item
+                        is_compact = item_id in self.compact_items
+                        
+                        if is_compact:
+                            self.compact_items.remove(item_id)
+                        else:
+                            self.compact_items.add(item_id)
+                        
+                        # Save state to database
+                        self.save_compact_state(item_id, not is_compact)
+                        
+                        # Update the item size
+                        item = None
+                        if hasattr(source, 'itemFromIndex'):
+                            item = source.itemFromIndex(index)
+                        else:
+                            # Find item by ID
+                            for i in range(source.topLevelItemCount()):
+                                if self._find_item_by_id(source.topLevelItem(i), item_id):
+                                    item = self._find_item_by_id(source.topLevelItem(i), item_id)
+                                    break
+                        
+                        # Update item size if found
+                        if item:
+                            height = self.compact_height if not is_compact else self.pill_height
+                            item.setSizeHint(0, QSize(self.all_button_rects[item_id][0].width() * 10, 
+                                                height + self.item_margin * 2))
+                            source.scheduleDelayedItemsLayout()  # Force layout update
+                            print(f"Item size updated, new height: {height}")
+                        
+                        # Force repaint
+                        source.viewport().update()
+                        return True  # Event handled
+        
+        return super().eventFilter(source, event)
+
+    def load_compact_states(self):
+        """Load compact states from the database"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # First check if the is_compact column exists in the tasks table
+                try:
+                    cursor.execute("SELECT is_compact FROM tasks LIMIT 1")
+                except sqlite3.OperationalError:
+                    # Column doesn't exist, need to add it
+                    cursor.execute("ALTER TABLE tasks ADD COLUMN is_compact INTEGER NOT NULL DEFAULT 0")
+                    conn.commit()
+                    print("Added is_compact column to tasks table")
+                
+                # Now load all task IDs that are marked as compact
+                cursor.execute("SELECT id FROM tasks WHERE is_compact = 1")
+                for row in cursor.fetchall():
+                    self.compact_items.add(row[0])
+                
+                print(f"Loaded {len(self.compact_items)} compact states from database")
+        except Exception as e:
+            print(f"Error loading compact states: {e}")
+    
+    def save_compact_state(self, task_id, is_compact):
+        """Save compact state to the database"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE tasks SET is_compact = ? WHERE id = ?",
+                    (1 if is_compact else 0, task_id)
+                )
+                conn.commit()
+        except Exception as e:
+            print(f"Error saving compact state: {e}")
     
     def get_status_color(self, status):
         """Get color for a status from the database"""
@@ -102,91 +204,6 @@ class TaskPillDelegate(QStyledItemDelegate):
         # Fallback to a default color if not found
         return QColor("#E0E0E0")  # Light gray
     
-    def eventFilter(self, source, event):
-        """Handle mouse events for showing toggle button and handling clicks"""
-        if event.type() == event.Type.MouseMove:
-            print("MouseMove event received")
-            pos = event.position().toPoint()
-            index = source.indexAt(pos)
-            print(f"Index at position {pos}: {index.isValid()}")
-            
-            if index.isValid():        
-                rect = source.visualRect(index)
-                
-                # Check if this is a new hover item or position
-                if self.hover_item != index:
-                    self.hover_item = index
-                    self.hover_rect = rect
-                    
-                    # Calculate toggle button position - centered at top of pill
-                    button_size = 24
-                    button_top = rect.top() - button_size // 2
-                    button_center = rect.left() + rect.width() // 2
-                    
-                    self.toggle_button_rect = QRectF(
-                        button_center - button_size // 2,
-                        button_top,
-                        button_size,
-                        button_size
-                    )
-                    
-                    # Print debug info
-                    print(f"Hover detected on item: {index.row()}, Toggle button rect: {self.toggle_button_rect}")
-                    
-                    # Force a repaint
-                    print(f"Toggle button rect: {self.toggle_button_rect}")
-                    source.viewport().update()
-            else:
-                if self.hover_item:
-                    self.hover_item = None
-                    self.hover_rect = None
-                    self.toggle_button_rect = None
-                    source.viewport().update()
-                    
-        elif event.type() == event.Type.MouseButtonPress:
-            # Check if click was on toggle button
-            pos = event.position().toPoint()
-            
-            if self.toggle_button_rect and self.toggle_button_rect.contains(pos) and self.hover_item:
-                print(f"Toggle button clicked!")
-                # Get task ID from user data
-                user_data = self.hover_item.data(Qt.ItemDataRole.UserRole)
-                if isinstance(user_data, dict) and 'id' in user_data:
-                    item_id = user_data['id']
-                    
-                    # Toggle compact state for this item
-                    if item_id in self.compact_items:
-                        self.compact_items.remove(item_id)
-                        print(f"Item {item_id} expanded")
-                    else:
-                        self.compact_items.add(item_id)
-                        print(f"Item {item_id} collapsed")
-                    
-                    # Update the item size - first get the current item
-                    item = None
-                    if hasattr(source, 'itemFromIndex'):
-                        item = source.itemFromIndex(self.hover_item)
-                    else:
-                        for i in range(source.topLevelItemCount()):
-                            if self._find_item_by_id(source.topLevelItem(i), item_id):
-                                item = self._find_item_by_id(source.topLevelItem(i), item_id)
-                                break
-                    
-                    # Update item size if found
-                    if item:
-                        height = self.compact_height if item_id in self.compact_items else self.pill_height
-                        item.setSizeHint(0, QSize(self.hover_rect.width(), height + self.item_margin * 2))
-                        source.scheduleDelayedItemsLayout()  # Force layout update
-                        print(f"Item size updated, new height: {height}")
-                    else:
-                        print(f"Could not find item with ID: {item_id}")
-                    
-                    # Force repaint
-                    source.viewport().update()
-                    return True  # Event handled
-        
-        return super().eventFilter(source, event)
-    
     def _find_item_by_id(self, item, item_id):
         """Recursively find an item by its ID"""
         # Check if this is the item we're looking for
@@ -227,8 +244,7 @@ class TaskPillDelegate(QStyledItemDelegate):
             category = ""
         
         # Check if this item should be compact
-        is_compact = getattr(self, 'compact_mode', False)
-        print(f"Painting item {index.row()}, compact mode: {is_compact}")   
+        is_compact = item_id in self.compact_items
         
         # Get colors for status, priority, and category
         status_color = self.get_status_color(status)
@@ -260,13 +276,17 @@ class TaskPillDelegate(QStyledItemDelegate):
             painter.setBrush(QBrush(QColor(0, 120, 215, 40)))  # Light blue transparent
             painter.drawPath(path)
         
-        # Calculate section heights for the left panel (split into 3 equal parts)
-        section_height = rect.height() / 3
-        
         # Draw the main pill first
         painter.setPen(QPen(QColor("#cccccc"), 1))
         painter.setBrush(QBrush(QColor("#f5f5f5")))
         painter.drawPath(path)
+        
+        # Calculate section heights for the left panel
+        # In compact mode, make each section smaller but preserve all three
+        if is_compact:
+            section_height = rect.height() / 3
+        else:
+            section_height = rect.height() / 3
         
         # Draw priority section (top left)
         priority_rect = QRectF(
@@ -282,14 +302,12 @@ class TaskPillDelegate(QStyledItemDelegate):
         painter.setBrush(QBrush(priority_color))
         painter.drawRect(priority_rect)
         
-        # Draw priority text on top of the color
-        font = QFont(option.font)
-        font.setPointSize(7)  # Small font size to fit in the section
-        painter.setFont(font)
-        painter.setPen(QColor("white"))  # White text on colored background
-        
-        # Only show text in full mode
+        # Draw priority text on top of the color (only in full mode)
         if not is_compact:
+            font = QFont(option.font)
+            font.setPointSize(7)  # Small font size to fit in the section
+            painter.setFont(font)
+            painter.setPen(QColor("white"))  # White text on colored background
             painter.drawText(
                 priority_rect,
                 Qt.AlignmentFlag.AlignCenter,
@@ -306,7 +324,7 @@ class TaskPillDelegate(QStyledItemDelegate):
         painter.setBrush(QBrush(category_color))
         painter.drawRect(category_rect)
         
-        # Draw category text
+        # Draw category text (only in full mode)
         if not is_compact:
             painter.drawText(
                 category_rect,
@@ -324,7 +342,7 @@ class TaskPillDelegate(QStyledItemDelegate):
         painter.setBrush(QBrush(status_color))
         painter.drawRect(status_rect)
         
-        # Draw status text
+        # Draw status text (only in full mode)
         if not is_compact:
             painter.drawText(
                 status_rect,
@@ -482,53 +500,79 @@ class TaskPillDelegate(QStyledItemDelegate):
         
         # Draw toggle button if this is the hover item
         if self.hover_item and self.hover_item == index and self.toggle_button_rect:
-            # Draw toggle button
-            painter.setPen(QPen(QColor("#666666"), 1))
-            painter.setBrush(QBrush(QColor(240, 240, 240, 220)))  # Semi-transparent light gray
-            painter.drawEllipse(self.toggle_button_rect)
-            
-            # Draw toggle icon (↕)
-            toggle_font = QFont(option.font)
-            toggle_font.setPointSize(10)
-            toggle_font.setBold(True)
-            painter.setFont(toggle_font)
-            painter.setPen(QColor("#333333"))
-            painter.drawText(self.toggle_button_rect, Qt.AlignmentFlag.AlignCenter, "↕")
-
-        # Draw toggle button if this is the hover item
-        if self.hover_item and self.hover_item == index and self.toggle_button_rect:
-            hovering = (self.hover_item and self.hover_item == index and self.toggle_button_rect)
-            print(f"Painting item {index.row()}, hovering: {hovering}")
-            # Save current state to restore button drawing settings
+            print(f"Drawing toggle button for item {index.row()}")
+            # Save current state
             painter.save()
-            
-            # Make sure we're not using any clipping path that might hide the button
+
+            # Clear any clipping that might interfere
             painter.setClipping(False)
-            
-            # Draw toggle button with more visible styling
-            painter.setPen(QPen(QColor("#333333"), 2))  # Darker outline, thicker
-            painter.setBrush(QBrush(QColor(240, 240, 240, 240)))  # Less transparent
-            painter.drawEllipse(self.toggle_button_rect)
-            
-            # Draw toggle icon (↕) with larger font
+
+            # Calculate button position - centered at top of pill
+            button_size = 24
+            button_top = rect.top() - button_size // 2
+            button_center = rect.left() + rect.width() // 2
+
+            toggle_button_rect = QRectF(
+                button_center - button_size // 2,
+                button_top,
+                button_size,
+                button_size
+            )
+
+            # Draw shadow effect 
+            shadow_rect = QRectF(
+                toggle_button_rect.left() + 2,
+                toggle_button_rect.top() + 2,
+                toggle_button_rect.width(),
+                toggle_button_rect.height()
+            )
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor(0, 0, 0, 30)))  # Semi-transparent black
+            painter.drawEllipse(shadow_rect)
+
+            # Draw button with strong border and bright fill
+            painter.setPen(QPen(QColor("#333333"), 2))  # Thicker, darker border
+
+            # Highlight button based on state
+            if item_id in self.compact_items:
+                # Expanded button (up arrow) - bright green
+                painter.setBrush(QBrush(QColor(100, 255, 100)))
+            else:
+                # Collapse button (down arrow) - bright blue
+                painter.setBrush(QBrush(QColor(100, 200, 255)))
+
+            painter.drawEllipse(toggle_button_rect)
+
+            # Draw arrow icon with larger font
             toggle_font = QFont(option.font)
-            toggle_font.setPointSize(14)  # Larger size
+            toggle_font.setPointSize(16)  # Larger size
             toggle_font.setBold(True)
             painter.setFont(toggle_font)
             painter.setPen(QColor("#000000"))  # Black text for better visibility
-            painter.drawText(self.toggle_button_rect, Qt.AlignmentFlag.AlignCenter, "↕")
-            
+
+            # Show up arrow if compact (to expand), down arrow if expanded (to compact)
+            icon = "↑" if item_id in self.compact_items else "↓"
+            painter.drawText(toggle_button_rect, Qt.AlignmentFlag.AlignCenter, icon)
+
+            # Store button rect for click detection (even when not hovering)
+            if not hasattr(self, 'all_button_rects'):
+                self.all_button_rects = {}
+            self.all_button_rects[item_id] = (toggle_button_rect, index)
+
             # Restore painting settings
-            painter.restore()
-        
+            painter.restore()        
         # Restore painter
         painter.restore()
     
     def sizeHint(self, option, index):
         """Return appropriate size based on compact state"""
         user_data = index.data(Qt.ItemDataRole.UserRole)
-        is_compact = getattr(self, 'compact_mode', False)
         
-        height = self.compact_height if is_compact else self.pill_height
+        # Get item ID and check if it's in the compact_items set
+        item_id = 0
+        if isinstance(user_data, dict) and 'id' in user_data:
+            item_id = user_data['id']
+        
+        height = self.compact_height if item_id in self.compact_items else self.pill_height
         
         return QSize(option.rect.width(), height + self.item_margin * 2)

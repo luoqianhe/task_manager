@@ -5,9 +5,8 @@ import sqlite3
 import sys
 import os
 
-# Add parent directory to path so we can import app_settings
-sys.path.append(str(Path(__file__).parent.parent))
-from ui.app_settings import SettingsManager
+# Import our centralized database configuration
+from database.db_config import db_config, get_db_path, get_db_connection
 
 class DatabaseManager:
     _instance = None
@@ -22,22 +21,19 @@ class DatabaseManager:
         if self._initialized:
             return
         
-        # Initialize settings
-        self.settings = SettingsManager()
-        self._db_path = None
+        # Store connection
         self._connection = None  # Store a single connection
         self._initialized = True
     
     @property
     def db_path(self):
-        """Get the current database path from settings"""
-        if self._db_path is None:
-            self._db_path = Path(self.settings.get_setting("database_path"))
-        return self._db_path
+        """Get the current database path from the central configuration"""
+        return get_db_path()
     
     def set_db_path(self, path):
-        """Set the database path explicitly"""
-        self._db_path = Path(path)
+        """Set the database path explicitly through the central configuration"""
+        db_config.set_path(path)
+        
         # Close any existing connection when path changes
         if self._connection is not None:
             self._connection.close()
@@ -47,10 +43,12 @@ class DatabaseManager:
         """Get a database connection"""
         # Create a new connection if none exists
         if self._connection is None:
-            self._connection = sqlite3.connect(self.db_path)
-            # Set timeouts and journal mode for better performance
-            self._connection.execute("PRAGMA busy_timeout = 5000")
-            self._connection.execute("PRAGMA journal_mode = WAL")
+            # Ensure the database exists
+            if not db_config.database_exists():
+                db_config.create_database()
+                
+            # Get a connection from the central configuration
+            self._connection = get_db_connection()
             
         return self._connection
     
