@@ -613,3 +613,57 @@ class TaskTreeWidget(QTreeWidget):
                 return True
         
         return False
+    
+    def setItemHeight(self, item, size_hint):
+        """Update the item's height based on the current view mode"""
+        if item:
+            # Update the item's size hint
+            item.setSizeHint(0, size_hint)
+            
+            # Force a layout update
+            self.viewport().update()
+            
+    def toggle_view_mode(self):
+        """Toggle between compact and full view for all tasks"""
+        delegate = self.itemDelegate()
+        if hasattr(delegate, 'compact_items'):
+            # Get all visible items
+            items = []
+            for i in range(self.topLevelItemCount()):
+                items.append(self.topLevelItem(i))
+                self._collect_child_items(self.topLevelItem(i), items)
+            
+            # If any items are in normal view, collapse all. Otherwise, expand all
+            any_normal = False
+            for item in items:
+                user_data = item.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(user_data, dict) and 'id' in user_data:
+                    if user_data['id'] not in delegate.compact_items:
+                        any_normal = True
+                        break
+            
+            # Toggle all items
+            for item in items:
+                user_data = item.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(user_data, dict) and 'id' in user_data:
+                    item_id = user_data['id']
+                    if any_normal:  # Make all compact
+                        delegate.compact_items.add(item_id)
+                    else:  # Make all normal
+                        if item_id in delegate.compact_items:
+                            delegate.compact_items.remove(item_id)
+                    
+                    # Update item size
+                    height = delegate.compact_height if item_id in delegate.compact_items else delegate.pill_height
+                    item.setSizeHint(0, QSize(self.viewport().width(), height + delegate.item_margin * 2))
+            
+            # Force layout update
+            self.scheduleDelayedItemsLayout()
+            self.viewport().update()
+        
+    def _collect_child_items(self, parent_item, items_list):
+        """Helper to collect all child items recursively"""
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            items_list.append(child)
+            self._collect_child_items(child, items_list)

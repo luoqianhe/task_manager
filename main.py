@@ -4,12 +4,13 @@ from PyQt6.QtWidgets import (QMainWindow, QApplication, QWidget, QVBoxLayout,
                            QHBoxLayout, QPushButton, QStackedWidget, QFileDialog, 
                            QMessageBox, QLabel, QTabWidget)
 from ui.task_tree import TaskTreeWidget
+from ui.task_pill_delegate import TaskPillDelegate
 from ui.category_manager import CategoryManager
 from ui.priority_manager import PriorityManager
 from ui.status_manager import StatusManager
 from ui.app_settings import AppSettingsWidget, SettingsManager
 from PyQt6.QtGui import QKeySequence, QShortcut, QIcon, QFont
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
 from pathlib import Path
 from ui.status_manager import StatusManager, StatusItem
 from ui.task_dialogs import EditStatusDialog
@@ -182,6 +183,16 @@ class MainWindow(QMainWindow):
         settings_button.clicked.connect(self.show_settings)
         button_layout.addWidget(settings_button)
         
+        # Toggle View button
+        toggle_view_button = QPushButton("Toggle View")
+        toggle_view_button.setFixedHeight(40)
+        toggle_view_button.setStyleSheet("""
+            background-color: #607D8B;
+        """)
+        toggle_view_button.clicked.connect(self.toggle_task_view)
+        toggle_view_button.setToolTip("Toggle between compact and full view")
+        button_layout.addWidget(toggle_view_button)
+        
         # Add buttons to main layout
         layout.addLayout(button_layout)
 
@@ -206,6 +217,10 @@ class MainWindow(QMainWindow):
         self.priority_manager = PriorityManager()
         self.settings_tabs.addTab(self.priority_manager, "Priorities")
         
+        # Create Status Manager tab
+        self.status_manager = StatusManager()
+        self.settings_tabs.addTab(self.status_manager, "Statuses")
+        
         # Create App Settings tab
         self.app_settings = AppSettingsWidget(self)
         self.settings_tabs.addTab(self.app_settings, "App Settings")
@@ -226,7 +241,7 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(done_button)
         button_layout.addStretch()  # Push button to the left
         layout.addLayout(button_layout)
-    
+
     def show_task_view(self):
         self.stacked_widget.setCurrentIndex(0)
         # Refresh tree when returning from settings
@@ -372,6 +387,51 @@ class MainWindow(QMainWindow):
                     QMessageBox.information(self, "Success", "Template CSV created successfully!")
                 except Exception as e:
                     QMessageBox.critical(self, "Error", f"Error creating template: {str(e)}")
+
+    def toggle_task_view(self):
+        print("Toggle view button clicked")
+        
+        # Get the delegate
+        delegate = self.tree.itemDelegate()
+        
+        # Make sure the delegate is the right type
+        print(f"Delegate type: {type(delegate).__name__}")
+        
+        # Toggle the mode and update items
+        if isinstance(delegate, TaskPillDelegate):
+            # Explicitly set compact mode attribute
+            if not hasattr(delegate, 'compact_mode'):
+                delegate.compact_mode = False
+            
+            # Toggle and print the new state
+            delegate.compact_mode = not delegate.compact_mode
+            print(f"Compact mode: {delegate.compact_mode}")
+            
+            # Update button text
+            sender = self.sender()
+            if sender:
+                sender.setText("Full View" if delegate.compact_mode else "Compact View")
+            
+            # Force a repaint
+            self.tree.viewport().update()
+            
+            # Apply to all items
+            for i in range(self.tree.topLevelItemCount()):
+                self.toggle_item_view(self.tree.topLevelItem(i), delegate.compact_mode)
+            
+            # Force layout update
+            self.tree.scheduleDelayedItemsLayout()
+        else:
+            print("Delegate is not a TaskPillDelegate instance")
+
+    def toggle_item_view(self, item, compact_mode):
+        # Set item size
+        height = 40 if compact_mode else 80  # Compact or full height
+        item.setSizeHint(0, QSize(self.tree.viewport().width(), height + 10))
+        
+        # Process children
+        for i in range(item.childCount()):
+            self.toggle_item_view(item.child(i), compact_mode)
 
 def main():
     app = QApplication(sys.argv)
