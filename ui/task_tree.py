@@ -759,4 +759,48 @@ class TaskTreeWidget(QTreeWidget):
         # Force a viewport update to ensure proper redrawing
         self.viewport().update()
         
+    def debug_toggle_buttons(self):
+        """Debug method to force toggle buttons to appear on all items"""
+        delegate = self.itemDelegate()
+        if isinstance(delegate, TaskPillDelegate):
+            print("Forcing toggle buttons to appear on all items")
+            # First we need to add the show_toggle_button method to the delegate
+            if not hasattr(delegate, 'show_toggle_button'):
+                def show_toggle_button(tree_widget, item_index):
+                    """Force show the toggle button for a specific item"""
+                    delegate.hover_item = item_index
+                    rect = tree_widget.visualRect(item_index)
+                    delegate.toggle_button_rect = QRectF(
+                        rect.center().x() - 12,
+                        rect.top() - 12,
+                        24, 24
+                    )
+                    print(f"Set toggle button for item at index {item_index.row()}")
+                
+                # Add the method to the delegate
+                from types import MethodType
+                delegate.show_toggle_button = MethodType(show_toggle_button, delegate)
+            
+            # Now show buttons for all top-level items
+            for i in range(self.topLevelItemCount()):
+                index = self.model().index(i, 0)
+                delegate.show_toggle_button(self, index)
+                
+                # Also add for child items
+                item = self.topLevelItem(i)
+                self._debug_add_buttons_to_children(item, delegate)
         
+        # Force repaint to show the buttons
+        self.viewport().update()
+        print("Forced viewport update to show toggle buttons")
+
+    def _debug_add_buttons_to_children(self, parent_item, delegate):
+        """Helper for debug_toggle_buttons to add buttons to child items"""
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            index = self.indexFromItem(child)
+            delegate.show_toggle_button(self, index)
+            # Recursively add to this child's children
+            self._debug_add_buttons_to_children(child, delegate)
+            
+    

@@ -2,7 +2,7 @@
 
 from PyQt6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QApplication, QStyle
 from PyQt6.QtGui import QPainter, QPainterPath, QColor, QBrush, QPen, QFont
-from PyQt6.QtCore import QRectF, Qt, QSize, QPoint
+from PyQt6.QtCore import QRectF, Qt, QSize, QPoint, QPointF
 from datetime import datetime, date
 import sqlite3
 from pathlib import Path
@@ -18,35 +18,85 @@ class TaskPillDelegate(QStyledItemDelegate):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.text_padding = 10  # Padding between text and pill edge
-        self.pill_height = 80   # Default pill height (full view)
-        self.compact_height = 40  # Compact pill height
-        self.pill_radius = 15   # Corner radius for the pill
-        self.item_margin = 5    # Margin between items
-        self.left_section_width = 100  # Width of the left section
-        self.right_section_width = 100  # Width of the right section
+        # Initialize attributes
+        self.text_padding = 10
+        self.pill_height = 80
+        self.compact_height = 40
+        self.pill_radius = 15
+        self.item_margin = 5
+        self.left_section_width = 100
+        self.right_section_width = 100
         
-        # Track hover state and button position for each item
+        # Hover tracking
         self.hover_item = None
-        self.hover_rect = None
         self.toggle_button_rect = None
+        self.all_button_rects = {}
         
-        # Track compact/expanded state for each item - will be loaded from DB
+        # Track compact states
         self.compact_items = set()
-        
-        # Load initial compact states from database
         self.load_compact_states()
         
-        # Install event filter on parent for hover tracking
+        # Install event filter on parent widget's viewport
         if parent:
+            print("Setting up mouse tracking and event filter")
             parent.setMouseTracking(True)
-            parent.viewport().setMouseTracking(True)  # IMPORTANT: Set on viewport too
+            parent.viewport().setMouseTracking(True)
+            
+            # Install event filter on both parent and viewport for redundancy
             parent.installEventFilter(self)
-            print("Event filter installed on parent widget")
+            parent.viewport().installEventFilter(self)
+            print("Event filter installed on parent viewport")
 
     def eventFilter(self, source, event):
-        """Handle mouse events for button clicks"""
-        if event.type() == event.Type.MouseButtonPress:
+        """Handle mouse events for hover detection and button clicks"""
+        # Check if we're handling a tree widget or its viewport
+        is_tree_widget = hasattr(source, 'indexAt')
+        is_viewport = hasattr(source, 'parent') and hasattr(source.parent(), 'indexAt')
+        
+        # Handle mouse movement for hover effects
+        if event.type() == event.Type.MouseMove:
+            # Get position and find item under cursor
+            if hasattr(event, 'position'):
+                pos = event.position().toPoint()
+            elif hasattr(event, 'pos'):
+                pos = event.pos()
+            else:
+                return super().eventFilter(source, event)
+            
+            # Get the tree widget and adjust position if needed
+            tree_widget = None
+            if is_tree_widget:
+                tree_widget = source
+            elif is_viewport:
+                tree_widget = source.parent()
+                # No need to adjust position for viewport
+            else:
+                # Not a tree widget or viewport, can't handle
+                return super().eventFilter(source, event)
+            
+            # Now use tree_widget to find item at position
+            index = tree_widget.indexAt(pos)
+            if index.isValid():
+                # Set hover item and force redraw
+                self.hover_item = index
+                # Calculate button position
+                rect = tree_widget.visualRect(index)
+                self.toggle_button_rect = QRectF(
+                    rect.center().x() - 12,  # 12 = half of button size
+                    rect.top() - 12,  # Position button above item
+                    24, 24  # Button size
+                )
+                print(f"Hover detected on item at position {pos}, index row: {index.row()}")
+                tree_widget.viewport().update()
+            else:
+                # Clear hover state if not over an item
+                if self.hover_item:
+                    self.hover_item = None
+                    tree_widget.viewport().update()
+                    print("Cleared hover state")
+        
+        # Handle mouse clicks for toggle button
+        elif event.type() == event.Type.MouseButtonPress:
             print("Mouse button press detected")
             # Get position
             try:
@@ -56,14 +106,67 @@ class TaskPillDelegate(QStyledItemDelegate):
                     pos = event.pos()
                 else:
                     pos = event.globalPos()
+                
+                # Create a QPointF from the QPoint coordinates
+                pos_f = QPointF(pos.x(), pos.y())
+                print(f"Mouse position: QPoint({pos.x()}, {pos.y()}) converted to QPointF({pos_f.x()}, {pos_f.y()})")
             except Exception as e:
                 print(f"Error getting mouse position: {e}")
                 return super().eventFilter(source, event)
+            
+            # Get the tree widget and adjust position if needed
+            tree_widget = None
+            if is_tree_widget:
+                tree_widget = source
+            elif is_viewport:
+                tree_widget = source.parent()
+            else:
+                # Not a tree widget or viewport, can't handle
+                return super().eventFilter(source, event)
                 
-            # Check if click was on any toggle button
+            # Check if hover item exists and button is visible
+            if self.hover_item and self.toggle_button_rect:
+                # Check if click was on the toggle button
+                if self.toggle_button_rect.contains(pos_f):
+                    print("Toggle button clicked")
+                    
+                    # Get the item data to find the ID
+                    item_data = self.hover_item.data(Qt.ItemDataRole.UserRole)
+                    if isinstance(item_data, dict) and 'id' in item_data:
+                        item_id = item_data['id']
+                        print(f"Item ID: {item_id}")
+                        
+                        # Toggle compact state
+                        is_compact = item_id in self.compact_items
+                        if is_compact:
+                            self.compact_items.remove(item_id)
+                        else:
+                            self.compact_items.add(item_id)
+                        
+                        # Save state to database
+                        self.save_compact_state(item_id, not is_compact)
+                        
+                        # Get tree widget item
+                        item = None
+                        if hasattr(tree_widget, 'itemFromIndex'):
+                            item = tree_widget.itemFromIndex(self.hover_item)
+                        
+                        # Update item size if found
+                        if item:
+                            height = self.compact_height if not is_compact else self.pill_height
+                            item.setSizeHint(0, QSize(tree_widget.viewport().width(), 
+                                                    height + self.item_margin * 2))
+                            tree_widget.scheduleDelayedItemsLayout()  # Force layout update
+                            print(f"Item size updated, new height: {height}")
+                        
+                        # Force repaint
+                        tree_widget.viewport().update()
+                        return True  # Event handled
+            
+            # Also check the all_button_rects dictionary for clicks (for items not under hover)
             if hasattr(self, 'all_button_rects'):
-                for item_id, (button_rect, index) in self.all_button_rects.items():
-                    if button_rect.contains(pos):
+                for item_id, (button_rect, item_index) in self.all_button_rects.items():
+                    if button_rect.contains(pos_f):
                         print(f"Toggle button clicked for item ID: {item_id}")
                         
                         # Toggle compact state for this item
@@ -79,27 +182,21 @@ class TaskPillDelegate(QStyledItemDelegate):
                         
                         # Update the item size
                         item = None
-                        if hasattr(source, 'itemFromIndex'):
-                            item = source.itemFromIndex(index)
-                        else:
-                            # Find item by ID
-                            for i in range(source.topLevelItemCount()):
-                                if self._find_item_by_id(source.topLevelItem(i), item_id):
-                                    item = self._find_item_by_id(source.topLevelItem(i), item_id)
-                                    break
+                        if hasattr(tree_widget, 'itemFromIndex'):
+                            item = tree_widget.itemFromIndex(item_index)
                         
                         # Update item size if found
                         if item:
                             height = self.compact_height if not is_compact else self.pill_height
-                            item.setSizeHint(0, QSize(self.all_button_rects[item_id][0].width() * 10, 
+                            item.setSizeHint(0, QSize(tree_widget.viewport().width(), 
                                                 height + self.item_margin * 2))
-                            source.scheduleDelayedItemsLayout()  # Force layout update
+                            tree_widget.scheduleDelayedItemsLayout()  # Force layout update
                             print(f"Item size updated, new height: {height}")
                         
                         # Force repaint
-                        source.viewport().update()
+                        tree_widget.viewport().update()
                         return True  # Event handled
-        
+                        
         return super().eventFilter(source, event)
 
     def load_compact_states(self):
@@ -282,7 +379,7 @@ class TaskPillDelegate(QStyledItemDelegate):
         painter.drawPath(path)
         
         # Calculate section heights for the left panel
-        # In compact mode, make each section smaller but preserve all three
+        # In compact mode, make each section smaller
         if is_compact:
             section_height = rect.height() / 3
         else:
@@ -368,14 +465,15 @@ class TaskPillDelegate(QStyledItemDelegate):
         title_font.setPointSize(10)
         painter.setFont(title_font)
         painter.setPen(QColor(0, 0, 0))  # Black text
-        
+
+        # Define title_rect based on compact mode
         if is_compact:
-            # In compact mode, title takes full width
+            # In compact mode, title takes top half width
             title_rect = QRectF(
                 rect.left() + self.left_section_width + self.text_padding,
                 rect.top(),
                 rect.width() - self.left_section_width - self.right_section_width - self.text_padding * 2,
-                rect.height()
+                rect.height() / 2  # Only take the top half now
             )
         else:
             # In full mode, title is at the top
@@ -385,13 +483,13 @@ class TaskPillDelegate(QStyledItemDelegate):
                 rect.width() - self.left_section_width - self.right_section_width - self.text_padding * 2,
                 20  # Height for title
             )
-        
+
         # Draw title with ellipsis if too long
         elidedTitle = painter.fontMetrics().elidedText(
             title, Qt.TextElideMode.ElideRight, int(title_rect.width()))
         painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elidedTitle)
-        
-        # In full mode, draw description
+
+        # In full mode only, draw description
         if not is_compact and description:
             desc_font = QFont(option.font)
             desc_font.setPointSize(8)
@@ -408,7 +506,7 @@ class TaskPillDelegate(QStyledItemDelegate):
             elidedText = painter.fontMetrics().elidedText(
                 description, Qt.TextElideMode.ElideRight, int(desc_rect.width()))
             painter.drawText(desc_rect, Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, elidedText)
-        
+
         # Draw due date if available
         if due_date_str:
             date_font = QFont(option.font)
@@ -417,14 +515,16 @@ class TaskPillDelegate(QStyledItemDelegate):
             painter.setPen(QColor(100, 100, 100))  # Gray text
             
             if is_compact:
-                # In compact mode, show due date next to title
-                title_width = painter.fontMetrics().horizontalAdvance(elidedTitle)
+                # In compact mode, show due date below title but still compact
+                title_rect_bottom = rect.top() + rect.height() / 2 + 2  # Just below vertical center
                 date_rect = QRectF(
-                    rect.left() + self.left_section_width + self.text_padding + title_width + 15,
-                    rect.top(),
-                    150,  # Fixed width for due date
-                    rect.height()
+                    rect.left() + self.left_section_width + self.text_padding,
+                    title_rect_bottom,
+                    rect.width() - self.left_section_width - self.right_section_width - self.text_padding * 2,
+                    rect.height() / 2 - 2
                 )
+                # Draw text left-aligned
+                painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, f"Due: {due_date_str}")
             else:
                 # In full mode, show due date at bottom
                 date_rect = QRectF(
@@ -433,8 +533,7 @@ class TaskPillDelegate(QStyledItemDelegate):
                     rect.width() - self.left_section_width - self.right_section_width - self.text_padding * 2,
                     15
                 )
-            
-            painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"Due: {due_date_str}")
+                painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"Due: {due_date_str}")
         
         # Draw right details section
         details_rect = QRectF(
@@ -535,10 +634,10 @@ class TaskPillDelegate(QStyledItemDelegate):
 
             # Highlight button based on state
             if item_id in self.compact_items:
-                # Expanded button (up arrow) - bright green
+                # Expand button (down arrow) - bright green
                 painter.setBrush(QBrush(QColor(100, 255, 100)))
             else:
-                # Collapse button (down arrow) - bright blue
+                # Collapse button (up arrow) - bright blue
                 painter.setBrush(QBrush(QColor(100, 200, 255)))
 
             painter.drawEllipse(toggle_button_rect)
@@ -550,8 +649,8 @@ class TaskPillDelegate(QStyledItemDelegate):
             painter.setFont(toggle_font)
             painter.setPen(QColor("#000000"))  # Black text for better visibility
 
-            # Show up arrow if compact (to expand), down arrow if expanded (to compact)
-            icon = "↑" if item_id in self.compact_items else "↓"
+            # Show down arrow if compact (to expand), up arrow if expanded (to compact)
+            icon = "↓" if item_id in self.compact_items else "↑"
             painter.drawText(toggle_button_rect, Qt.AlignmentFlag.AlignCenter, icon)
 
             # Store button rect for click detection (even when not hovering)
@@ -560,7 +659,8 @@ class TaskPillDelegate(QStyledItemDelegate):
             self.all_button_rects[item_id] = (toggle_button_rect, index)
 
             # Restore painting settings
-            painter.restore()        
+            painter.restore()
+            
         # Restore painter
         painter.restore()
     
@@ -576,3 +676,27 @@ class TaskPillDelegate(QStyledItemDelegate):
         height = self.compact_height if item_id in self.compact_items else self.pill_height
         
         return QSize(option.rect.width(), height + self.item_margin * 2)
+    
+    def show_toggle_button(self, tree_widget, item_index):
+        """Force show the toggle button for a specific item (for debugging)"""
+        self.hover_item = item_index
+        rect = tree_widget.visualRect(item_index)
+        self.toggle_button_rect = QRectF(
+            rect.center().x() - 12,
+            rect.top() - 12,
+            24, 24
+        )
+        # Force redraw
+        tree_widget.viewport().update()
+        print(f"Showing toggle button for item at index {item_index.row()}")
+        
+    def debug_toggle_buttons(self):
+        """Debug method to force toggle buttons to appear on all items"""
+        delegate = self.itemDelegate()
+        if isinstance(delegate, TaskPillDelegate):
+            for i in range(self.topLevelItemCount()):
+                index = self.indexFromItem(self.topLevelItem(i))
+                delegate.show_toggle_button(self, index)
+        self.viewport().update()
+        
+    

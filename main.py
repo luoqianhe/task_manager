@@ -147,6 +147,9 @@ class MainWindow(QMainWindow):
         self.tree = TaskTreeWidget()
         layout.addWidget(self.tree)
         
+        # Debug: Force show all toggle buttons
+        self.tree.debug_toggle_buttons() 
+        
         # Buttons container
         button_layout = QHBoxLayout()
         
