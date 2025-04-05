@@ -1,19 +1,15 @@
-# src/main.py
+# src/main.py - with integrated settings changes
 
 from PyQt6.QtWidgets import (QMainWindow, QApplication, QWidget, QVBoxLayout, 
                            QHBoxLayout, QPushButton, QStackedWidget, QFileDialog, 
                            QMessageBox, QLabel, QTabWidget)
 from ui.task_tree import TaskTreeWidget
 from ui.task_pill_delegate import TaskPillDelegate
-from ui.category_manager import CategoryManager
-from ui.priority_manager import PriorityManager
-from ui.status_manager import StatusManager
+from ui.combined_settings import CombinedSettingsManager  # Updated import
 from ui.app_settings import AppSettingsWidget, SettingsManager
 from PyQt6.QtGui import QKeySequence, QShortcut, QIcon, QFont
 from PyQt6.QtCore import Qt, QSize
 from pathlib import Path
-from ui.status_manager import StatusManager, StatusItem
-from ui.task_dialogs import EditStatusDialog
 import csv
 import sys
 import sqlite3
@@ -202,17 +198,9 @@ class MainWindow(QMainWindow):
         # Create tab widget for different settings sections
         self.settings_tabs = QTabWidget()
         
-        # Create Category Manager tab
-        self.category_manager = CategoryManager()
-        self.settings_tabs.addTab(self.category_manager, "Categories")
-        
-        # Create Priority Manager tab
-        self.priority_manager = PriorityManager()
-        self.settings_tabs.addTab(self.priority_manager, "Priorities")
-        
-        # Create Status Manager tab
-        self.status_manager = StatusManager()
-        self.settings_tabs.addTab(self.status_manager, "Statuses")
+        # Create Combined Settings Manager tab (combines Categories, Priorities, and Statuses)
+        self.combined_settings = CombinedSettingsManager()
+        self.settings_tabs.addTab(self.combined_settings, "Task Organization")
         
         # Create App Settings tab
         self.app_settings = AppSettingsWidget(self)
@@ -435,16 +423,12 @@ def main():
     
     # Import all needed classes
     from ui.task_tree import TaskTreeWidget
-    from ui.category_manager import CategoryManager, CategoryItem, EditCategoryDialog
-    from ui.priority_manager import PriorityManager, PriorityItem, EditPriorityDialog
-    from ui.status_manager import StatusManager, StatusItem, EditStatusDialog
+    from ui.combined_settings import CombinedSettingsManager, SettingPillItem, EditItemDialog
     from ui.task_dialogs import AddTaskDialog, EditTaskDialog
     from ui.task_pill_delegate import TaskPillDelegate
     
     # Add get_connection method to all classes
-    for cls in [TaskTreeWidget, CategoryManager, CategoryItem, EditCategoryDialog,
-               PriorityManager, PriorityItem, EditPriorityDialog,
-               StatusManager, StatusItem, EditStatusDialog,
+    for cls in [TaskTreeWidget, CombinedSettingsManager, SettingPillItem, EditItemDialog,
                AddTaskDialog, EditTaskDialog, TaskPillDelegate]:
         setattr(cls, 'get_connection', staticmethod(get_connection))
     
