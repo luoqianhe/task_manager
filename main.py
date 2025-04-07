@@ -25,7 +25,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Task Organizer")
-        self.setGeometry(100, 100, 900, 700)
+        self.setGeometry(100, 100, 800, 600)
         
         # Initialize settings manager
         self.settings = SettingsManager()
@@ -198,9 +198,14 @@ class MainWindow(QMainWindow):
         # Create tab widget for different settings sections
         self.settings_tabs = QTabWidget()
         
-        # Create Combined Settings Manager tab (combines Categories, Priorities, and Statuses)
+        # Create Combined Settings Manager tab
         self.combined_settings = CombinedSettingsManager()
         self.settings_tabs.addTab(self.combined_settings, "Task Organization")
+        
+        # Create Font Settings tab
+        from ui.font_settings import FontSettingsWidget  
+        self.font_settings = FontSettingsWidget(self)
+        self.settings_tabs.addTab(self.font_settings, "Font Settings")
         
         # Create App Settings tab
         self.app_settings = AppSettingsWidget(self)

@@ -1,7 +1,7 @@
 # src/ui/task_pill_delegate.py
 
 from PyQt6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QApplication, QStyle
-from PyQt6.QtGui import QPainter, QPainterPath, QColor, QBrush, QPen, QFont
+from PyQt6.QtGui import QPainter, QPainterPath, QColor, QBrush, QPen, QFont, QFontMetrics
 from PyQt6.QtCore import QRectF, Qt, QSize, QPoint, QPointF
 from datetime import datetime, date
 import sqlite3
@@ -14,8 +14,6 @@ class TaskPillDelegate(QStyledItemDelegate):
         from database.database_manager import get_db_manager
         return get_db_manager().get_connection()
     
-    # Key updates to TaskPillDelegate class
-
     def __init__(self, parent=None):
         super().__init__(parent)
         # Initialize attributes
@@ -315,9 +313,234 @@ class TaskPillDelegate(QStyledItemDelegate):
                 return result
                 
         return None
-    
+
     def paint(self, painter, option, index):
-        # Get data directly from UserRole since we're using a single column tree
+        # Get data from the index
+        user_data = index.data(Qt.ItemDataRole.UserRole)
+        
+        # Check if this is a priority header
+        if isinstance(user_data, dict) and user_data.get('is_priority_header', False):
+            self._draw_priority_header(painter, option, index, user_data)
+        else:
+            # Regular task item
+            self._draw_task_item(painter, option, index)
+
+    def _draw_priority_header(self, painter, option, index, user_data):
+        """Draw a priority header item"""
+        # Save painter state
+        painter.save()
+        
+        # Get data
+        priority = user_data.get('priority', 'Medium')
+        color = user_data.get('color', '#FFC107')
+        expanded = user_data.get('expanded', True)
+        
+        # Calculate rect - REDUCE MARGINS HERE
+        rect = option.rect.adjusted(
+            self.item_margin,
+            self.item_margin,  # Reduce top margin
+            -self.item_margin,
+            -self.item_margin  # Reduce bottom margin
+        )
+        
+        # Draw background
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect), 5, 5)
+        painter.fillPath(path, QBrush(QColor(color)))
+        
+        # Draw expand/collapse arrow
+        arrow_size = 8
+        arrow_x = int(rect.left() + 20)
+        arrow_y = int(rect.top() + rect.height() / 2)
+        
+        painter.setPen(QPen(QColor("#FFFFFF"), 2))
+        if expanded:
+            # Draw DOWN arrow when expanded
+            painter.drawLine(
+                int(arrow_x - arrow_size), int(arrow_y - arrow_size/2), 
+                int(arrow_x), int(arrow_y + arrow_size/2)
+            )
+            painter.drawLine(
+                int(arrow_x), int(arrow_y + arrow_size/2), 
+                int(arrow_x + arrow_size), int(arrow_y - arrow_size/2)
+            )
+        else:
+            # Draw RIGHT arrow when collapsed
+            painter.drawLine(
+                int(arrow_x - arrow_size/2), int(arrow_y - arrow_size), 
+                int(arrow_x + arrow_size/2), int(arrow_y)
+            )
+            painter.drawLine(
+                int(arrow_x + arrow_size/2), int(arrow_y), 
+                int(arrow_x - arrow_size/2), int(arrow_y + arrow_size)
+            )
+        
+        # Draw priority text
+        # Get font settings from SettingsManager
+        settings = self.get_settings_manager()
+        font_family = settings.get_setting("font_family", "Segoe UI")
+        font_size = int(settings.get_setting("font_size", 12))
+        
+        header_font = QFont(font_family)
+        header_font.setPointSize(font_size)
+        header_font.setBold(True)
+        
+        painter.setFont(header_font)
+        painter.setPen(QColor("#FFFFFF"))
+        
+        header_text_rect = QRectF(
+            rect.left() + 40,  # Position after arrow
+            rect.top(),
+            rect.width() - 50,
+            rect.height()
+        )
+        
+        painter.drawText(header_text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, 
+                        priority.upper())
+        
+        # Restore painter
+        painter.restore()
+
+    def _draw_task_item(self, painter, option, index):
+        """Draw a regular task item - modified to include category and status indicators"""
+        # Extract data using our existing method
+        user_data, item_id, title, description, link, status, priority, due_date_str, category = self._extract_item_data(index)
+        
+        # Check if compact
+        is_compact = item_id in self.compact_items
+        
+        # Get the category and status colors
+        category_color = self.get_category_color(category)
+        status_color = self.get_status_color(status)
+        
+        # Save painter state and prepare to draw
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Calculate pill rect and create path
+        rect, path = self._create_pill_path(option)
+        
+        # Draw selection highlight if needed
+        if option.state & QStyle.StateFlag.State_Selected:
+            self._draw_selection_highlight(painter, path)
+        
+        # Draw the main pill background
+        self._draw_pill_background(painter, path)
+        
+        # Draw category and status indicators on the left - get the width used
+        try:
+            left_section_width = self._draw_category_indicator(painter, path, rect, is_compact, 
+                                        category_color, status_color, category, status)
+            # Ensure we have a valid width even if None is returned
+            if left_section_width is None:
+                left_section_width = 60  # Default fallback width
+        except Exception as e:
+            print(f"Error in _draw_category_indicator: {e}")
+            left_section_width = 60  # Default fallback width if exception occurs
+        
+        # Draw content (title, description, due date) - pass the left_section_width
+        self._draw_task_content(painter, rect, is_compact, title, description, due_date_str, item_id, left_section_width)
+        
+        # Draw right details section
+        self._draw_right_panel(painter, path, rect, link)
+        
+        # Draw toggle button if needed
+        self._draw_toggle_button(painter, index, item_id, rect)
+        
+        # Restore painter
+        painter.restore()
+
+    def _draw_category_indicator(self, painter, path, rect, is_compact, category_color, status_color, category, status):
+        """Draw category and status indicators in the left side of the task pill with auto-adjusting width"""
+        # Get font settings from SettingsManager to apply the same font family
+        settings = self.get_settings_manager()
+        font_family = settings.get_setting("font_family", "Segoe UI")
+        left_panel_color = settings.get_setting("left_panel_color", "#FFFFFF")
+        left_panel_size = int(settings.get_setting("left_panel_size", 8))
+        left_panel_bold = settings.get_setting("left_panel_bold", False)
+        
+        # Set up font for text measurement
+        left_panel_font = QFont(font_family)
+        left_panel_font.setPointSize(left_panel_size)
+        if left_panel_bold:
+            left_panel_font.setBold(True)
+        
+        # Measure text width
+        font_metrics = QFontMetrics(left_panel_font)
+        category_text = category or "No Cat"
+        status_text = status or "No Status"
+        
+        # Calculate width needed for each label (adding padding)
+        category_width = font_metrics.horizontalAdvance(category_text) + 20  # 10px padding on each side
+        status_width = font_metrics.horizontalAdvance(status_text) + 20
+        
+        # Use the wider of the two with a minimum of 40px and maximum of 100px
+        left_section_width = max(40, min(100, max(category_width, status_width)))
+        
+        # Use clipping to ensure proper drawing within the pill
+        painter.setClipPath(path)
+        
+        # Split the left section into two parts - top half for category, bottom half for status
+        category_rect = QRectF(
+            rect.left(),
+            rect.top(),
+            left_section_width,  # Auto-adjusted width
+            rect.height() / 2  # Top half for category
+        )
+        
+        status_rect = QRectF(
+            rect.left(),
+            rect.top() + rect.height() / 2,  # Start at middle
+            left_section_width,  # Auto-adjusted width
+            rect.height() / 2  # Bottom half for status
+        )
+        
+        # Fill the category section
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(category_color))
+        painter.drawRect(category_rect)
+        
+        # Fill the status section
+        painter.setBrush(QBrush(status_color))
+        painter.drawRect(status_rect)
+        
+        # Draw labels in the sections if not compact view
+        if not is_compact:
+            painter.setFont(left_panel_font)
+            painter.setPen(QColor(left_panel_color))
+            
+            # Draw category label - centered in the category rect
+            painter.drawText(
+                category_rect,
+                Qt.AlignmentFlag.AlignCenter,
+                category_text
+            )
+            
+            # Draw status label - centered in the status rect
+            painter.drawText(
+                status_rect,
+                Qt.AlignmentFlag.AlignCenter,
+                status_text
+            )
+        
+        # Remove clipping
+        painter.setClipping(False)
+        
+        # Draw a divider line at the new position
+        painter.setPen(QPen(QColor("#cccccc"), 1))
+        painter.drawLine(
+            rect.left() + left_section_width,  # Updated right edge of indicators
+            rect.top(),
+            rect.left() + left_section_width,
+            rect.bottom()
+        )
+        
+        # Make sure to return the width value
+        return left_section_width
+
+    def _extract_item_data(self, index):
+        """Extract and normalize item data from the index"""
         user_data = index.data(Qt.ItemDataRole.UserRole)
         
         # Extract all data from the dictionary stored in UserRole
@@ -339,21 +562,11 @@ class TaskPillDelegate(QStyledItemDelegate):
             priority = ""
             due_date_str = ""
             category = ""
-        
-        # Check if this item should be compact
-        is_compact = item_id in self.compact_items
-        
-        # Get colors for status, priority, and category
-        status_color = self.get_status_color(status)
-        priority_color = self.get_priority_color(priority)
-        category_color = self.get_category_color(category)
-        
-        # Save painter state
-        painter.save()
-        
-        # Prepare to draw
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
+            
+        return user_data, item_id, title, description, link, status, priority, due_date_str, category
+
+    def _create_pill_path(self, option):
+        """Create the pill rect and path"""
         # Calculate pill rect with margins
         rect = option.rect.adjusted(
             self.item_margin, 
@@ -367,23 +580,33 @@ class TaskPillDelegate(QStyledItemDelegate):
         rectF = QRectF(rect)
         path.addRoundedRect(rectF, self.pill_radius, self.pill_radius)
         
-        # Draw selection highlight if item is selected
-        if option.state & QStyle.StateFlag.State_Selected:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(QColor(0, 120, 215, 40)))  # Light blue transparent
-            painter.drawPath(path)
-        
-        # Draw the main pill first
+        return rect, path
+
+    def _draw_selection_highlight(self, painter, path):
+        """Draw selection highlight"""
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(0, 120, 215, 40)))  # Light blue transparent
+        painter.drawPath(path)
+
+    def _draw_pill_background(self, painter, path):
+        """Draw the main pill background"""
         painter.setPen(QPen(QColor("#cccccc"), 1))
         painter.setBrush(QBrush(QColor("#f5f5f5")))
         painter.drawPath(path)
+
+    def _draw_left_panel(self, painter, path, rect, is_compact, priority, priority_color, category, category_color, status, status_color):
+        """Draw the left panel with priority, category and status sections"""
+        # Calculate section heights
+        section_height = rect.height() / 3
         
-        # Calculate section heights for the left panel
-        # In compact mode, make each section smaller
-        if is_compact:
-            section_height = rect.height() / 3
-        else:
-            section_height = rect.height() / 3
+        # Get settings for left panel text
+        settings = self.get_settings_manager()
+        left_panel_color = settings.get_setting("left_panel_color", "#FFFFFF")
+        left_panel_size = int(settings.get_setting("left_panel_size", 8))
+        left_panel_bold = settings.get_setting("left_panel_bold", False)
+        
+        # Use clipping to ensure proper drawing within the pill
+        painter.setClipPath(path)
         
         # Draw priority section (top left)
         priority_rect = QRectF(
@@ -393,18 +616,21 @@ class TaskPillDelegate(QStyledItemDelegate):
             section_height
         )
         
-        # Use clipping to ensure proper drawing within the pill
-        painter.setClipPath(path)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(priority_color))
         painter.drawRect(priority_rect)
         
         # Draw priority text on top of the color (only in full mode)
         if not is_compact:
-            font = QFont(option.font)
-            font.setPointSize(7)  # Small font size to fit in the section
-            painter.setFont(font)
-            painter.setPen(QColor("white"))  # White text on colored background
+            # Set up font for left panel text
+            left_panel_font = QFont(painter.font())
+            left_panel_font.setPointSize(left_panel_size)
+            if left_panel_bold:
+                left_panel_font.setBold(True)
+                
+            painter.setFont(left_panel_font)
+            painter.setPen(QColor(left_panel_color))  # Use custom text color
+            
             painter.drawText(
                 priority_rect,
                 Qt.AlignmentFlag.AlignCenter,
@@ -458,29 +684,61 @@ class TaskPillDelegate(QStyledItemDelegate):
             rect.left() + self.left_section_width,
             rect.bottom()
         )
-        
-        # Draw task title (bold)
-        title_font = QFont(option.font)
-        title_font.setBold(True)
-        title_font.setPointSize(10)
-        painter.setFont(title_font)
-        painter.setPen(QColor(0, 0, 0))  # Black text
 
-        # Define title_rect based on compact mode
+    def _draw_task_content(self, painter, rect, is_compact, title, description, due_date_str, item_id, left_section_width):
+        """Draw the main task content (title, description, due date)"""
+        # Get font settings from SettingsManager
+        settings = self.get_settings_manager()
+        font_family = settings.get_setting("font_family", "Segoe UI")
+        font_size = int(settings.get_setting("font_size", 10))
+        
+        # Draw the title with custom font settings
+        self._draw_title(painter, rect, is_compact, title, font_family, font_size, settings, left_section_width)
+        
+        # Draw description if in full mode
+        if not is_compact and description:
+            self._draw_description(painter, rect, description, font_family, font_size, settings, left_section_width)
+        
+        # Draw due date if available
+        if due_date_str:
+            self._draw_due_date(painter, rect, is_compact, due_date_str, font_family, font_size, settings, left_section_width)
+            
+    def _draw_title(self, painter, rect, is_compact, title, font_family, font_size, settings, left_section_width):
+        """Draw the task title with custom font settings"""
+        # Get title style settings
+        bold_titles = settings.get_setting("bold_titles", True)
+        title_color = settings.get_setting("title_color", "#333333")
+        
+        # Create title font
+        title_font = QFont(font_family, font_size)
+        if bold_titles:
+            title_font.setBold(True)
+        
+        # Set font weight based on settings
+        weight = settings.get_setting("font_weight", 0)  # 0=Regular, 1=Medium, 2=Bold
+        if weight == 1:
+            title_font.setWeight(QFont.Weight.Medium)
+        elif weight == 2:
+            title_font.setWeight(QFont.Weight.Bold)
+        
+        painter.setFont(title_font)
+        painter.setPen(QColor(title_color))
+        
+        # Define title_rect based on compact mode - using the updated left_section_width
         if is_compact:
             # In compact mode, title takes top half width
             title_rect = QRectF(
-                rect.left() + self.left_section_width + self.text_padding,
+                rect.left() + left_section_width + self.text_padding,
                 rect.top(),
-                rect.width() - self.left_section_width - self.right_section_width - self.text_padding * 2,
+                rect.width() - left_section_width - self.right_section_width - self.text_padding * 2,
                 rect.height() / 2  # Only take the top half now
             )
         else:
             # In full mode, title is at the top
             title_rect = QRectF(
-                rect.left() + self.left_section_width + self.text_padding,
+                rect.left() + left_section_width + self.text_padding,
                 rect.top() + 10,
-                rect.width() - self.left_section_width - self.right_section_width - self.text_padding * 2,
+                rect.width() - left_section_width - self.right_section_width - self.text_padding * 2,
                 20  # Height for title
             )
 
@@ -489,52 +747,66 @@ class TaskPillDelegate(QStyledItemDelegate):
             title, Qt.TextElideMode.ElideRight, int(title_rect.width()))
         painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elidedTitle)
 
-        # In full mode only, draw description
-        if not is_compact and description:
-            desc_font = QFont(option.font)
-            desc_font.setPointSize(8)
-            painter.setFont(desc_font)
-            painter.setPen(QColor(100, 100, 100))  # Gray text
-            
-            desc_rect = QRectF(
-                rect.left() + self.left_section_width + self.text_padding,
-                rect.top() + 30,
-                rect.width() - self.left_section_width - self.right_section_width - self.text_padding * 2,
-                30  # Height for description
-            )
-            # Truncate description if too long and add ellipsis
-            elidedText = painter.fontMetrics().elidedText(
-                description, Qt.TextElideMode.ElideRight, int(desc_rect.width()))
-            painter.drawText(desc_rect, Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, elidedText)
-
-        # Draw due date if available
-        if due_date_str:
-            date_font = QFont(option.font)
-            date_font.setPointSize(8)
-            painter.setFont(date_font)
-            painter.setPen(QColor(100, 100, 100))  # Gray text
-            
-            if is_compact:
-                # In compact mode, show due date below title but still compact
-                title_rect_bottom = rect.top() + rect.height() / 2 + 2  # Just below vertical center
-                date_rect = QRectF(
-                    rect.left() + self.left_section_width + self.text_padding,
-                    title_rect_bottom,
-                    rect.width() - self.left_section_width - self.right_section_width - self.text_padding * 2,
-                    rect.height() / 2 - 2
-                )
-                # Draw text left-aligned
-                painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, f"Due: {due_date_str}")
-            else:
-                # In full mode, show due date at bottom
-                date_rect = QRectF(
-                    rect.left() + self.left_section_width + self.text_padding,
-                    rect.top() + rect.height() - 18,
-                    rect.width() - self.left_section_width - self.right_section_width - self.text_padding * 2,
-                    15
-                )
-                painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"Due: {due_date_str}")
+    def _draw_description(self, painter, rect, description, font_family, font_size, settings, left_section_width):
+        """Draw the task description with custom font settings"""
+        # Get description style settings
+        italic_desc = settings.get_setting("italic_descriptions", False)
+        desc_color = settings.get_setting("description_color", "#666666")
         
+        # Create description font
+        desc_font = QFont(font_family, font_size - 2)  # Slightly smaller
+        if italic_desc:
+            desc_font.setItalic(True)
+        
+        painter.setFont(desc_font)
+        painter.setPen(QColor(desc_color))
+        
+        # Define description rect - using left_section_width
+        desc_rect = QRectF(
+            rect.left() + left_section_width + self.text_padding,
+            rect.top() + 30,
+            rect.width() - left_section_width - self.right_section_width - self.text_padding * 2,
+            30  # Height for description
+        )
+        
+        # Truncate description if too long and add ellipsis
+        elidedText = painter.fontMetrics().elidedText(
+            description, Qt.TextElideMode.ElideRight, int(desc_rect.width()))
+        painter.drawText(desc_rect, Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, elidedText)
+
+    def _draw_due_date(self, painter, rect, is_compact, due_date_str, font_family, font_size, settings, left_section_width):
+        """Draw the due date with custom font settings"""
+        # Get due date style settings
+        due_color = settings.get_setting("due_date_color", "#888888")
+        
+        # Create due date font
+        date_font = QFont(font_family, font_size - 2)  # Slightly smaller
+        painter.setFont(date_font)
+        painter.setPen(QColor(due_color))
+        
+        if is_compact:
+            # In compact mode, show due date below title but still compact
+            title_rect_bottom = rect.top() + rect.height() / 2 + 2  # Just below vertical center
+            date_rect = QRectF(
+                rect.left() + left_section_width + self.text_padding,  # Use left_section_width
+                title_rect_bottom,
+                rect.width() - left_section_width - self.right_section_width - self.text_padding * 2,
+                rect.height() / 2 - 2
+            )
+            # Draw text left-aligned
+            painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, f"Due: {due_date_str}")
+        else:
+            # In full mode, show due date at bottom
+            date_rect = QRectF(
+                rect.left() + left_section_width + self.text_padding,  # Use left_section_width
+                rect.top() + rect.height() - 18,
+                rect.width() - left_section_width - self.right_section_width - self.text_padding * 2,
+                15
+            )
+            painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"Due: {due_date_str}")
+
+    def _draw_right_panel(self, painter, path, rect, link):
+        """Draw the right details section (Link indicator)"""
         # Draw right details section
         details_rect = QRectF(
             rect.right() - self.right_section_width,
@@ -561,7 +833,7 @@ class TaskPillDelegate(QStyledItemDelegate):
         
         # Draw details section (Link)
         if link:
-            link_font = QFont(option.font)
+            link_font = QFont(painter.font())
             link_font.setPointSize(9)
             painter.setFont(link_font)
             painter.setPen(QColor(0, 0, 255))  # Blue text for link
@@ -587,7 +859,7 @@ class TaskPillDelegate(QStyledItemDelegate):
             painter.drawText(link_text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "Link")
         else:
             # Draw "No Link" text
-            font = QFont(option.font)
+            font = QFont(painter.font())
             font.setPointSize(8)
             painter.setFont(font)
             painter.setPen(QColor(150, 150, 150))  # Light gray text
@@ -596,10 +868,18 @@ class TaskPillDelegate(QStyledItemDelegate):
                 Qt.AlignmentFlag.AlignCenter,
                 "No Link"
             )
+
+    def _draw_toggle_button(self, painter, index, item_id, rect):
+        """Draw the toggle button if this is the hover item"""
+        # Get data from the index
+        user_data = index.data(Qt.ItemDataRole.UserRole)
         
-        # Draw toggle button if this is the hover item
+        # Skip drawing toggle button for priority headers
+        if isinstance(user_data, dict) and user_data.get('is_priority_header', False):
+            return
+            
+        # Continue with regular toggle button drawing for tasks
         if self.hover_item and self.hover_item == index and self.toggle_button_rect:
-            print(f"Drawing toggle button for item {index.row()}")
             # Save current state
             painter.save()
 
@@ -643,7 +923,7 @@ class TaskPillDelegate(QStyledItemDelegate):
             painter.drawEllipse(toggle_button_rect)
 
             # Draw arrow icon with larger font
-            toggle_font = QFont(option.font)
+            toggle_font = QFont(painter.font())
             toggle_font.setPointSize(16)  # Larger size
             toggle_font.setBold(True)
             painter.setFont(toggle_font)
@@ -660,23 +940,25 @@ class TaskPillDelegate(QStyledItemDelegate):
 
             # Restore painting settings
             painter.restore()
-            
-        # Restore painter
-        painter.restore()
-    
+
     def sizeHint(self, option, index):
-        """Return appropriate size based on compact state"""
+        """Return appropriate size based on compact state or header type"""
         user_data = index.data(Qt.ItemDataRole.UserRole)
         
-        # Get item ID and check if it's in the compact_items set
+        # Check if this is a priority header
+        if isinstance(user_data, dict) and user_data.get('is_priority_header', False):
+            # Use a fixed smaller height for priority headers
+            header_height = 25  # Smaller fixed height value
+            return QSize(option.rect.width(), header_height + self.item_margin * 2)
+        
+        # Regular task item sizing
         item_id = 0
         if isinstance(user_data, dict) and 'id' in user_data:
             item_id = user_data['id']
         
         height = self.compact_height if item_id in self.compact_items else self.pill_height
-        
         return QSize(option.rect.width(), height + self.item_margin * 2)
-    
+
     def show_toggle_button(self, tree_widget, item_index):
         """Force show the toggle button for a specific item (for debugging)"""
         self.hover_item = item_index
@@ -699,4 +981,17 @@ class TaskPillDelegate(QStyledItemDelegate):
                 delegate.show_toggle_button(self, index)
         self.viewport().update()
         
-    
+    def get_settings_manager(self):
+        """Get the settings manager instance"""
+        try:
+            # Try to get it from the tree widget's parent (MainWindow)
+            tree_widget = self.parent()
+            if tree_widget and hasattr(tree_widget, 'parent') and hasattr(tree_widget.parent(), 'settings'):
+                return tree_widget.parent().settings
+        except:
+            pass
+        
+        # Fallback to creating a new instance
+        from ui.app_settings import SettingsManager
+        return SettingsManager()
+

@@ -22,6 +22,7 @@ class TaskTreeWidget(QTreeWidget):
     
     def __init__(self):
         super().__init__()
+        self.setRootIsDecorated(False)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDragDropMode(QTreeWidget.DragDropMode.InternalMove)
@@ -91,6 +92,53 @@ class TaskTreeWidget(QTreeWidget):
                 self.delete_task(selected_items[0])
         else:
             super().keyPressEvent(event)
+
+    def mousePressEvent(self, event):
+        """Handle mouse press events including priority header toggle"""
+        index = self.indexAt(event.position().toPoint())
+        if index.isValid():
+            item = self.itemFromIndex(index)
+            data = item.data(0, Qt.ItemDataRole.UserRole)
+            
+            # Check if this is a priority header
+            if isinstance(data, dict) and data.get('is_priority_header', False):
+                # Check if click is in the arrow area (left 40 pixels)
+                if event.position().x() < 40:
+                    # Toggle expanded state
+                    expanded = data.get('expanded', True)
+                    
+                    # Toggle the state
+                    if expanded:
+                        self.collapseItem(item)
+                        data['expanded'] = False
+                    else:
+                        self.expandItem(item)
+                        data['expanded'] = True
+                    
+                    # Update the item data
+                    item.setData(0, Qt.ItemDataRole.UserRole, data)
+                    
+                    # Save expanded state to settings
+                    expanded_priorities = []
+                    for i in range(self.topLevelItemCount()):
+                        top_item = self.topLevelItem(i)
+                        top_data = top_item.data(0, Qt.ItemDataRole.UserRole)
+                        if isinstance(top_data, dict) and top_data.get('is_priority_header', False):
+                            # Check if the item is expanded
+                            if not top_data.get('expanded', True):
+                                continue
+                            expanded_priorities.append(top_data.get('priority'))
+                    
+                    settings = self.get_settings_manager()
+                    settings.set_setting("expanded_priorities", expanded_priorities)
+                    
+                    # Force update
+                    self.viewport().update()
+                    event.accept()  # Mark the event as handled
+                    return  # Return without a value instead of returning True
+        
+        # Handle regular mouse press events
+        super().mousePressEvent(event)
 
     def delete_task(self, item):
         reply = QMessageBox.question(
@@ -315,6 +363,10 @@ class TaskTreeWidget(QTreeWidget):
     def edit_task(self, item):
         from .task_dialogs import EditTaskDialog
         
+        # Skip if not a task item
+        if not hasattr(item, 'task_id'):
+            return
+            
         # Get current data from the item's user role data
         data = item.data(0, Qt.ItemDataRole.UserRole)
         
@@ -323,6 +375,14 @@ class TaskTreeWidget(QTreeWidget):
         is_compact = False
         if isinstance(delegate, TaskPillDelegate):
             is_compact = item.task_id in delegate.compact_items
+        
+        # Determine the parent ID safely
+        parent_id = None
+        if item.parent():
+            # Only use parent_id if the parent is a regular task item (not a priority header)
+            if hasattr(item.parent(), 'task_id'):
+                parent_id = item.parent().task_id
+            # If parent is a priority header, leave parent_id as None
         
         task_data = {
             'id': item.task_id,
@@ -333,7 +393,7 @@ class TaskTreeWidget(QTreeWidget):
             'priority': data['priority'],
             'due_date': data['due_date'],
             'category': data['category'],
-            'parent_id': item.parent().task_id if item.parent() else None,
+            'parent_id': parent_id,  # Safely determined parent_id
             'is_compact': is_compact  # Include compact state
         }
         
@@ -449,7 +509,37 @@ class TaskTreeWidget(QTreeWidget):
 
     def handle_double_click(self, item, column):
         data = item.data(0, Qt.ItemDataRole.UserRole)
-        if data['link']:  # Link column
+        
+        # Check if this is a priority header
+        if isinstance(data, dict) and data.get('is_priority_header', False):
+            # Toggle expanded state for priority headers on double-click
+            expanded = data.get('expanded', True)
+            data['expanded'] = not expanded
+            item.setData(0, Qt.ItemDataRole.UserRole, data)
+            
+            if expanded:
+                self.collapseItem(item)
+            else:
+                self.expandItem(item)
+            
+            return  # Exit early for priority headers
+        
+        # Skip if not a task item
+        if not hasattr(item, 'task_id'):
+            return
+        
+        # Get the position of the double-click
+        pos = self.mapFromGlobal(self.cursor().pos())
+        rect = self.visualItemRect(item)
+        
+        # Calculate the right section boundary (where the link area begins)
+        # This should match the width used in the delegate's _draw_right_panel method
+        right_section_width = 100  # Same as in TaskPillDelegate
+        right_section_boundary = rect.right() - right_section_width
+        
+        # Check if the click was in the right section (link area)
+        if 'link' in data and data['link'] and pos.x() > right_section_boundary:
+            # Handle link click
             link = data['link']
             if not link.startswith(('http://', 'https://')):
                 link = 'https://' + link
@@ -458,7 +548,7 @@ class TaskTreeWidget(QTreeWidget):
             except Exception as e:
                 print(f"Error opening link: {e}")
         else:
-            # For other columns, open edit dialog
+            # For clicks in the main content area, open edit dialog
             self.edit_task(item)
 
     def load_tasks(self):
@@ -468,6 +558,23 @@ class TaskTreeWidget(QTreeWidget):
             # Import database manager
             from database.database_manager import get_db_manager
             db_manager = get_db_manager()
+            
+            # Get priority order map and colors
+            priority_order = {}
+            priority_colors = {}
+            result = db_manager.execute_query(
+                "SELECT name, display_order, color FROM priorities ORDER BY display_order"
+            )
+            for name, order, color in result:
+                priority_order[name] = order
+                priority_colors[name] = color
+            
+            # Create headers for each priority
+            priority_headers = {}
+            for priority, color in priority_colors.items():
+                header_item = PriorityHeaderItem(priority, color)
+                self.addTopLevelItem(header_item)
+                priority_headers[priority] = header_item
             
             # Check if is_compact column exists
             conn = db_manager.get_connection()
@@ -480,55 +587,65 @@ class TaskTreeWidget(QTreeWidget):
                 conn.commit()
                 print("Added is_compact column to tasks table")
             
-            # Get priority order map
-            priority_order = {}
-            result = db_manager.execute_query(
-                "SELECT name, display_order FROM priorities ORDER BY display_order"
-            )
-            for name, order in result:
-                priority_order[name] = order
-            
-            # Select top-level tasks and join with priorities to sort by priority order
-            top_level_tasks = db_manager.execute_query(
-                """
-                SELECT t.id, t.title, t.description, t.link, t.status, t.priority, 
-                    t.due_date, c.name, t.is_compact
-                FROM tasks t
-                LEFT JOIN categories c ON t.category_id = c.id
-                LEFT JOIN priorities p ON t.priority = p.name
-                WHERE t.parent_id IS NULL 
-                ORDER BY p.display_order, t.display_order
-                """
-            )
-            
-            items = {}
-            for row in top_level_tasks:
-                item = self.add_task_item(*row)  # Pass all parameters including is_compact
-                items[row[0]] = item
-                self.addTopLevelItem(item)
-            
-            # Select child tasks
-            child_tasks = db_manager.execute_query(
+            # Get all tasks
+            tasks = db_manager.execute_query(
                 """
                 SELECT t.id, t.title, t.description, t.link, t.status, t.priority, 
                     t.due_date, c.name, t.is_compact, t.parent_id
                 FROM tasks t
                 LEFT JOIN categories c ON t.category_id = c.id
-                LEFT JOIN priorities p ON t.priority = p.name
-                WHERE t.parent_id IS NOT NULL 
-                ORDER BY t.parent_id, p.display_order, t.display_order
+                ORDER BY t.parent_id NULLS FIRST, t.display_order
                 """
             )
             
-            for row in child_tasks:
-                # The last parameter is the parent_id, which is at index 9
-                parent_id = row[9]
-                # The first 9 parameters are for add_task_item
-                item = self.add_task_item(*row[:9])
+            items = {}
+            # First pass: create all items
+            for row in tasks:
+                task_id = row[0]
+                priority = row[5] or "Medium"  # Default to Medium if None
                 
-                if parent_id in items:
-                    items[parent_id].addChild(item)
-                    items[row[0]] = item  # Add this child to the items dict too
+                # Create the task item
+                item = self.add_task_item(*row[:9])  # First 9 elements
+                items[task_id] = item
+                
+                # Store parent info for second pass
+                parent_id = row[9]  # Last element is parent_id
+                if parent_id is None:
+                    # This is a top-level task, add it to the priority header
+                    priority_headers[priority].addChild(item)
+                else:
+                    # This is a child task, will be handled in second pass
+                    item.setData(0, Qt.ItemDataRole.UserRole + 1, parent_id)
+            
+            # Second pass: handle parent-child relationships for non-top-level tasks
+            for task_id, item in items.items():
+                parent_id = item.data(0, Qt.ItemDataRole.UserRole + 1)
+                if parent_id is not None and parent_id in items:
+                    parent_item = items[parent_id]
+                    parent_item.addChild(item)
+            
+            # Restore expanded state of priority headers from settings
+            settings = self.get_settings_manager()
+            all_priorities = list(priority_colors.keys())
+            expanded_priorities = settings.get_setting("expanded_priorities", all_priorities)
+            
+            for priority, header_item in priority_headers.items():
+                if priority in expanded_priorities:
+                    self.expandItem(header_item)
+                    header_item.setData(0, Qt.ItemDataRole.UserRole, {
+                        'is_priority_header': True,
+                        'priority': priority,
+                        'color': priority_colors[priority],
+                        'expanded': True
+                    })
+                else:
+                    self.collapseItem(header_item)
+                    header_item.setData(0, Qt.ItemDataRole.UserRole, {
+                        'is_priority_header': True,
+                        'priority': priority,
+                        'color': priority_colors[priority],
+                        'expanded': False
+                    })
         
         except Exception as e:
             print(f"Error loading tasks: {e}")
@@ -627,19 +744,23 @@ class TaskTreeWidget(QTreeWidget):
                 is_compact  # Pass the is_compact value
             )
             
-            # Add to appropriate parent
+            priority = data.get('priority', 'Medium')
+            
+            # If it has a parent, add it to that parent
             if parent_id:
                 # Find parent item and add as child
-                for i in range(self.topLevelItemCount()):
-                    item = self.topLevelItem(i)
-                    if item.task_id == parent_id:
-                        item.addChild(new_item)
-                        break
-                    # Check children recursively
-                    if item.childCount() > 0:
-                        self._find_parent_and_add_child(item, parent_id, new_item)
+                parent_item = self._find_item_by_id(parent_id)
+                if parent_item:
+                    parent_item.addChild(new_item)
             else:
-                self.addTopLevelItem(new_item)
+                # Add to appropriate priority header
+                for i in range(self.topLevelItemCount()):
+                    top_item = self.topLevelItem(i)
+                    top_data = top_item.data(0, Qt.ItemDataRole.UserRole)
+                    if isinstance(top_data, dict) and top_data.get('is_priority_header', False):
+                        if top_data.get('priority') == priority:
+                            top_item.addChild(new_item)
+                            break
             
             # Force a repaint
             self.viewport().update()
@@ -651,6 +772,45 @@ class TaskTreeWidget(QTreeWidget):
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(None, "Error", f"Failed to add task: {str(e)}")
             return None
+
+    def _find_item_by_id(self, item_id):
+        """Find a task item by its ID"""
+        # Check all priority headers
+        for i in range(self.topLevelItemCount()):
+            header_item = self.topLevelItem(i)
+            
+            # Check all tasks in this priority
+            for j in range(header_item.childCount()):
+                task_item = header_item.child(j)
+                
+                # Check if this is the item we want
+                task_data = task_item.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(task_data, dict) and task_data.get('id') == item_id:
+                    return task_item
+                
+                # Recursively check children
+                result = self._find_child_by_id(task_item, item_id)
+                if result:
+                    return result
+        
+        return None
+
+    def _find_child_by_id(self, parent_item, item_id):
+        """Recursively search for a child item by ID"""
+        for i in range(parent_item.childCount()):
+            child_item = parent_item.child(i)
+            
+            # Check if this is the item we want
+            child_data = child_item.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(child_data, dict) and child_data.get('id') == item_id:
+                return child_item
+            
+            # Recursively check children
+            result = self._find_child_by_id(child_item, item_id)
+            if result:
+                return result
+        
+        return None
     
     def _find_parent_and_add_child(self, parent_item, parent_id, new_item):
         """Helper method to recursively find a parent item and add a child to it"""
@@ -803,4 +963,41 @@ class TaskTreeWidget(QTreeWidget):
             # Recursively add to this child's children
             self._debug_add_buttons_to_children(child, delegate)
             
+    def get_settings_manager(self):
+        """Get the settings manager instance"""
+        try:
+            # Try to get it from the tree widget's parent (MainWindow)
+            if hasattr(self, 'parent') and callable(self.parent) and hasattr(self.parent(), 'settings'):
+                return self.parent().settings
+        except:
+            pass
+        
+        # Fallback to creating a new instance
+        from ui.app_settings import SettingsManager
+        return SettingsManager()
+
+class PriorityHeaderItem(QTreeWidgetItem):
+    """Custom tree widget item for priority headers"""
     
+    def __init__(self, priority_name, priority_color):
+        super().__init__()
+        self.priority_name = priority_name
+        self.priority_color = priority_color
+        self.setText(0, priority_name.upper())
+        
+        # Add a flag to identify this as a priority header
+        self.setData(0, Qt.ItemDataRole.UserRole, {
+            'is_priority_header': True,
+            'priority': priority_name,
+            'color': priority_color,
+            'expanded': True,  # Track expanded state
+        })
+        
+        # Make it not selectable, but still draggable for reordering
+        self.setFlags(self.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        
+        # Set the background color
+        self.setBackground(0, QBrush(QColor(priority_color)))
+        
+        # Use custom height
+        self.setSizeHint(0, QSize(0, 25))
