@@ -127,7 +127,7 @@ class DatabaseConfig:
         except Exception as e:
             print(f"Error creating database: {e}")
             return False
-    
+
     def _create_tables(self, cursor):
         """Create all database tables"""
         # Create categories table
@@ -174,7 +174,8 @@ class DatabaseConfig:
             default_priorities = [
                 ('High', '#F44336', 1),     # Red (highest priority)
                 ('Medium', '#FFC107', 2),   # Amber (medium priority)
-                ('Low', '#4CAF50', 3)       # Green (lowest priority)
+                ('Low', '#4CAF50', 3),       # Green (lowest priority)
+                ('Unprioritized', '#AAAAAA', 4)  # Gray (no priority)
             ]
             
             cursor.executemany("""
@@ -201,7 +202,8 @@ class DatabaseConfig:
                 ('Not Started', '#F44336', 1),  # Red
                 ('In Progress', '#FFC107', 2),  # Amber
                 ('On Hold', '#9E9E9E', 3),      # Gray
-                ('Completed', '#4CAF50', 4)     # Green
+                ('Backlog', '#9C27B0', 4),      # Purple
+                ('Completed', '#4CAF50', 5)     # Green
             ]
             
             cursor.executemany("""
@@ -226,11 +228,12 @@ class DatabaseConfig:
                 display_order INTEGER NOT NULL DEFAULT 0,
                 tree_level INTEGER NOT NULL DEFAULT 0,
                 is_compact INTEGER NOT NULL DEFAULT 0,
+                completed_at TEXT DEFAULT NULL,
                 FOREIGN KEY (category_id) REFERENCES categories (id),
                 FOREIGN KEY (parent_id) REFERENCES tasks (id)
             )
         """)
-        print("All tables created successfully")
+        print("All tables created successfully")    
 
 # Create a global instance to be imported by other modules
 db_config = DatabaseConfig()

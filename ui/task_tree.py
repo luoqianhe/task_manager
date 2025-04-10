@@ -192,44 +192,173 @@ class TaskTreeWidget(QTreeWidget):
             from database.database_manager import get_db_manager
             db_manager = get_db_manager()
             
-            def update_item_parent(item):
-                parent_id = item.parent().task_id if item.parent() else None
+            # Check if the item was dropped onto a priority header
+            new_parent = item.parent()
+            if new_parent:
+                # Check if new parent is a priority header
+                parent_data = new_parent.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(parent_data, dict) and parent_data.get('is_priority_header', False):
+                    # This is a priority header, update the task's priority
+                    priority_name = parent_data.get('priority')
+                    
+                    # Update task priority in database
+                    db_manager.execute_update(
+                        "UPDATE tasks SET priority = ? WHERE id = ?", 
+                        (priority_name, item.task_id)
+                    )
+                    
+                    # Update task data
+                    item_data = item.data(0, Qt.ItemDataRole.UserRole)
+                    item_data['priority'] = priority_name
+                    item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+                    
+                    print(f"Updated task {item.task_id} priority to {priority_name}")
+                    
+                    # Since we don't want to leave the task under the priority header directly,
+                    # we need to add it back to the appropriate header based on its new priority
+                    new_parent.removeChild(item)
+                    
+                    # Find the correct priority header to add it to
+                    for i in range(self.topLevelItemCount()):
+                        top_item = self.topLevelItem(i)
+                        top_data = top_item.data(0, Qt.ItemDataRole.UserRole)
+                        if isinstance(top_data, dict) and top_data.get('is_priority_header', False):
+                            if top_data.get('priority') == priority_name:
+                                top_item.addChild(item)
+                                break
+                    
+                    return  # Skip regular parent update since we handled it specially
+                
+                # For regular tasks (not headers), update parent-child relationship
+                if hasattr(new_parent, 'task_id'):
+                    parent_id = new_parent.task_id
+                    db_manager.execute_update(
+                        """
+                        UPDATE tasks 
+                        SET parent_id = ?
+                        WHERE id = ?
+                        """, 
+                        (parent_id, item.task_id)
+                    )
+                else:
+                    # Parent isn't a task (might be a priority header)
+                    # Treat as top-level task
+                    db_manager.execute_update(
+                        """
+                        UPDATE tasks 
+                        SET parent_id = NULL
+                        WHERE id = ?
+                        """, 
+                        (item.task_id,)
+                    )
+            else:
+                # This is now a top-level item
+                db_manager.execute_update(
+                    """
+                    UPDATE tasks 
+                    SET parent_id = NULL
+                    WHERE id = ?
+                    """, 
+                    (item.task_id,)
+                )
+                
+            # Recursively update all children
+            self._update_children_hierarchy(item)
+            
+        except Exception as e:
+            print(f"Error updating task parent: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"Failed to update task hierarchy: {str(e)}")
+
+    def _update_children_hierarchy(self, parent_item):
+        """Update all children's hierarchy in the database"""
+        try:
+            for i in range(parent_item.childCount()):
+                child = parent_item.child(i)
+                
+                # Skip if not a task item
+                if not hasattr(child, 'task_id'):
+                    continue
+                    
+                # Import database manager
+                from database.database_manager import get_db_manager
+                db_manager = get_db_manager()
+                
+                # Update child's parent_id
+                parent_id = parent_item.task_id if hasattr(parent_item, 'task_id') else None
                 db_manager.execute_update(
                     """
                     UPDATE tasks 
                     SET parent_id = ?
                     WHERE id = ?
                     """, 
-                    (parent_id, item.task_id)
+                    (parent_id, child.task_id)
                 )
                 
-                # Update all children too
-                for i in range(item.childCount()):
-                    update_item_parent(item.child(i))
-            
-            update_item_parent(item)
+                # Recursively update all grandchildren
+                self._update_children_hierarchy(child)
         except Exception as e:
-            print(f"Error updating task parent: {e}")
-            QMessageBox.critical(self, "Error", f"Failed to update task hierarchy: {str(e)}")
+            print(f"Error updating child hierarchy: {e}")
 
     def change_status(self, item, new_status):
         try:
-            # Update database
+            # Import database manager
             from database.database_manager import get_db_manager
             db_manager = get_db_manager()
             
-            db_manager.execute_update(
-                "UPDATE tasks SET status = ? WHERE id = ?", 
-                (new_status, item.task_id)
-            )
+            # Check if this is a status change to or from "Completed"
+            data = item.data(0, Qt.ItemDataRole.UserRole)
+            old_status = data.get('status', '')
+            
+            # Get current timestamp formatted as ISO string if status is changing to Completed
+            completed_at = None
+            if new_status == "Completed" and old_status != "Completed":
+                from datetime import datetime
+                completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"Task completed at: {completed_at}")
+                
+                # Update database with completed_at timestamp
+                db_manager.execute_update(
+                    "UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?", 
+                    (new_status, completed_at, item.task_id)
+                )
+            elif old_status == "Completed" and new_status != "Completed":
+                # If changing from Completed to another status, clear the timestamp
+                db_manager.execute_update(
+                    "UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?", 
+                    (new_status, item.task_id)
+                )
+            else:
+                # Normal status update without changing completion state
+                db_manager.execute_update(
+                    "UPDATE tasks SET status = ? WHERE id = ?", 
+                    (new_status, item.task_id)
+                )
             
             # Update item
             data = item.data(0, Qt.ItemDataRole.UserRole)
             data['status'] = new_status
+            if completed_at:
+                data['completed_at'] = completed_at
+            elif 'completed_at' in data and new_status != "Completed":
+                data.pop('completed_at', None)
+                
             item.setData(0, Qt.ItemDataRole.UserRole, data)
             
             # Force a repaint
             self.viewport().update()
+            
+            # Notify parent about status change if we're in a tabbed interface
+            parent = self.parent()
+            while parent and not hasattr(parent, 'reload_all'):
+                parent = parent.parent()
+                
+            if parent and hasattr(parent, 'reload_all'):
+                # This is a TabTaskTreeWidget within a TaskTabWidget
+                # Reload all tabs to reflect the status change
+                parent.reload_all()
+                
         except Exception as e:
             print(f"Error changing task status: {e}")
             QMessageBox.critical(self, "Error", f"Failed to change task status: {str(e)}")

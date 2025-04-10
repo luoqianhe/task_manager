@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 
 # Import centralized database configuration
 from db_config import db_config, get_db_connection
@@ -58,8 +58,14 @@ def insert_test_tasks():
             
             # Calculate some dates for test data
             today = date.today()
+            yesterday = today - timedelta(days=1)
             tomorrow = today + timedelta(days=1)
             next_week = today + timedelta(days=7)
+            last_week = today - timedelta(days=7)
+            
+            # Create a completed timestamp for completed tasks
+            completed_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            completed_time_earlier = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
             
             # First check if tasks already exist
             cursor.execute("SELECT COUNT(*) FROM tasks")
@@ -69,24 +75,31 @@ def insert_test_tasks():
             
             # Insert test data
             test_tasks = [
-                # id, title, description, link, status, priority, due_date, category_id, parent_id, display_order, tree_level, is_compact
-                (1, "Website Redesign", "Redesign the company website", "https://company.com", "In Progress", "High", next_week.isoformat(), work_id, None, 0, 0, 0),
-                (2, "Design Homepage", "Create mockups for the homepage", None, "In Progress", "Medium", tomorrow.isoformat(), work_id, 1, 0, 1, 0),
-                (3, "Contact Page", "Update contact information", None, "Not Started", "Low", next_week.isoformat(), work_id, 1, 1, 1, 0),
+                # Current Tasks
+                # id, title, description, link, status, priority, due_date, category_id, parent_id, display_order, tree_level, is_compact, completed_at
+                (1, "Website Redesign", "Redesign the company website", "https://company.com", "In Progress", "High", next_week.isoformat(), work_id, None, 0, 0, 0, None),
+                (2, "Design Homepage", "Create mockups for the homepage", None, "In Progress", "Medium", tomorrow.isoformat(), work_id, 1, 0, 1, 0, None),
+                (3, "Contact Page", "Update contact information", None, "Not Started", "Low", next_week.isoformat(), work_id, 1, 1, 1, 0, None),
+                (4, "Learn Python", "Complete Python course", "https://python.org", "In Progress", "Medium", None, learning_id, None, 1, 0, 0, None),
+                (5, "Practice Exercises", "Complete chapter 5 exercises", None, "Not Started", "Medium", tomorrow.isoformat(), learning_id, 4, 0, 1, 0, None),
                 
-                (4, "Learn Python", "Complete Python course", "https://python.org", "In Progress", "Medium", None, learning_id, None, 1, 0, 0),
-                (5, "Practice Exercises", "Complete chapter 5 exercises", None, "Not Started", "Medium", tomorrow.isoformat(), learning_id, 4, 0, 1, 0),
+                # Backlog Tasks
+                (6, "Future Project Ideas", "Brainstorm new project ideas", None, "Backlog", "Medium", None, work_id, None, 2, 0, 0, None),
+                (7, "Research New Technology", "Research latest web frameworks", None, "Backlog", "Low", None, learning_id, None, 3, 0, 0, None),
+                (8, "Plan Next Quarter", "Strategic planning session", None, "Backlog", "High", next_week.isoformat(), work_id, None, 4, 0, 0, None),
                 
-                (6, "Grocery Shopping", "Buy groceries for the week", None, "Not Started", "High", today.isoformat(), personal_id, None, 2, 0, 0),
-                (7, "Exercise", "30 minutes of cardio", None, "Completed", "Medium", today.isoformat(), personal_id, None, 3, 0, 0)
+                # Completed Tasks
+                (9, "Initial Research", "Preliminary research for project", None, "Completed", "Medium", last_week.isoformat(), work_id, None, 5, 0, 0, completed_time_earlier),
+                (10, "Team Meeting", "Weekly team sync", None, "Completed", "High", yesterday.isoformat(), work_id, None, 6, 0, 0, completed_time),
+                (11, "Grocery Shopping", "Buy groceries for the week", None, "Completed", "Medium", yesterday.isoformat(), personal_id, None, 7, 0, 0, completed_time)
             ]
             
             cursor.execute("DELETE FROM tasks")  # Clear existing data
             
             cursor.executemany("""
                 INSERT INTO tasks (id, title, description, link, status, priority, 
-                               due_date, category_id, parent_id, display_order, tree_level, is_compact)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                               due_date, category_id, parent_id, display_order, tree_level, is_compact, completed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, test_tasks)
             
             conn.commit()

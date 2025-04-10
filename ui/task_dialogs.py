@@ -23,25 +23,50 @@ class AddTaskDialog(QDialog):
         self.setMinimumHeight(500)
         self.setup_ui()
         self.data = None  # Store the data here
+    
+    def load_priorities(self):
+        """Load priorities including 'Unprioritized' option"""
+        self.priority_combo.clear()  # Clear existing items
         
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name FROM priorities ORDER BY display_order")
+            priorities = cursor.fetchall()
+            print("ADD DIALOG PRIORITIES:", priorities)
+            
+            # Add all priorities to the combo box
+            for pri_id, name in priorities:
+                self.priority_combo.addItem(name, pri_id)
+            
+            # Find and select the "Unprioritized" option
+            unprioritized_index = self.priority_combo.findText("Unprioritized")
+            if unprioritized_index >= 0:
+                self.priority_combo.setCurrentIndex(unprioritized_index)
+            else:
+                # If "Unprioritized" not found, select first item
+                self.priority_combo.setCurrentIndex(0)
+
     def accept(self):
         # Store the data before closing
         due_date = None
         if self.due_date_edit.date() != QDate(2000, 1, 1):  # Default empty date
             due_date = self.due_date_edit.date().toString("yyyy-MM-dd")
-            
+        
+        # Get the selected priority directly from the combo box
+        selected_priority = self.priority_combo.currentText()
+        
         self.data = {
             'title': self.title_input.text(),
             'description': self.description_input.toPlainText(),
             'link': self.link_input.text(),
             'status': self.status_combo.currentText(),
-            'priority': self.priority_combo.currentText() if self.priority_combo.currentIndex() > 0 else None,
+            'priority': selected_priority,
             'due_date': due_date,
             'category': self.category_combo.currentText() if self.category_combo.currentIndex() > 0 else None,
             'parent_id': self.parent_combo.currentData()
         }
         super().accept()
-    
+        
     def get_data(self):
         return self.data
         
@@ -123,20 +148,7 @@ class AddTaskDialog(QDialog):
         self.setTabOrder(self.category_combo, self.parent_combo)
         self.setTabOrder(self.parent_combo, save_btn)
         self.setTabOrder(save_btn, cancel_btn)
-        
-    def load_priorities(self):
-        self.priority_combo.addItem("None", None)
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, name FROM priorities ORDER BY display_order")
-            for pri_id, name in cursor.fetchall():
-                self.priority_combo.addItem(name, pri_id)
-            
-            # Set Medium as default if it exists
-            index = self.priority_combo.findText("Medium")
-            if index >= 0:
-                self.priority_combo.setCurrentIndex(index)
-        
+    
     def load_categories(self):
         self.category_combo.addItem("None", None)
         with self.get_connection() as conn:
@@ -259,37 +271,55 @@ class EditTaskDialog(QDialog):
         self.setTabOrder(self.parent_combo, save_btn)
         self.setTabOrder(save_btn, cancel_btn)
     
+    def get_data(self):
+        return self.data
+        
+    def load_priorities(self):
+        """Load priorities for editing a task"""
+        self.priority_combo.clear()
+        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name FROM priorities ORDER BY display_order")
+            priorities = cursor.fetchall()
+            print("EDIT DIALOG PRIORITIES:", priorities)
+            
+            # Add all priorities to the combo box
+            for pri_id, name in priorities:
+                self.priority_combo.addItem(name, pri_id)
+                
+                # If this is the current priority of the task, select it
+                if name == self.task_data['priority']:
+                    self.priority_combo.setCurrentIndex(self.priority_combo.count() - 1)
+        
+        # If no matching priority was found (or priority is None),
+        # look for the "Unprioritized" option
+        if self.task_data['priority'] is None or self.priority_combo.currentText() != self.task_data['priority']:
+            unprioritized_index = self.priority_combo.findText("Unprioritized")
+            if unprioritized_index >= 0:
+                self.priority_combo.setCurrentIndex(unprioritized_index)
+
     def accept(self):
         # Store the data before closing
         due_date = None
         if self.due_date_edit.date() != QDate(2000, 1, 1):  # Default empty date
             due_date = self.due_date_edit.date().toString("yyyy-MM-dd")
-            
+        
+        # Get selected priority directly from combo box
+        selected_priority = self.priority_combo.currentText()
+                
         self.data = {
             'id': self.task_data['id'],
             'title': self.title_input.text(),
             'description': self.description_input.toPlainText(),
             'link': self.link_input.text(),
             'status': self.status_combo.currentText(),
-            'priority': self.priority_combo.currentText() if self.priority_combo.currentIndex() > 0 else None,
+            'priority': selected_priority,
             'due_date': due_date,
             'category': self.category_combo.currentText() if self.category_combo.currentIndex() > 0 else None,
             'parent_id': self.parent_combo.currentData()
         }
         super().accept()
-    
-    def get_data(self):
-        return self.data
-        
-    def load_priorities(self):
-        self.priority_combo.addItem("None", None)
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, name FROM priorities ORDER BY display_order")
-            for pri_id, name in cursor.fetchall():
-                self.priority_combo.addItem(name, pri_id)
-                if name == self.task_data['priority']:
-                    self.priority_combo.setCurrentIndex(self.priority_combo.count() - 1)
         
     def load_categories(self):
         self.category_combo.addItem("None", None)
