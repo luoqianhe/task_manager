@@ -127,7 +127,7 @@ class MainWindow(QMainWindow):
         
         tab3_shortcut = QShortcut(QKeySequence("Ctrl+3"), self)
         tab3_shortcut.activated.connect(lambda: self.tabs.setCurrentIndex(2))
-    
+        
     def edit_selected_task(self):
         if self.stacked_widget.currentIndex() == 0:  # Only when in task view
             current_tree = self.tabs.get_current_tree()
@@ -207,6 +207,9 @@ class MainWindow(QMainWindow):
         self.tabs.setTabToolTip(1, "Backlog (Ctrl+2)")
         self.tabs.setTabToolTip(2, "Completed Tasks (Ctrl+3)")
     
+        # Debug priority headers
+        self.tabs.current_tasks_tab.task_tree.debug_priority_headers()
+        
     def init_settings_view(self):
         self.settings_widget = QWidget()
         layout = QVBoxLayout(self.settings_widget)
@@ -475,6 +478,12 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Success", "Template CSV created successfully!")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error creating template: {str(e)}")
+
+    def debug_headers(self):
+        """Debug the header items in the current task tree"""
+        current_tree = self.tabs.get_current_tree()
+        if current_tree:
+            current_tree.debug_headers()
 
 def main():
     app = QApplication(sys.argv)

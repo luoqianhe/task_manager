@@ -22,6 +22,7 @@ class AddTaskDialog(QDialog):
         self.setMinimumWidth(500)
         self.setMinimumHeight(500)
         self.setup_ui()
+        self.load_statuses()
         self.data = None  # Store the data here
     
     def load_priorities(self):
@@ -95,7 +96,6 @@ class AddTaskDialog(QDialog):
         # Status
         self.status_combo = QComboBox()
         self.status_combo.setFixedHeight(30)
-        self.status_combo.addItems(['Not Started', 'In Progress', 'On Hold', 'Completed'])
         form_layout.addRow("Status:", self.status_combo)
         
         # Priority
@@ -157,6 +157,21 @@ class AddTaskDialog(QDialog):
             for cat_id, name in cursor.fetchall():
                 self.category_combo.addItem(name, cat_id)
     
+    def load_statuses(self):
+        """Load statuses from the database"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM statuses ORDER BY display_order")
+            statuses = cursor.fetchall()
+            
+            for status in statuses:
+                self.status_combo.addItem(status[0])
+            
+            # Default to "Not Started" if it exists
+            not_started_index = self.status_combo.findText("Not Started")
+            if not_started_index >= 0:
+                self.status_combo.setCurrentIndex(not_started_index)
+    
     def load_possible_parents(self):
         self.parent_combo.addItem("None", None)
         with self.get_connection() as conn:
@@ -179,6 +194,7 @@ class EditTaskDialog(QDialog):
         self.setMinimumWidth(500)
         self.setMinimumHeight(500)
         self.setup_ui()
+        self.load_statuses()
         
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -206,7 +222,6 @@ class EditTaskDialog(QDialog):
         # Status
         self.status_combo = QComboBox()
         self.status_combo.setFixedHeight(30)
-        self.status_combo.addItems(['Not Started', 'In Progress', 'On Hold', 'Completed'])
         self.status_combo.setCurrentText(self.task_data['status'] or "Not Started")
         form_layout.addRow("Status:", self.status_combo)
         
@@ -299,6 +314,22 @@ class EditTaskDialog(QDialog):
             if unprioritized_index >= 0:
                 self.priority_combo.setCurrentIndex(unprioritized_index)
 
+    def load_statuses(self):
+        """Load statuses from the database"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM statuses ORDER BY display_order")
+            statuses = cursor.fetchall()
+            
+            for status in statuses:
+                self.status_combo.addItem(status[0])
+            
+            # Select the current status
+            current_status = self.task_data.get('status', 'Not Started')
+            index = self.status_combo.findText(current_status)
+            if index >= 0:
+                self.status_combo.setCurrentIndex(index)
+                
     def accept(self):
         # Store the data before closing
         due_date = None

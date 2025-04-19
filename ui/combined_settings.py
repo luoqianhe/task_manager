@@ -87,8 +87,6 @@ class SettingPillItem(QWidget):
         
         self.setFixedHeight(60)  # Consistent height for all items
 
-
-    
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.display_order is not None:
             # Start drag if this is a priority or status (has display_order)
@@ -634,10 +632,16 @@ class CombinedSettingsManager(QWidget):
     def add_item(self):
         """Add a new item of the current type"""
         current_type = self.setting_type_combo.currentText().lower()
-        if current_type.endswith("s"):  # Convert "Categories" to "category"
-            item_type = current_type[:-1]
+        
+        if current_type == "statuses":
+            item_type = "status"
+        elif current_type == "priorities":
+            item_type = "priority"
+        elif current_type == "categories":
+            item_type = "category"
         else:
-            item_type = current_type
+            # Fallback for any other cases
+            item_type = current_type.rstrip('s')
         
         name = self.name_input.text().strip()
         
@@ -654,7 +658,7 @@ class CombinedSettingsManager(QWidget):
             else:  # status
                 self.selected_color = "#E0E0E0"  # Light gray
         
-        table_name = f"{item_type}s"  # categories, priorities, or statuses
+        table_name = "statuses" if item_type == "status" else "priorities" if item_type == "priority" else f"{item_type}s"
         
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -680,13 +684,14 @@ class CombinedSettingsManager(QWidget):
                 """, (name, self.selected_color, display_order))
             else:
                 # Categories don't have display_order
+                print('STATUS: item_type:', item_type)
                 cursor.execute(f"""
                     INSERT INTO {table_name} (name, color)
                     VALUES (?, ?)
                 """, (name, self.selected_color))
             
             conn.commit()
-        
+            
         # Clear inputs and refresh
         self.name_input.clear()
         self.color_btn.setStyleSheet("")
@@ -740,8 +745,13 @@ class EditItemDialog(QDialog):
         self.load_data()
     
     def load_data(self):
-        table_name = f"{self.item_type}s"  # categories, priorities, or statuses
-        
+        if self.item_type == "category":
+            table_name = "categories"
+        elif self.item_type == "priority":
+            table_name = "priorities"
+        elif self.item_type == "status":
+            table_name = "statuses"
+            
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(f"SELECT name FROM {table_name} WHERE id = ?", (self.item_id,))

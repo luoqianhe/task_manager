@@ -84,7 +84,6 @@ class TaskPillDelegate(QStyledItemDelegate):
                     rect.top() - 12,  # Position button above item
                     24, 24  # Button size
                 )
-                print(f"Hover detected on item at position {pos}, index row: {index.row()}")
                 tree_widget.viewport().update()
             else:
                 # Clear hover state if not over an item
@@ -348,33 +347,6 @@ class TaskPillDelegate(QStyledItemDelegate):
         path = QPainterPath()
         path.addRoundedRect(QRectF(rect), 5, 5)
         painter.fillPath(path, QBrush(QColor(color)))
-        
-        # Draw expand/collapse arrow
-        arrow_size = 8
-        arrow_x = int(rect.left() + 20)
-        arrow_y = int(rect.top() + rect.height() / 2)
-        
-        painter.setPen(QPen(QColor("#FFFFFF"), 2))
-        if expanded:
-            # Draw DOWN arrow when expanded
-            painter.drawLine(
-                int(arrow_x - arrow_size), int(arrow_y - arrow_size/2), 
-                int(arrow_x), int(arrow_y + arrow_size/2)
-            )
-            painter.drawLine(
-                int(arrow_x), int(arrow_y + arrow_size/2), 
-                int(arrow_x + arrow_size), int(arrow_y - arrow_size/2)
-            )
-        else:
-            # Draw RIGHT arrow when collapsed
-            painter.drawLine(
-                int(arrow_x - arrow_size/2), int(arrow_y - arrow_size), 
-                int(arrow_x + arrow_size/2), int(arrow_y)
-            )
-            painter.drawLine(
-                int(arrow_x + arrow_size/2), int(arrow_y), 
-                int(arrow_x - arrow_size/2), int(arrow_y + arrow_size)
-            )
         
         # Draw priority text
         # Get font settings from SettingsManager
@@ -870,15 +842,11 @@ class TaskPillDelegate(QStyledItemDelegate):
             )
 
     def _draw_toggle_button(self, painter, index, item_id, rect):
-        """Draw the toggle button if this is the hover item"""
+        """Draw the toggle button for all items (including headers)"""
         # Get data from the index
         user_data = index.data(Qt.ItemDataRole.UserRole)
         
-        # Skip drawing toggle button for priority headers
-        if isinstance(user_data, dict) and user_data.get('is_priority_header', False):
-            return
-            
-        # Continue with regular toggle button drawing for tasks
+        # Continue with drawing the toggle button
         if self.hover_item and self.hover_item == index and self.toggle_button_rect:
             # Save current state
             painter.save()
@@ -906,31 +874,45 @@ class TaskPillDelegate(QStyledItemDelegate):
                 toggle_button_rect.height()
             )
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(QColor(0, 0, 0, 30)))  # Semi-transparent black
+            painter.setBrush(QBrush(QColor(0, 0, 0, 50)))  # Darker shadow (50 -> 50)
             painter.drawEllipse(shadow_rect)
 
-            # Draw button with strong border and bright fill
-            painter.setPen(QPen(QColor("#333333"), 2))  # Thicker, darker border
-
-            # Highlight button based on state
-            if item_id in self.compact_items:
-                # Expand button (down arrow) - bright green
-                painter.setBrush(QBrush(QColor(100, 255, 100)))
+            # Determine if this is a header or a task
+            is_header = isinstance(user_data, dict) and user_data.get('is_priority_header', False)
+            
+            # Draw button with darker border (previously #333333, now #111111)
+            painter.setPen(QPen(QColor("#111111"), 2))  # Darker border
+            
+            # For headers, use a consistent color regardless of expanded state
+            if is_header:
+                expanded = user_data.get('expanded', True) if isinstance(user_data, dict) else True
+                # Dark blue for header toggle buttons
+                painter.setBrush(QBrush(QColor(50, 100, 200)))  # Darker blue
             else:
-                # Collapse button (up arrow) - bright blue
-                painter.setBrush(QBrush(QColor(100, 200, 255)))
-
+                # For regular tasks, highlight button based on state
+                if item_id in self.compact_items:
+                    # Expand button (down arrow) - darker green
+                    painter.setBrush(QBrush(QColor(50, 200, 50)))  # Darker green
+                else:
+                    # Collapse button (up arrow) - darker blue
+                    painter.setBrush(QBrush(QColor(50, 150, 200)))  # Darker blue
+            
             painter.drawEllipse(toggle_button_rect)
 
-            # Draw arrow icon with larger font
+            # Draw arrow icon with larger font and darker color
             toggle_font = QFont(painter.font())
             toggle_font.setPointSize(16)  # Larger size
             toggle_font.setBold(True)
             painter.setFont(toggle_font)
             painter.setPen(QColor("#000000"))  # Black text for better visibility
 
-            # Show down arrow if compact (to expand), up arrow if expanded (to compact)
-            icon = "↓" if item_id in self.compact_items else "↑"
+            # For headers, show right/down arrow based on expanded state
+            if is_header:
+                icon = "↓" if expanded else "→"
+            else:
+                # For tasks, show down arrow if compact (to expand), up arrow if expanded (to compact)
+                icon = "↓" if item_id in self.compact_items else "↑"
+                
             painter.drawText(toggle_button_rect, Qt.AlignmentFlag.AlignCenter, icon)
 
             # Store button rect for click detection (even when not hovering)
@@ -995,3 +977,19 @@ class TaskPillDelegate(QStyledItemDelegate):
         from ui.app_settings import SettingsManager
         return SettingsManager()
 
+    def debug_header_items(self, tree_widget):
+        """Debug the header items in the tree widget"""
+        print("\n===== HEADER ITEMS DEBUG =====")
+        for i in range(tree_widget.topLevelItemCount()):
+            item = tree_widget.topLevelItem(i)
+            index = tree_widget.indexFromItem(item)
+            user_data = index.data(Qt.ItemDataRole.UserRole)
+            
+            print(f"Top-level item {i}, data: {user_data}")
+            
+            # Check if this is supposed to be a header
+            if hasattr(item, 'priority_name'):
+                print(f"  Has priority_name attribute: {item.priority_name}")
+                print(f"  But is_priority_header value: {user_data.get('is_priority_header') if isinstance(user_data, dict) else 'N/A'}")
+        
+        print("===== END DEBUG =====\n")
