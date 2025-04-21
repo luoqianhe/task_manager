@@ -9,6 +9,14 @@ import webbrowser
 import logging
 from .task_pill_delegate import TaskPillDelegate
 from datetime import datetime, date
+import sys
+from pathlib import Path
+
+# Add the src directory to the path
+sys.path.append(str(Path(__file__).parent.parent))
+
+# Now import directly from the database package
+from database.memory_db_manager import get_memory_db_manager
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -177,8 +185,8 @@ class TaskTreeWidget(QTreeWidget):
         
         try:
             # Save new parent-child relationships to database
-            from database.database_manager import get_db_manager
-            db_manager = get_db_manager()
+            from database.memory_db_manager import get_memory_db_manager
+            db_manager = get_memory_db_manager()
             
             # Get the new parent and position in tree after super().dropEvent
             new_parent = item.parent()
@@ -191,23 +199,22 @@ class TaskTreeWidget(QTreeWidget):
                 new_priority = priority_data.get('priority')
                 print(f"Task was dropped into priority header: {new_priority}")
                 
-                # Update the task's priority in the database
+                # Update the task's priority AND priority_header_id in the database
                 db_manager.execute_update(
-                    "UPDATE tasks SET priority = ? WHERE id = ?",
-                    (new_priority, item.task_id)
+                    "UPDATE tasks SET priority = ?, priority_header_id = ? WHERE id = ?",
+                    (new_priority, id(new_parent), item.task_id)
                 )
                 
                 # Also update the item's data to reflect the new priority
                 item_data = item.data(0, Qt.ItemDataRole.UserRole)
                 item_data['priority'] = new_priority
+                item_data['priority_header_id'] = id(new_parent)
                 item.setData(0, Qt.ItemDataRole.UserRole, item_data)
                 
-                print(f"Updated task priority to: {new_priority}")
+                print(f"Updated task priority to: {new_priority} and priority_header_id to: {id(new_parent)}")
                 
                 # Skip the parent_id update since this is handled by the priority header
                 return
-            
-            # The rest of your existing code for parent_id updates here...
             # Determine parent_id for database update
             if new_parent and hasattr(new_parent, 'task_id'):
                 parent_id = new_parent.task_id
@@ -439,6 +446,17 @@ class TaskTreeWidget(QTreeWidget):
             
             # Force a repaint
             self.viewport().update()
+            
+            # Notify parent about priority change if we're in a tabbed interface
+            parent = self.parent()
+            while parent and not hasattr(parent, 'reload_all'):
+                parent = parent.parent()
+                
+            if parent and hasattr(parent, 'reload_all'):
+                # This is a TabTaskTreeWidget within a TaskTabWidget
+                # Reload all tabs to reflect the priority change
+                parent.reload_all()
+                
         except Exception as e:
             print(f"Error changing task priority: {e}")
             QMessageBox.critical(self, "Error", f"Failed to change task priority: {str(e)}")
@@ -570,6 +588,11 @@ class TaskTreeWidget(QTreeWidget):
             if hasattr(item.parent(), 'task_id'):
                 parent_id = item.parent().task_id
             # If parent is a priority header, leave parent_id as None
+            # BUT store the priority from the header
+            elif isinstance(item.parent().data(0, Qt.ItemDataRole.UserRole), dict) and item.parent().data(0, Qt.ItemDataRole.UserRole).get('is_priority_header', False):
+                header_data = item.parent().data(0, Qt.ItemDataRole.UserRole)
+                # Make sure to use the priority from the header rather than the task's stored priority
+                data['priority'] = header_data.get('priority', data['priority'])
         
         task_data = {
             'id': item.task_id,
@@ -577,11 +600,11 @@ class TaskTreeWidget(QTreeWidget):
             'description': data['description'],
             'link': data['link'],
             'status': data['status'],
-            'priority': data['priority'],
+            'priority': data['priority'],  # Now properly preserves the header's priority
             'due_date': data['due_date'],
             'category': data['category'],
-            'parent_id': parent_id,  # Safely determined parent_id
-            'is_compact': is_compact  # Include compact state
+            'parent_id': parent_id,
+            'is_compact': is_compact
         }
         
         # Open edit dialog
@@ -606,8 +629,7 @@ class TaskTreeWidget(QTreeWidget):
                     if result and result[0]:
                         category_id = result[0][0]
                 
-                # Update database - is_compact state is preserved since we're not updating it here
-                # The compact state is handled separately by the TaskPillDelegate
+                # Update database
                 db_manager.execute_update(
                     """
                     UPDATE tasks 
@@ -627,6 +649,11 @@ class TaskTreeWidget(QTreeWidget):
                         updated_data['id']
                     )
                 )
+                
+                # Check if status, category, or priority changed
+                status_changed = task_data['status'] != updated_data['status']
+                category_changed = task_data['category'] != updated_data['category']
+                priority_changed = task_data['priority'] != updated_data['priority']
                 
                 # Update item directly
                 item.setText(0, updated_data['title'])
@@ -688,6 +715,17 @@ class TaskTreeWidget(QTreeWidget):
                 
                 # Force a repaint
                 self.viewport().update()
+                
+                # If status, category or priority changed, reload all tabs
+                if status_changed or category_changed or priority_changed:
+                    parent = self.parent()
+                    while parent and not hasattr(parent, 'reload_all'):
+                        parent = parent.parent()
+                        
+                    if parent and hasattr(parent, 'reload_all'):
+                        # Use a short timer to let the current operation complete first
+                        from PyQt6.QtCore import QTimer
+                        QTimer.singleShot(100, parent.reload_all)
             
             except Exception as e:
                 print(f"Error updating task: {e}")
@@ -1152,7 +1190,8 @@ class TaskTreeWidget(QTreeWidget):
             if isinstance(data, dict) and data.get('is_priority_header', False):
                 priority = data.get('priority', 'Unknown')
                 expanded = data.get('expanded', True)
-                is_expanded = self.isItemExpanded(item)
+                item_index = self.indexFromItem(item)
+                is_expanded = self.isExpanded(item_index)
                 
                 print(f"Header {i}: {priority}")
                 print(f"  - Data expanded: {expanded}")

@@ -229,12 +229,13 @@ class DatabaseConfig:
                 tree_level INTEGER NOT NULL DEFAULT 0,
                 is_compact INTEGER NOT NULL DEFAULT 0,
                 completed_at TEXT DEFAULT NULL,
+                priority_header_id INTEGER DEFAULT NULL,
                 FOREIGN KEY (category_id) REFERENCES categories (id),
                 FOREIGN KEY (parent_id) REFERENCES tasks (id)
             )
         """)
-        print("All tables created successfully")    
-
+        print("All tables created successfully")
+    
 # Create a global instance to be imported by other modules
 db_config = DatabaseConfig()
 

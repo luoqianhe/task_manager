@@ -1,10 +1,10 @@
-# src/main.py - updated with tabbed interface
+# src/main.py - updated with proper database initialization
 
 from PyQt6.QtWidgets import (QMainWindow, QApplication, QWidget, QVBoxLayout, 
                            QHBoxLayout, QPushButton, QStackedWidget, QFileDialog, 
                            QMessageBox, QLabel, QTabWidget)
 from ui.task_tree import TaskTreeWidget
-from ui.task_tabs import TaskTabWidget  # Import the new tabbed interface
+from ui.task_tabs import TaskTabWidget
 from ui.task_pill_delegate import TaskPillDelegate
 from ui.combined_settings import CombinedSettingsManager
 from ui.app_settings import AppSettingsWidget, SettingsManager
@@ -17,13 +17,15 @@ import sqlite3
 from datetime import datetime
 import os
 
-class MainWindow(QMainWindow):
-    @staticmethod
-    def get_connection():
-        # This will be overridden in main.py to use the database manager
-        from database.database_manager import get_db_manager
-        return get_db_manager().get_connection()
+# Import database modules
+from database.memory_db_manager import get_memory_db_manager
+from database.db_config import db_config, ensure_db_exists
 
+# Global function for database connection used by all classes
+def get_global_connection():
+    return get_memory_db_manager().get_connection()
+
+class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Task Organizer")
@@ -257,8 +259,7 @@ class MainWindow(QMainWindow):
     
     def show_add_dialog(self):
         from ui.task_dialogs import AddTaskDialog
-        from PyQt6.QtWidgets import QMessageBox, QDateTimeEdit
-        from PyQt6.QtCore import QDateTime
+        from PyQt6.QtWidgets import QMessageBox
         from datetime import datetime
         
         # Get the current tab index
@@ -359,12 +360,11 @@ class MainWindow(QMainWindow):
                         'Due Date', 'Category', 'Parent', 'Completed At'
                     ])
                     
-                    # Use the database manager to get all tasks
-                    from database.database_manager import get_db_manager
-                    db_manager = get_db_manager()
+                    # Use the memory database manager
+                    memory_db = get_memory_db_manager()
                     
                     # Query all tasks with their parent titles
-                    tasks = db_manager.execute_query("""
+                    tasks = memory_db.execute_query("""
                         SELECT t.title, t.description, t.link, t.status, t.priority, 
                                t.due_date, c.name, p.title as parent_title, t.completed_at
                         FROM tasks t
@@ -411,17 +411,19 @@ class MainWindow(QMainWindow):
                         }
                 
                 # Second pass: set parent relationships
+                memory_db = get_memory_db_manager()
+                conn = memory_db.get_connection()
+                cursor = conn.cursor()
+                
                 for title, item_info in items_by_title.items():
                     parent_title = item_info['parent_title']
                     if parent_title and parent_title in items_by_title:
                         # Find parent's ID in database
-                        with self.get_connection() as conn:
-                            cursor = conn.cursor()
-                            cursor.execute("SELECT id FROM tasks WHERE title = ?", 
-                                         (parent_title,))
-                            result = cursor.fetchone()
-                            if result:
-                                item_info['data']['parent_id'] = result[0]
+                        cursor.execute("SELECT id FROM tasks WHERE title = ?", 
+                                     (parent_title,))
+                        result = cursor.fetchone()
+                        if result:
+                            item_info['data']['parent_id'] = result[0]
                 
                 # Add all items to database
                 current_tree = self.tabs.get_current_tree()
@@ -479,67 +481,11 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error creating template: {str(e)}")
 
-    def debug_headers(self):
-        """Debug the header items in the current task tree"""
-        current_tree = self.tabs.get_current_tree()
-        if current_tree:
-            current_tree.debug_headers()
-
-def main():
-    app = QApplication(sys.argv)
-    
-    # Create main window (this initializes settings)
-    window = MainWindow()
-    
-    # Import and configure the database path
-    from database.db_config import db_config, ensure_db_exists
-    
-    # Set the database path from the settings
-    db_config.set_path(window.db_path)
-    print(f"Main using database path: {db_config.path}")
-    
-    # Ensure the database exists and is initialized
-    if not ensure_db_exists():
-        # Database creation failed
-        QMessageBox.critical(
-            window,
-            "Database Error",
-            "Failed to create the database. Please check permissions and try again."
-        )
-        return 1
-    
-    # If database was just created, ask about sample data
-    if not db_config.path.exists():
-        reply = QMessageBox.question(
-            window, 
-            'Initialize Database',
-            'Would you like to add sample tasks to the new database?',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                from database.insert_test_data import insert_test_tasks
-                insert_test_tasks()
-                print("Sample tasks added to database")
-            except Exception as e:
-                QMessageBox.warning(
-                    window,
-                    "Sample Data Error",
-                    f"Could not add sample data: {e}\n\nThe database was created but will be empty."
-                )
-    
-    # Import database manager 
-    from database.database_manager import get_db_manager
-    db_manager = get_db_manager()
-    
-    # Define a function for getting the connection
-    def get_connection():
-        return db_manager.get_connection()
-    
+def apply_connection_method():
+    """Apply the global connection method to all classes that need it"""
     # Import all needed classes
     from ui.task_tree import TaskTreeWidget
-    from ui.task_tabs import TabTaskTreeWidget, TaskTabWidget
+    from ui.task_tabs import TabTaskTreeWidget, TaskTabWidget  
     from ui.combined_settings import CombinedSettingsManager, SettingPillItem, EditItemDialog
     from ui.task_dialogs import AddTaskDialog, EditTaskDialog
     from ui.task_pill_delegate import TaskPillDelegate
@@ -547,7 +493,53 @@ def main():
     # Add get_connection method to all classes
     for cls in [TaskTreeWidget, TabTaskTreeWidget, TaskTabWidget, CombinedSettingsManager, 
                SettingPillItem, EditItemDialog, AddTaskDialog, EditTaskDialog, TaskPillDelegate]:
-        setattr(cls, 'get_connection', staticmethod(get_connection))
+        setattr(cls, 'get_connection', staticmethod(get_global_connection))
+
+def main():
+    app = QApplication(sys.argv)
+    
+    # Initialize settings manager first
+    settings = SettingsManager()
+    
+    # Get database path from settings
+    db_path = settings.prompt_for_database_location()
+    
+    # Set the database path in the central configuration
+    db_config.set_path(db_path)
+    
+    # Print initialization information
+    print(f"Initializing application with database path: {db_path}")
+    
+    # Initialize the memory database first - IMPORTANT!
+    memory_db_manager = get_memory_db_manager()
+    
+    # Ensure directory exists
+    db_config.ensure_directory_exists()
+    
+    # Create database if it doesn't exist
+    if not db_config.database_exists():
+        print("Database doesn't exist. Creating a new one...")
+        db_config.create_database()
+    
+    # Load the database into memory
+    print(f"Loading database into memory from {db_path}")
+    memory_db_manager.load_from_file(db_path)
+    
+    # Test connection before proceeding
+    try:
+        test_result = memory_db_manager.execute_query("SELECT 1")
+        print(f"Database connection test successful: {test_result}")
+    except Exception as e:
+        print(f"ERROR: Database connection test failed: {e}")
+        QMessageBox.critical(None, "Database Error", 
+                           f"Failed to initialize database: {str(e)}\n\nThe application will now exit.")
+        sys.exit(1)
+    
+    # Apply the global connection method to all classes
+    apply_connection_method()
+    
+    # Create main window
+    window = MainWindow()
     
     # Show the window and start the application
     window.show()

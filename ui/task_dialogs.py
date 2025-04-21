@@ -288,7 +288,7 @@ class EditTaskDialog(QDialog):
     
     def get_data(self):
         return self.data
-        
+
     def load_priorities(self):
         """Load priorities for editing a task"""
         self.priority_combo.clear()
@@ -297,7 +297,6 @@ class EditTaskDialog(QDialog):
             cursor = conn.cursor()
             cursor.execute("SELECT id, name FROM priorities ORDER BY display_order")
             priorities = cursor.fetchall()
-            print("EDIT DIALOG PRIORITIES:", priorities)
             
             # Add all priorities to the combo box
             for pri_id, name in priorities:
@@ -312,7 +311,7 @@ class EditTaskDialog(QDialog):
         if self.task_data['priority'] is None or self.priority_combo.currentText() != self.task_data['priority']:
             unprioritized_index = self.priority_combo.findText("Unprioritized")
             if unprioritized_index >= 0:
-                self.priority_combo.setCurrentIndex(unprioritized_index)
+                self.priority_combo.setCurrentIndex(unprioritized_index)        
 
     def load_statuses(self):
         """Load statuses from the database"""

@@ -5,6 +5,14 @@ from PyQt6.QtWidgets import (QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt6.QtCore import Qt, QSize, QTimer
 from .task_tree import TaskTreeWidget, PriorityHeaderItem
 from datetime import datetime
+import sys
+from pathlib import Path
+
+# Add the src directory to the path
+sys.path.append(str(Path(__file__).parent.parent))
+
+# Now import directly from the database package
+from database.memory_db_manager import get_memory_db_manager
 
 class TabTaskTreeWidget(TaskTreeWidget):
     """Specialized TaskTreeWidget that can be configured for specific views"""
@@ -210,9 +218,7 @@ class TabTaskTreeWidget(TaskTreeWidget):
     def _format_tasks_with_priority_headers(self, tasks):
         """Format tasks with priority headers (for Current Tasks tab)"""
         try:
-            # Import database manager
-            from database.database_manager import get_db_manager
-            db_manager = get_db_manager()
+            db_manager = get_memory_db_manager()
             
             # Get priority order map and colors
             priority_order = {}
@@ -252,13 +258,34 @@ class TabTaskTreeWidget(TaskTreeWidget):
                 
                 # Store parent info for second pass
                 parent_id = row[9]  # Element at index 9 is parent_id
+                
+                # Check if this task has a priority_header_id
+                result = db_manager.execute_query(
+                    "SELECT priority_header_id FROM tasks WHERE id = ?", 
+                    (task_id,)
+                )
+                priority_header_id = result[0][0] if result and result[0][0] else None
+                
                 if parent_id is None:
                     # This is a top-level task, add it to the appropriate priority header
-                    if priority in priority_headers:
-                        priority_headers[priority].addChild(item)
+                    if priority_header_id is not None:
+                        # If this task has a priority_header_id, try to find the matching header
+                        for p, header in priority_headers.items():
+                            if id(header) == priority_header_id:
+                                header.addChild(item)
+                                break
+                        else:
+                            # If not found, use the priority value
+                            if priority in priority_headers:
+                                priority_headers[priority].addChild(item)
+                            else:
+                                priority_headers["Unprioritized"].addChild(item)
                     else:
-                        # If priority doesn't match any header, use Unprioritized
-                        priority_headers["Unprioritized"].addChild(item)
+                        # No priority_header_id, use the priority value
+                        if priority in priority_headers:
+                            priority_headers[priority].addChild(item)
+                        else:
+                            priority_headers["Unprioritized"].addChild(item)
                 else:
                     # This is a child task, will be handled in second pass
                     item.setData(0, Qt.ItemDataRole.UserRole + 1, parent_id)
@@ -269,6 +296,7 @@ class TabTaskTreeWidget(TaskTreeWidget):
                 if parent_id is not None and parent_id in items:
                     parent_item = items[parent_id]
                     parent_item.addChild(item)
+                    
             
             # Restore expanded state of priority headers from settings
             settings = self.get_settings_manager()
@@ -447,6 +475,9 @@ class TaskTabWidget(QTabWidget):
         self.addTab(self.current_tasks_tab, "Current Tasks")
         self.addTab(self.backlog_tab, "Backlog")
         self.addTab(self.completed_tab, "Completed Tasks")
+        
+        # Force load the current tasks tab data
+        self.current_tasks_tab.task_tree.load_tasks()
         
         # Set tab tool tips for better UX
         self.setTabToolTip(0, "View and manage current active tasks")
