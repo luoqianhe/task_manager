@@ -7,6 +7,7 @@ from datetime import datetime, date
 import sqlite3
 from pathlib import Path
 
+
 class TaskPillDelegate(QStyledItemDelegate):
     @staticmethod
     def get_connection():
@@ -22,8 +23,19 @@ class TaskPillDelegate(QStyledItemDelegate):
         self.compact_height = 40
         self.pill_radius = 15
         self.item_margin = 5
-        self.left_section_width = 100
-        self.right_section_width = 100
+        
+        # Load panel settings from SettingsManager
+        settings = self.get_settings_manager()
+        self.left_section_width = settings.get_setting("left_panel_width", 100)
+        self.right_section_width = settings.get_setting("right_panel_width", 100)
+        
+        # Fixed section count for both panels (2)
+        self.left_panel_count = 2
+        self.right_panel_count = 2
+        
+        # Load panel contents
+        self.left_panel_contents = settings.get_setting("left_panel_contents", ["Category", "Status"])
+        self.right_panel_contents = settings.get_setting("right_panel_contents", ["Link", "Due Date"])
         
         # Hover tracking
         self.hover_item = None
@@ -36,15 +48,360 @@ class TaskPillDelegate(QStyledItemDelegate):
         
         # Install event filter on parent widget's viewport
         if parent:
-            print("Setting up mouse tracking and event filter")
-            parent.setMouseTracking(True)
-            parent.viewport().setMouseTracking(True)
+            try:
+                print("Setting up mouse tracking and event filter")
+                parent.setMouseTracking(True)
+                
+                # Check if parent has viewport method before using it
+                if hasattr(parent, 'viewport') and callable(parent.viewport):
+                    parent.viewport().setMouseTracking(True)
+                    parent.viewport().installEventFilter(self)
+                    print("Event filter installed on parent viewport")
+                
+                # Install event filter on parent
+                parent.installEventFilter(self)
+                print("Event filter installed on parent")
+            except Exception as e:
+                print(f"Error setting up event filters: {e}")
+    
+    def _get_section_data(self, user_data, section_type):
+        """Get data for a specific section type"""
+        if section_type == "Category":
+            return user_data.get('category', '')
+        elif section_type == "Status":
+            return user_data.get('status', 'Not Started')
+        elif section_type == "Priority":
+            return user_data.get('priority', '')
+        elif section_type == "Due Date":
+            return user_data.get('due_date', '')
+        elif section_type == "Link":
+            return user_data.get('link', '')
+        elif section_type == "Completion Date":
+            return user_data.get('completed_at', '')
+        elif section_type == "Progress":
+            # Could be enhanced to show actual progress if tracked
+            status = user_data.get('status', 'Not Started')
+            if status == 'Not Started':
+                return "0%"
+            elif status == 'In Progress':
+                return "50%"
+            elif status == 'Completed':
+                return "100%"
+            else:
+                return ""
+        elif section_type == "Tag":
+            # Future enhancement for tags
+            return user_data.get('tag', '')
+        else:
+            return ""
+    
+    def _get_section_color(self, section_type, section_data):
+        """Get color for a specific section type"""
+        if section_type == "Category":
+            return self.get_category_color(section_data)
+        elif section_type == "Status":
+            return self.get_status_color(section_data)
+        elif section_type == "Priority":
+            return self.get_priority_color(section_data)
+        elif section_type == "Due Date":
+            return QColor("#E1F5FE")  # Light blue
+        elif section_type == "Link":
+            return QColor("#f5f5f5")  # Light gray
+        elif section_type == "Completion Date":
+            return QColor("#F3E5F5")  # Light purple
+        elif section_type == "Progress":
+            # Color based on progress value
+            if section_data == "0%":
+                return QColor("#FFEBEE")  # Light red
+            elif section_data == "50%":
+                return QColor("#FFF8E1")  # Light yellow
+            elif section_data == "100%":
+                return QColor("#E8F5E9")  # Light green
+            else:
+                return QColor("#f0f0f0")  # Light gray
+        elif section_type == "Tag":
+            return QColor("#FFF8E1")  # Light yellow
+        else:
+            return QColor("#f0f0f0")  # Light gray
+    
+    def load_compact_states(self):
+        """Load compact states from the database"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # First check if the is_compact column exists in the tasks table
+                try:
+                    cursor.execute("SELECT is_compact FROM tasks LIMIT 1")
+                except sqlite3.OperationalError:
+                    # Column doesn't exist, need to add it
+                    cursor.execute("ALTER TABLE tasks ADD COLUMN is_compact INTEGER NOT NULL DEFAULT 0")
+                    conn.commit()
+                    print("Added is_compact column to tasks table")
+                
+                # Now load all task IDs that are marked as compact
+                cursor.execute("SELECT id FROM tasks WHERE is_compact = 1")
+                for row in cursor.fetchall():
+                    self.compact_items.add(row[0])
+                
+                print(f"Loaded {len(self.compact_items)} compact states from database")
+        except Exception as e:
+            print(f"Error loading compact states: {e}")
+    
+    def _draw_task_item(self, painter, option, index):
+        """Draw a regular task item - modified to support customizable panels"""
+        # Extract data using our existing method
+        user_data, item_id, title, description, link, status, priority, due_date_str, category = self._extract_item_data(index)
+        
+        # Check if compact
+        is_compact = item_id in self.compact_items
+        
+        # Save painter state and prepare to draw
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Calculate pill rect and create path
+        rect, path = self._create_pill_path(option)
+        
+        # Draw selection highlight if needed
+        if option.state & QStyle.StateFlag.State_Selected:
+            self._draw_selection_highlight(painter, path)
+        
+        # Draw the main pill background
+        self._draw_pill_background(painter, path)
+        
+        # Calculate widths for left and right panels
+        left_width = self.left_section_width if self.left_panel_contents else 0
+        right_width = self.right_section_width if self.right_panel_contents else 0
+        
+        # Draw left panel if content is configured
+        if left_width > 0 and self.left_panel_contents:
+            self._draw_custom_panel(painter, path, rect, is_compact, 
+                                   self.left_panel_contents, 
+                                   user_data, left_width, "left")
+        
+        # Draw right panel if content is configured
+        if right_width > 0 and self.right_panel_contents:
+            self._draw_custom_panel(painter, path, rect, is_compact, 
+                                   self.right_panel_contents, 
+                                   user_data, right_width, "right")
+        
+        # Draw content (title, description, due date)
+        self._draw_task_content(painter, rect, is_compact, title, description, due_date_str, item_id, left_width, right_width)
+        
+        # Draw toggle button if needed
+        self._draw_toggle_button(painter, index, item_id, rect)
+        
+        # Restore painter
+        painter.restore()
+    
+    def _extract_item_data(self, index):
+        """Extract and normalize item data from the index"""
+        user_data = index.data(Qt.ItemDataRole.UserRole)
+        
+        # Extract all data from the dictionary stored in UserRole
+        if isinstance(user_data, dict):
+            item_id = user_data.get('id', 0)
+            title = user_data.get('title', '')
+            description = user_data.get('description', '')
+            link = user_data.get('link', '')
+            status = user_data.get('status', 'Not Started')
+            priority = user_data.get('priority', '')
+            due_date_str = user_data.get('due_date', '')
+            category = user_data.get('category', '')
+        else:
+            # Fallback if UserRole data is missing or malformed
+            item_id = 0
+            title = index.data(Qt.ItemDataRole.DisplayRole) or ""
+            description = link = ""
+            status = "Not Started"
+            priority = ""
+            due_date_str = ""
+            category = ""
             
-            # Install event filter on both parent and viewport for redundancy
-            parent.installEventFilter(self)
-            parent.viewport().installEventFilter(self)
-            print("Event filter installed on parent viewport")
+        return user_data, item_id, title, description, link, status, priority, due_date_str, category
+    
+    def _create_pill_path(self, option):
+        """Create the pill rect and path"""
+        # Calculate pill rect with margins
+        rect = option.rect.adjusted(
+            self.item_margin, 
+            self.item_margin, 
+            -self.item_margin, 
+            -self.item_margin
+        )
+        
+        # Create the pill path
+        path = QPainterPath()
+        rectF = QRectF(rect)
+        path.addRoundedRect(rectF, self.pill_radius, self.pill_radius)
+        
+        return rect, path
+    
+    def _draw_selection_highlight(self, painter, path):
+        """Draw selection highlight"""
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(0, 120, 215, 40)))  # Light blue transparent
+        painter.drawPath(path)
+    
+    def _draw_pill_background(self, painter, path):
+        """Draw the main pill background"""
+        painter.setPen(QPen(QColor("#cccccc"), 1))
+        painter.setBrush(QBrush(QColor("#f5f5f5")))
+        painter.drawPath(path)
+    
+    def _draw_custom_panel(self, painter, path, rect, is_compact, content_types, 
+                           user_data, panel_width, panel_side="left"):
+        """Draw custom panel with multiple sections based on settings"""
+        # Get settings for panel text
+        settings = self.get_settings_manager()
+        text_color = settings.get_setting("left_panel_color", "#FFFFFF")
+        text_size = int(settings.get_setting("left_panel_size", 8))
+        text_bold = settings.get_setting("left_panel_bold", False)
+        
+        # Use clipping to ensure proper drawing within the pill
+        painter.setClipPath(path)
+        
+        # Calculate section height - ensure it's evenly divided
+        section_count = len(content_types)
+        section_height = rect.height() / section_count
+        
+        # Draw each section
+        for i, content_type in enumerate(content_types):
+            # Skip if content type is None
+            if content_type == "None":
+                continue
+                
+            # Get section data
+            section_data = self._get_section_data(user_data, content_type)
+            
+            # Get color based on content type
+            section_color = self._get_section_color(content_type, section_data)
+            
+            # Calculate section rectangle
+            if panel_side == "left":
+                section_rect = QRectF(
+                    rect.left(),
+                    rect.top() + (i * section_height),
+                    panel_width,
+                    section_height
+                )
+            else:  # right panel
+                section_rect = QRectF(
+                    rect.right() - panel_width,
+                    rect.top() + (i * section_height),
+                    panel_width,
+                    section_height
+                )
+            
+            # Fill the section
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(section_color))
+            painter.drawRect(section_rect)
+            
+            # Draw text if not in compact mode
+            if not is_compact:
+                # Set up font for section text
+                section_font = QFont(painter.font())
+                section_font.setPointSize(text_size)
+                if text_bold:
+                    section_font.setBold(True)
+                    
+                painter.setFont(section_font)
+                painter.setPen(QColor(text_color))
+                
+                # Draw section text
+                painter.drawText(
+                    section_rect,
+                    Qt.AlignmentFlag.AlignCenter,
+                    str(section_data) or f"No {content_type}"
+                )
+        
+        # Remove clipping
+        painter.setClipping(False)
+        
+        # Draw divider line
+        painter.setPen(QPen(QColor("#cccccc"), 1))
+        if panel_side == "left":
+            painter.drawLine(
+                rect.left() + panel_width,
+                rect.top(),
+                rect.left() + panel_width,
+                rect.bottom()
+            )
+        else:  # right panel
+            painter.drawLine(
+                rect.right() - panel_width,
+                rect.top(),
+                rect.right() - panel_width,
+                rect.bottom()
+            )
+    
+    def _draw_task_content(self, painter, rect, is_compact, title, description, due_date_str, item_id, left_width, right_width):
+        """Draw the main task content (title, description, due date)"""
+        # Get font settings from SettingsManager
+        settings = self.get_settings_manager()
+        font_family = settings.get_setting("font_family", "Segoe UI")
+        font_size = int(settings.get_setting("font_size", 10))
+        
+        # Draw the title with custom font settings
+        self._draw_title(painter, rect, is_compact, title, font_family, font_size, settings, left_width, right_width)
+        
+        # Draw description if in full mode
+        if not is_compact and description:
+            self._draw_description(painter, rect, description, font_family, font_size, settings, left_width, right_width)
+        
+        # Draw due date if available and not already in a panel
+        right_panel_has_due_date = any("Due Date" in content_type for content_type in self.right_panel_contents if content_type)
+        left_panel_has_due_date = any("Due Date" in content_type for content_type in self.left_panel_contents if content_type)
+        
+        if due_date_str and not right_panel_has_due_date and not left_panel_has_due_date:
+            self._draw_due_date(painter, rect, is_compact, due_date_str, font_family, font_size, settings, left_width, right_width)    
+  
+    def _draw_title(self, painter, rect, is_compact, title, font_family, font_size, settings, left_width, right_width):
+        """Draw the task title with custom font settings"""
+        # Get title style settings
+        bold_titles = settings.get_setting("bold_titles", True)
+        title_color = settings.get_setting("title_color", "#333333")
+        
+        # Create title font
+        title_font = QFont(font_family, font_size)
+        if bold_titles:
+            title_font.setBold(True)
+        
+        # Set font weight based on settings
+        weight = settings.get_setting("font_weight", 0)  # 0=Regular, 1=Medium, 2=Bold
+        if weight == 1:
+            title_font.setWeight(QFont.Weight.Medium)
+        elif weight == 2:
+            title_font.setWeight(QFont.Weight.Bold)
+        
+        painter.setFont(title_font)
+        painter.setPen(QColor(title_color))
+        
+        # Define title_rect based on compact mode - using the updated left_width and right_width
+        if is_compact:
+            # In compact mode, title takes top half width
+            title_rect = QRectF(
+                rect.left() + left_width + self.text_padding,
+                rect.top(),
+                rect.width() - left_width - right_width - self.text_padding * 2,
+                rect.height() / 2  # Only take the top half in compact mode
+            )
+        else:
+            # In full mode, title is at the top
+            title_rect = QRectF(
+                rect.left() + left_width + self.text_padding,
+                rect.top() + 10,
+                rect.width() - left_width - right_width - self.text_padding * 2,
+                20  # Height for title
+            )
 
+        # Draw title with ellipsis if too long
+        elidedTitle = painter.fontMetrics().elidedText(
+            title, Qt.TextElideMode.ElideRight, int(title_rect.width()))
+        painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elidedTitle)
+        
     def eventFilter(self, source, event):
         """Handle mouse events for hover detection and button clicks"""
         # Check if we're handling a tree widget or its viewport
@@ -196,30 +553,6 @@ class TaskPillDelegate(QStyledItemDelegate):
                         
         return super().eventFilter(source, event)
 
-    def load_compact_states(self):
-        """Load compact states from the database"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # First check if the is_compact column exists in the tasks table
-                try:
-                    cursor.execute("SELECT is_compact FROM tasks LIMIT 1")
-                except sqlite3.OperationalError:
-                    # Column doesn't exist, need to add it
-                    cursor.execute("ALTER TABLE tasks ADD COLUMN is_compact INTEGER NOT NULL DEFAULT 0")
-                    conn.commit()
-                    print("Added is_compact column to tasks table")
-                
-                # Now load all task IDs that are marked as compact
-                cursor.execute("SELECT id FROM tasks WHERE is_compact = 1")
-                for row in cursor.fetchall():
-                    self.compact_items.add(row[0])
-                
-                print(f"Loaded {len(self.compact_items)} compact states from database")
-        except Exception as e:
-            print(f"Error loading compact states: {e}")
-    
     def save_compact_state(self, task_id, is_compact):
         """Save compact state to the database"""
         try:
@@ -370,55 +703,6 @@ class TaskPillDelegate(QStyledItemDelegate):
         
         painter.drawText(header_text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, 
                         priority.upper())
-        
-        # Restore painter
-        painter.restore()
-
-    def _draw_task_item(self, painter, option, index):
-        """Draw a regular task item - modified to include category and status indicators"""
-        # Extract data using our existing method
-        user_data, item_id, title, description, link, status, priority, due_date_str, category = self._extract_item_data(index)
-        
-        # Check if compact
-        is_compact = item_id in self.compact_items
-        
-        # Get the category and status colors
-        category_color = self.get_category_color(category)
-        status_color = self.get_status_color(status)
-        
-        # Save painter state and prepare to draw
-        painter.save()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        # Calculate pill rect and create path
-        rect, path = self._create_pill_path(option)
-        
-        # Draw selection highlight if needed
-        if option.state & QStyle.StateFlag.State_Selected:
-            self._draw_selection_highlight(painter, path)
-        
-        # Draw the main pill background
-        self._draw_pill_background(painter, path)
-        
-        # Draw category and status indicators on the left - get the width used
-        try:
-            left_section_width = self._draw_category_indicator(painter, path, rect, is_compact, 
-                                        category_color, status_color, category, status)
-            # Ensure we have a valid width even if None is returned
-            if left_section_width is None:
-                left_section_width = 60  # Default fallback width
-        except Exception as e:
-            print(f"Error in _draw_category_indicator: {e}")
-            left_section_width = 60  # Default fallback width if exception occurs
-        
-        # Draw content (title, description, due date) - pass the left_section_width
-        self._draw_task_content(painter, rect, is_compact, title, description, due_date_str, item_id, left_section_width)
-        
-        # Draw right details section
-        self._draw_right_panel(painter, path, rect, link)
-        
-        # Draw toggle button if needed
-        self._draw_toggle_button(painter, index, item_id, rect)
         
         # Restore painter
         painter.restore()
@@ -657,69 +941,7 @@ class TaskPillDelegate(QStyledItemDelegate):
             rect.bottom()
         )
 
-    def _draw_task_content(self, painter, rect, is_compact, title, description, due_date_str, item_id, left_section_width):
-        """Draw the main task content (title, description, due date)"""
-        # Get font settings from SettingsManager
-        settings = self.get_settings_manager()
-        font_family = settings.get_setting("font_family", "Segoe UI")
-        font_size = int(settings.get_setting("font_size", 10))
-        
-        # Draw the title with custom font settings
-        self._draw_title(painter, rect, is_compact, title, font_family, font_size, settings, left_section_width)
-        
-        # Draw description if in full mode
-        if not is_compact and description:
-            self._draw_description(painter, rect, description, font_family, font_size, settings, left_section_width)
-        
-        # Draw due date if available
-        if due_date_str:
-            self._draw_due_date(painter, rect, is_compact, due_date_str, font_family, font_size, settings, left_section_width)
-            
-    def _draw_title(self, painter, rect, is_compact, title, font_family, font_size, settings, left_section_width):
-        """Draw the task title with custom font settings"""
-        # Get title style settings
-        bold_titles = settings.get_setting("bold_titles", True)
-        title_color = settings.get_setting("title_color", "#333333")
-        
-        # Create title font
-        title_font = QFont(font_family, font_size)
-        if bold_titles:
-            title_font.setBold(True)
-        
-        # Set font weight based on settings
-        weight = settings.get_setting("font_weight", 0)  # 0=Regular, 1=Medium, 2=Bold
-        if weight == 1:
-            title_font.setWeight(QFont.Weight.Medium)
-        elif weight == 2:
-            title_font.setWeight(QFont.Weight.Bold)
-        
-        painter.setFont(title_font)
-        painter.setPen(QColor(title_color))
-        
-        # Define title_rect based on compact mode - using the updated left_section_width
-        if is_compact:
-            # In compact mode, title takes top half width
-            title_rect = QRectF(
-                rect.left() + left_section_width + self.text_padding,
-                rect.top(),
-                rect.width() - left_section_width - self.right_section_width - self.text_padding * 2,
-                rect.height() / 2  # Only take the top half now
-            )
-        else:
-            # In full mode, title is at the top
-            title_rect = QRectF(
-                rect.left() + left_section_width + self.text_padding,
-                rect.top() + 10,
-                rect.width() - left_section_width - self.right_section_width - self.text_padding * 2,
-                20  # Height for title
-            )
-
-        # Draw title with ellipsis if too long
-        elidedTitle = painter.fontMetrics().elidedText(
-            title, Qt.TextElideMode.ElideRight, int(title_rect.width()))
-        painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elidedTitle)
-
-    def _draw_description(self, painter, rect, description, font_family, font_size, settings, left_section_width):
+    def _draw_description(self, painter, rect, description, font_family, font_size, settings, left_width, right_width):
         """Draw the task description with custom font settings"""
         # Get description style settings
         italic_desc = settings.get_setting("italic_descriptions", False)
@@ -733,11 +955,11 @@ class TaskPillDelegate(QStyledItemDelegate):
         painter.setFont(desc_font)
         painter.setPen(QColor(desc_color))
         
-        # Define description rect - using left_section_width
+        # Define description rect with adjusted panel widths
         desc_rect = QRectF(
-            rect.left() + left_section_width + self.text_padding,
+            rect.left() + left_width + self.text_padding,
             rect.top() + 30,
-            rect.width() - left_section_width - self.right_section_width - self.text_padding * 2,
+            rect.width() - left_width - right_width - self.text_padding * 2,
             30  # Height for description
         )
         
@@ -746,7 +968,7 @@ class TaskPillDelegate(QStyledItemDelegate):
             description, Qt.TextElideMode.ElideRight, int(desc_rect.width()))
         painter.drawText(desc_rect, Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, elidedText)
 
-    def _draw_due_date(self, painter, rect, is_compact, due_date_str, font_family, font_size, settings, left_section_width):
+    def _draw_due_date(self, painter, rect, is_compact, due_date_str, font_family, font_size, settings, left_width, right_width):
         """Draw the due date with custom font settings"""
         # Get due date style settings
         due_color = settings.get_setting("due_date_color", "#888888")
@@ -760,9 +982,9 @@ class TaskPillDelegate(QStyledItemDelegate):
             # In compact mode, show due date below title but still compact
             title_rect_bottom = rect.top() + rect.height() / 2 + 2  # Just below vertical center
             date_rect = QRectF(
-                rect.left() + left_section_width + self.text_padding,  # Use left_section_width
+                rect.left() + left_width + self.text_padding,
                 title_rect_bottom,
-                rect.width() - left_section_width - self.right_section_width - self.text_padding * 2,
+                rect.width() - left_width - right_width - self.text_padding * 2,
                 rect.height() / 2 - 2
             )
             # Draw text left-aligned
@@ -770,9 +992,9 @@ class TaskPillDelegate(QStyledItemDelegate):
         else:
             # In full mode, show due date at bottom
             date_rect = QRectF(
-                rect.left() + left_section_width + self.text_padding,  # Use left_section_width
+                rect.left() + left_width + self.text_padding,
                 rect.top() + rect.height() - 18,
-                rect.width() - left_section_width - self.right_section_width - self.text_padding * 2,
+                rect.width() - left_width - right_width - self.text_padding * 2,
                 15
             )
             painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"Due: {due_date_str}")

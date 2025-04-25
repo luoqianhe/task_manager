@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 class TaskTreeWidget(QTreeWidget):
-    
+
     def __init__(self):
         super().__init__()
         self.setRootIsDecorated(False)
@@ -70,7 +70,7 @@ class TaskTreeWidget(QTreeWidget):
         self.setVerticalScrollMode(QTreeWidget.ScrollMode.ScrollPerPixel)
         self.setUniformRowHeights(False)
         
-       # Set context menu
+    # Set context menu
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
 
@@ -81,15 +81,21 @@ class TaskTreeWidget(QTreeWidget):
         # Connect double-click signal with our router method
         self.itemDoubleClicked.connect(self.onItemDoubleClicked)
         
-        # Load tasks
-        try:
-            self.load_tasks()
-        except Exception as e:
-            print(f"Error loading tasks: {e}")
+        # Defer loading tasks to avoid initialization order issues
+        # This allows subclasses to fully initialize before loading tasks
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, self._init_load_tasks)
         
         # Debug delegate setup
         self.debug_delegate_setup()
 
+    def _init_load_tasks(self):
+        """Deferred task loading to handle initialization order"""
+        try:
+            self.load_tasks()
+        except Exception as e:
+            print(f"Error during deferred task loading: {e}")
+            
     def add_new_task(self, data):
         try:
             # Import database manager
@@ -505,7 +511,7 @@ class TaskTreeWidget(QTreeWidget):
             except Exception as e:
                 print(f"Error deleting task: {e}")
                 QMessageBox.critical(self, "Error", f"Failed to delete task: {str(e)}")
-    
+
     def dropEvent(self, event):
         """Handle drag and drop events for tasks and priority headers"""
         print("\n=== DRAG & DROP DEBUG ===")
@@ -544,18 +550,27 @@ class TaskTreeWidget(QTreeWidget):
                 header_priority = target_data.get('priority')
                 print(f"Drop target is a priority header with priority: {header_priority}")
         
+        # Save original parent before Qt handles the drop
+        original_parent = item.parent()
+        original_parent_id = None
+        if original_parent and hasattr(original_parent, 'task_id'):
+            original_parent_id = original_parent.task_id
+        
         # First, let Qt handle the visual drop
         super().dropEvent(event)
         print("Standard drop handling completed")
         
         try:
             if is_priority_header and header_priority:
-                # This is the same code used in change_priority method that works in the Edit dialog                
+                # Changing priority - dropped onto a priority header
                 print(f"Applied change_priority to task: {item.text(0)} with priority: {header_priority}")
                 self.change_priority(item, header_priority)
                 
+                # Apply the same priority to all children
+                self._update_children_priority(item, header_priority)
+                
             else:
-                # Standard parent-child handling - similar to your original code
+                # Standard parent-child handling
                 print("Handling standard parent-child relationship")
                 
                 # Get memory database manager
@@ -571,16 +586,28 @@ class TaskTreeWidget(QTreeWidget):
                 if new_parent and hasattr(new_parent, 'task_id'):
                     parent_id = new_parent.task_id
                     print(f"Setting parent_id to: {parent_id}")
+                    
+                    # When moving to a new parent, get the parent's priority
+                    parent_data = new_parent.data(0, Qt.ItemDataRole.UserRole)
+                    if isinstance(parent_data, dict) and 'priority' in parent_data:
+                        parent_priority = parent_data.get('priority')
+                        print(f"Parent priority: {parent_priority}")
+                        
+                        # Update the task's priority to match its new parent
+                        self.change_priority(item, parent_priority)
+                        
+                        # Apply the same priority to all children
+                        self._update_children_priority(item, parent_priority)
                 else:
                     print("Setting parent_id to None (top-level item)")
                 
-                # Update parent_id in database
+                # Update parent_id in database (the priority was updated by change_priority)
                 db_manager.execute_update(
                     "UPDATE tasks SET parent_id = ? WHERE id = ?", 
                     (parent_id, item.task_id)
                 )
                 
-                # Recursively update all children
+                # Recursively update all children hierarchy
                 print("Updating children hierarchy...")
                 self._update_children_hierarchy(item)
                 
@@ -595,6 +622,44 @@ class TaskTreeWidget(QTreeWidget):
             QMessageBox.critical(self, "Error", f"Failed to update task: {str(e)}")
         
         print("=== END DRAG & DROP DEBUG ===\n")
+
+    def _update_children_priority(self, parent_item, new_priority):
+        """Update all children with the parent's priority"""
+        try:
+            # Get database manager
+            from database.database_manager import get_db_manager
+            db_manager = get_db_manager()
+            
+            # Loop through all children
+            for i in range(parent_item.childCount()):
+                child = parent_item.child(i)
+                
+                # Skip if not a task item
+                if not hasattr(child, 'task_id'):
+                    continue
+                    
+                # Update child priority in database
+                db_manager.execute_update(
+                    """
+                    UPDATE tasks 
+                    SET priority = ?
+                    WHERE id = ?
+                    """, 
+                    (new_priority, child.task_id)
+                )
+                
+                # Update priority in the UI
+                child_data = child.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(child_data, dict):
+                    child_data['priority'] = new_priority
+                    child.setData(0, Qt.ItemDataRole.UserRole, child_data)
+                
+                # Recursively update grandchildren
+                self._update_children_priority(child, new_priority)
+                
+            print(f"Updated priority for all children to: {new_priority}")
+        except Exception as e:
+            print(f"Error updating children priorities: {e}")    
 
     def force_reload_tabs(self):
         """Force reload of all tabs"""
@@ -1021,6 +1086,38 @@ class TaskTreeWidget(QTreeWidget):
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(None, "Error", f"Failed to load tasks: {str(e)}")
 
+    def dragMoveEvent(self, event):
+        """Handle drag move events and implement autoscroll"""
+        # Call the parent implementation first
+        super().dragMoveEvent(event)
+        
+        # Get the viewport rectangle
+        viewport_rect = self.viewport().rect()
+        
+        # Define the scroll margins (how close to the edge before scrolling begins)
+        margin = 50
+        
+        # Get the current position
+        pos = event.position().toPoint()
+        
+        # Get the current vertical scroll position
+        v_scroll_bar = self.verticalScrollBar()
+        current_scroll = v_scroll_bar.value()
+        
+        # Check if we're near the top edge
+        if pos.y() < margin:
+            # Calculate how much to scroll (closer to edge = faster scroll)
+            scroll_amount = max(1, (margin - pos.y()) // 5)
+            # Scroll up
+            v_scroll_bar.setValue(current_scroll - scroll_amount)
+        
+        # Check if we're near the bottom edge
+        elif pos.y() > viewport_rect.height() - margin:
+            # Calculate how much to scroll (closer to edge = faster scroll)
+            scroll_amount = max(1, (pos.y() - (viewport_rect.height() - margin)) // 5)
+            # Scroll down
+            v_scroll_bar.setValue(current_scroll + scroll_amount)
+        
     def mousePressEvent(self, event):
         """Handle mouse press events including priority header toggle"""
         try:

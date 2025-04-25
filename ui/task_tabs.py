@@ -17,7 +17,7 @@ from database.memory_db_manager import get_memory_db_manager
 class TabTaskTreeWidget(TaskTreeWidget):
     """Specialized TaskTreeWidget that can be configured for specific views"""
     
-    def __init__(self, filter_type=None):
+    def __init__(self, filter_type="current"):
         super().__init__()
         self.filter_type = filter_type
         self.use_priority_headers = filter_type == "current"

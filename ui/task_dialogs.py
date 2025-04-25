@@ -176,10 +176,18 @@ class AddTaskDialog(QDialog):
         self.parent_combo.addItem("None", None)
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id, title FROM tasks ORDER BY title")
-            for task_id, title in cursor.fetchall():
-                self.parent_combo.addItem(title, task_id)
-
+            # Modified query to exclude completed tasks and include priority
+            cursor.execute("""
+                SELECT t.id, t.title, t.priority 
+                FROM tasks t
+                WHERE t.status != 'Completed'
+                ORDER BY t.priority, t.title
+            """)
+            for task_id, title, priority in cursor.fetchall():
+                # Format as [Priority]: Task Title
+                display_text = f"[{priority}]: {title}"
+                self.parent_combo.addItem(display_text, task_id)
+                
 class EditTaskDialog(QDialog):
     @staticmethod
     def get_connection():
@@ -365,19 +373,23 @@ class EditTaskDialog(QDialog):
         self.parent_combo.addItem("None", None)
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            # Don't show the current task or its children as possible parents
+            # Modified query to exclude completed tasks and this task itself, and include priority
             cursor.execute("""
-                SELECT id, title FROM tasks 
-                WHERE id != ? AND parent_id != ?
-                ORDER BY title
+                SELECT t.id, t.title, t.priority
+                FROM tasks t
+                WHERE t.id != ? AND t.status != 'Completed'
+                AND t.id NOT IN (SELECT id FROM tasks WHERE parent_id = ?)
+                ORDER BY t.priority, t.title
             """, (self.task_data['id'], self.task_data['id']))
             
             current_parent = self.task_data.get('parent_id')
-            for task_id, title in cursor.fetchall():
-                self.parent_combo.addItem(title, task_id)
+            for task_id, title, priority in cursor.fetchall():
+                # Format as [Priority]: Task Title
+                display_text = f"[{priority}]: {title}"
+                self.parent_combo.addItem(display_text, task_id)
                 if task_id == current_parent:
                     self.parent_combo.setCurrentIndex(self.parent_combo.count() - 1)
-                    
+     
 class EditStatusDialog(QDialog):
     @staticmethod
     def get_connection():

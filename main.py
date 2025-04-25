@@ -16,6 +16,7 @@ import sys
 import sqlite3
 from datetime import datetime
 import os
+from ui.combined_display_settings import CombinedDisplaySettingsWidget
 
 # Import database modules
 from database.memory_db_manager import get_memory_db_manager
@@ -26,10 +27,11 @@ def get_global_connection():
     return get_memory_db_manager().get_connection()
 
 class MainWindow(QMainWindow):
+    
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Task Organizer")
-        self.setGeometry(100, 100, 900, 600)  # Slightly wider window
+        self.setGeometry(100, 100, 900, 600)
         
         # Initialize settings manager
         self.settings = SettingsManager()
@@ -43,7 +45,7 @@ class MainWindow(QMainWindow):
         
         # Initialize views
         self.init_task_view()
-        self.init_settings_view()
+        self.init_settings_view()  # This line should be here
         
         # Add widgets to the stack
         self.stacked_widget.addWidget(self.task_widget)
@@ -51,54 +53,57 @@ class MainWindow(QMainWindow):
         
         # Show task view by default
         self.show_task_view()
-
-        # Add shortcuts
-        self.setup_shortcuts()
+    
+    def init_settings_view(self):
+        print('Calling init_settings_view')
+        self.settings_widget = QWidget()
+        layout = QVBoxLayout(self.settings_widget)
         
-        # Set application style
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #f5f5f5;
-            }
-            QWidget {
-                font-family: 'Segoe UI', Arial, sans-serif;
-            }
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border-radius: 5px;
-                padding: 8px 15px;
-                font-weight: bold;
-                min-width: 100px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QLabel {
-                color: #333333;
-            }
-            QTabWidget::pane {
-                border: 1px solid #cccccc;
-                background-color: white;
-                border-radius: 5px;
-            }
-            QTabBar::tab {
-                background-color: #f0f0f0;
-                border: 1px solid #cccccc;
-                border-bottom: none;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-                padding: 6px 12px;
-                margin-right: 2px;
-            }
-            QTabBar::tab:selected {
-                background-color: white;
-                border-bottom: 1px solid white;
-            }
-            QTabBar::tab:hover {
-                background-color: #e0e0e0;
-            }
+        # Create tab widget for different settings sections
+        self.settings_tabs = QTabWidget()
+        
+        # Create Combined Settings Manager tab
+        self.combined_settings = CombinedSettingsManager()
+        self.settings_tabs.addTab(self.combined_settings, "Task Organization")
+        
+        # Create Combined Display Settings tab (replacing Font Settings and Task Pill Display)
+        try:
+            from ui.combined_display_settings import CombinedDisplaySettingsWidget
+            print("Import successful")
+            try:
+                self.display_settings = CombinedDisplaySettingsWidget(self)
+                print("Widget created")
+                self.settings_tabs.addTab(self.display_settings, "Display Settings")
+                print("Tab added")
+            except Exception as e:
+                print(f"ERROR creating widget: {e}")
+                import traceback
+                traceback.print_exc()
+        except ImportError as e:
+            print(f"Import error: {e}")
+        
+        # Create App Settings tab
+        self.app_settings = AppSettingsWidget(self)
+        self.settings_tabs.addTab(self.app_settings, "App Settings")
+        
+        # Add tabs to layout
+        layout.addWidget(self.settings_tabs)
+        
+        # Add Done button
+        done_button = QPushButton("Back to Tasks")
+        done_button.setFixedHeight(40)
+        done_button.setStyleSheet("""
+            background-color: #2196F3;
+            color: white;
+            font-weight: bold;
         """)
+        done_button.clicked.connect(self.show_task_view)
+        
+        # Add button to layout
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(done_button)
+        button_layout.addStretch()  # Push button to the left
+        layout.addLayout(button_layout)
     
     def setup_shortcuts(self):
         # New Task
@@ -212,43 +217,6 @@ class MainWindow(QMainWindow):
         # Debug priority headers
         self.tabs.current_tasks_tab.task_tree.debug_priority_headers()
         
-    def init_settings_view(self):
-        self.settings_widget = QWidget()
-        layout = QVBoxLayout(self.settings_widget)
-        
-        # Create tab widget for different settings sections
-        self.settings_tabs = QTabWidget()
-        
-        # Create Combined Settings Manager tab
-        self.combined_settings = CombinedSettingsManager()
-        self.settings_tabs.addTab(self.combined_settings, "Task Organization")
-        
-        # Create Font Settings tab
-        from ui.font_settings import FontSettingsWidget  
-        self.font_settings = FontSettingsWidget(self)
-        self.settings_tabs.addTab(self.font_settings, "Font Settings")
-        
-        # Create App Settings tab
-        self.app_settings = AppSettingsWidget(self)
-        self.settings_tabs.addTab(self.app_settings, "App Settings")
-        
-        # Add tabs to layout
-        layout.addWidget(self.settings_tabs)
-        
-        # Add Done button
-        done_button = QPushButton("Back to Tasks")
-        done_button.setFixedHeight(40)
-        done_button.setStyleSheet("""
-            background-color: #2196F3;
-        """)
-        done_button.clicked.connect(self.show_task_view)
-        
-        # Add button to layout
-        button_layout = QHBoxLayout()
-        button_layout.addWidget(done_button)
-        button_layout.addStretch()  # Push button to the left
-        layout.addLayout(button_layout)
-
     def show_task_view(self):
         self.stacked_widget.setCurrentIndex(0)
         # Refresh all tabs when returning from settings
