@@ -3,11 +3,14 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QSpinBox, QCheckBox,
     QRadioButton, QButtonGroup, QGroupBox, QPushButton, QColorDialog, QLineEdit,
-    QFormLayout, QMessageBox, QScrollArea, QFrame
+    QFormLayout, QMessageBox, QScrollArea, QFrame, QSizePolicy, QSplitter
 )
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtCore import Qt, QSignalBlocker
 import platform
+
+# Import our new task pill preview widget
+from ui.task_pill_preview import TaskPillPreviewWidget
 
 class CombinedDisplaySettingsWidget(QWidget):
     def __init__(self, main_window):
@@ -24,12 +27,20 @@ class CombinedDisplaySettingsWidget(QWidget):
     
     def setup_ui(self):
         # Create a main layout for the entire widget
-        main_layout = QVBoxLayout(self)
+        main_layout = QHBoxLayout(self)
+        
+        # Add a splitter to allow resizing between controls and preview
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        
+        # Create left side for settings controls
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
         
         # Header
         header_label = QLabel("Task Display Settings")
         header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
-        main_layout.addWidget(header_label)
+        left_layout.addWidget(header_label)
         
         # Create a scroll area to contain the settings
         scroll_area = QScrollArea()
@@ -288,8 +299,8 @@ class CombinedDisplaySettingsWidget(QWidget):
         # Set the content widget for the scroll area
         scroll_area.setWidget(scroll_content)
         
-        # Add the scroll area to the main layout
-        main_layout.addWidget(scroll_area)
+        # Add the scroll area to the left layout
+        left_layout.addWidget(scroll_area)
         
         # Add save button
         save_btn = QPushButton("Save Display Settings")
@@ -301,91 +312,43 @@ class CombinedDisplaySettingsWidget(QWidget):
         """)
         save_btn.clicked.connect(self.save_settings)
         
-        main_layout.addWidget(save_btn)
-    
-    def load_current_settings(self):
-        """Load current settings from settings manager"""
-        # Block signals during loading to prevent multiple preview updates
-        with QSignalBlocker(self.font_family_combo), \
-             QSignalBlocker(self.font_size_spin), \
-             QSignalBlocker(self.bold_titles_check), \
-             QSignalBlocker(self.italic_desc_check), \
-             QSignalBlocker(self.compact_view_check), \
-             QSignalBlocker(self.top_left_combo), \
-             QSignalBlocker(self.bottom_left_combo), \
-             QSignalBlocker(self.top_right_combo), \
-             QSignalBlocker(self.bottom_right_combo):
-            
-            # Font settings
-            font_family = self.settings.get_setting("font_family", "")
-            if font_family:
-                index = self.font_family_combo.findText(font_family)
-                if index >= 0:
-                    self.font_family_combo.setCurrentIndex(index)
-            
-            font_size = self.settings.get_setting("font_size", 0)
-            if font_size:
-                self.font_size_spin.setValue(int(font_size))
-            
-            # Style options
-            self.bold_titles_check.setChecked(self.settings.get_setting("bold_titles", True))
-            self.italic_desc_check.setChecked(self.settings.get_setting("italic_descriptions", False))
-            self.compact_view_check.setChecked(self.settings.get_setting("compact_view_default", False))
-            
-            # Font weight
-            weight = self.settings.get_setting("font_weight", 0)  # 0=Regular, 1=Medium, 2=Bold
-            if weight == 0:
-                self.regular_radio.setChecked(True)
-            elif weight == 1:
-                self.medium_radio.setChecked(True)
-            else:
-                self.bold_radio.setChecked(True)
-            
-            # Text colors
-            title_color = self.settings.get_setting("title_color", "#333333")
-            desc_color = self.settings.get_setting("description_color", "#666666")
-            due_color = self.settings.get_setting("due_date_color", "#888888")
-            
-            self.title_color_hex.setText(title_color)
-            self.desc_color_hex.setText(desc_color)
-            self.due_color_hex.setText(due_color)
-            
-            self.title_color_btn.setStyleSheet(f"background-color: {title_color}; border: 1px solid #666666;")
-            self.desc_color_btn.setStyleSheet(f"background-color: {desc_color}; border: 1px solid #666666;")
-            self.due_color_btn.setStyleSheet(f"background-color: {due_color}; border: 1px solid #666666;")
-            
-            # Left panel settings
-            left_panel_color = self.settings.get_setting("left_panel_color", "#FFFFFF")
-            self.left_panel_color_hex.setText(left_panel_color)
-            self.left_panel_color_btn.setStyleSheet(f"background-color: {left_panel_color}; border: 1px solid #666666;")
-
-            left_panel_size = self.settings.get_setting("left_panel_size", 8)
-            if left_panel_size:
-                self.left_panel_size_spin.setValue(int(left_panel_size))
-
-            self.left_panel_bold_check.setChecked(self.settings.get_setting("left_panel_bold", False))
-            
-            # Panel layout settings
-            left_contents = self.settings.get_setting("left_panel_contents", ["Category", "Status"])
-            
-            # Set top left content
-            if len(left_contents) > 0:
-                self.top_left_combo.setCurrentText(left_contents[0])
-            
-            # Set bottom left content
-            if len(left_contents) > 1:
-                self.bottom_left_combo.setCurrentText(left_contents[1])
-            
-            # Right section content settings
-            right_contents = self.settings.get_setting("right_panel_contents", ["Link", "Due Date"])
-            
-            # Set top right content
-            if len(right_contents) > 0:
-                self.top_right_combo.setCurrentText(right_contents[0])
-            
-            # Set bottom right content
-            if len(right_contents) > 1:
-                self.bottom_right_combo.setCurrentText(right_contents[1])
+        left_layout.addWidget(save_btn)
+        
+        # Create the right side with preview
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(10, 0, 0, 0)
+        
+        # Create and add task pill preview widget
+        self.task_preview = TaskPillPreviewWidget(self)
+        right_layout.addWidget(self.task_preview)
+        
+        # Set size policies and widths
+        left_widget.setMinimumWidth(500)
+        right_widget.setMinimumWidth(300)
+        
+        # Add widgets to splitter
+        splitter.addWidget(left_widget)
+        splitter.addWidget(right_widget)
+        
+        # Set initial sizes (2:1 ratio)
+        splitter.setSizes([600, 300])
+        
+        # Style the splitter handle
+        splitter.setHandleWidth(6)
+        splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #f0f0f0;
+                border: 1px solid #cccccc;
+                border-radius: 1px;
+            }
+            QSplitter::handle:hover {
+                background-color: #2196F3;
+            }
+        """)
+        
+        # Add splitter to main layout
+        main_layout.addWidget(splitter)
     
     def pick_color(self, color_type):
         """Open color picker dialog for the specified color type"""
@@ -495,3 +458,95 @@ class CombinedDisplaySettingsWidget(QWidget):
         # Notify the user
         QMessageBox.information(self, "Settings Saved", 
                                 "Display settings have been saved. Changes will be applied when tasks are reloaded.")
+        
+        # Update the preview
+        if hasattr(self, 'task_preview'):
+            self.task_preview.update_preview()
+    
+    def load_current_settings(self):
+        """Load current settings from settings manager"""
+        # Block signals during loading to prevent multiple preview updates
+        with QSignalBlocker(self.font_family_combo), \
+             QSignalBlocker(self.font_size_spin), \
+             QSignalBlocker(self.bold_titles_check), \
+             QSignalBlocker(self.italic_desc_check), \
+             QSignalBlocker(self.compact_view_check), \
+             QSignalBlocker(self.top_left_combo), \
+             QSignalBlocker(self.bottom_left_combo), \
+             QSignalBlocker(self.top_right_combo), \
+             QSignalBlocker(self.bottom_right_combo):
+            
+            # Font settings
+            font_family = self.settings.get_setting("font_family", "")
+            if font_family:
+                index = self.font_family_combo.findText(font_family)
+                if index >= 0:
+                    self.font_family_combo.setCurrentIndex(index)
+            
+            font_size = self.settings.get_setting("font_size", 0)
+            if font_size:
+                self.font_size_spin.setValue(int(font_size))
+            
+            # Style options
+            self.bold_titles_check.setChecked(self.settings.get_setting("bold_titles", True))
+            self.italic_desc_check.setChecked(self.settings.get_setting("italic_descriptions", False))
+            self.compact_view_check.setChecked(self.settings.get_setting("compact_view_default", False))
+            
+            # Font weight
+            weight = self.settings.get_setting("font_weight", 0)  # 0=Regular, 1=Medium, 2=Bold
+            if weight == 0:
+                self.regular_radio.setChecked(True)
+            elif weight == 1:
+                self.medium_radio.setChecked(True)
+            else:
+                self.bold_radio.setChecked(True)
+            
+            # Text colors
+            title_color = self.settings.get_setting("title_color", "#333333")
+            desc_color = self.settings.get_setting("description_color", "#666666")
+            due_color = self.settings.get_setting("due_date_color", "#888888")
+            
+            self.title_color_hex.setText(title_color)
+            self.desc_color_hex.setText(desc_color)
+            self.due_color_hex.setText(due_color)
+            
+            self.title_color_btn.setStyleSheet(f"background-color: {title_color}; border: 1px solid #666666;")
+            self.desc_color_btn.setStyleSheet(f"background-color: {desc_color}; border: 1px solid #666666;")
+            self.due_color_btn.setStyleSheet(f"background-color: {due_color}; border: 1px solid #666666;")
+            
+            # Left panel settings
+            left_panel_color = self.settings.get_setting("left_panel_color", "#FFFFFF")
+            self.left_panel_color_hex.setText(left_panel_color)
+            self.left_panel_color_btn.setStyleSheet(f"background-color: {left_panel_color}; border: 1px solid #666666;")
+
+            left_panel_size = self.settings.get_setting("left_panel_size", 8)
+            if left_panel_size:
+                self.left_panel_size_spin.setValue(int(left_panel_size))
+
+            self.left_panel_bold_check.setChecked(self.settings.get_setting("left_panel_bold", False))
+            
+            # Panel layout settings
+            left_contents = self.settings.get_setting("left_panel_contents", ["Category", "Status"])
+            
+            # Set top left content
+            if len(left_contents) > 0:
+                self.top_left_combo.setCurrentText(left_contents[0])
+            
+            # Set bottom left content
+            if len(left_contents) > 1:
+                self.bottom_left_combo.setCurrentText(left_contents[1])
+            
+            # Right section content settings
+            right_contents = self.settings.get_setting("right_panel_contents", ["Link", "Due Date"])
+            
+            # Set top right content
+            if len(right_contents) > 0:
+                self.top_right_combo.setCurrentText(right_contents[0])
+            
+            # Set bottom right content
+            if len(right_contents) > 1:
+                self.bottom_right_combo.setCurrentText(right_contents[1])
+                
+        # After loading settings, update the preview
+        if hasattr(self, 'task_preview'):
+            self.task_preview.update_preview()
