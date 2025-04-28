@@ -76,7 +76,7 @@ class TaskPillDelegate(QStyledItemDelegate):
         elif section_type == "Due Date":
             return user_data.get('due_date', '')
         elif section_type == "Link":
-            # Check for multiple links first
+            # Check for links
             links = user_data.get('links', [])
             print(f"DEBUG: Links found: {links}")
             if links and isinstance(links, list) and len(links) > 0:
@@ -84,10 +84,7 @@ class TaskPillDelegate(QStyledItemDelegate):
                 result = f"Links ({links_count})" if links_count > 1 else "Link"
                 print(f"DEBUG: Returning for links: {result}")
                 return result
-            # Fall back to legacy link
-            legacy_link = user_data.get('link', '')
-            print(f"DEBUG: Legacy link: {legacy_link}")
-            return "Link" if legacy_link else "No Link"
+            return "No Link"
         elif section_type == "Completion Date":
             return user_data.get('completed_at', '')
         elif section_type == "Progress":
@@ -106,7 +103,61 @@ class TaskPillDelegate(QStyledItemDelegate):
             return user_data.get('tag', '')
         else:
             return ""
+
+    def handle_links_click(self, item, point_in_task_pill):
+        """Handle clicks on the links section of a task pill"""
+        # Get item data
+        data = item.data(0, Qt.ItemDataRole.UserRole)
         
+        # Check if we have any links
+        links = data.get('links', [])
+        print(f"DEBUG: Links in handle_links_click: {links}")
+        
+        # If no links, return
+        if not links:
+            print("DEBUG: No links found")
+            return
+        
+        # Create links menu
+        menu = QMenu(self)
+        
+        # Add individual links with labels if available
+        for link_id, url, label in links:
+            action_text = label if label else url
+            action = menu.addAction(action_text)
+            action.setData(url)
+            print(f"DEBUG: Added link menu item: {action_text}")
+        
+        # Add separator if we have more than one link
+        if len(links) > 1:
+            menu.addSeparator()
+            
+            # Add "Open All" actions
+            open_all_action = menu.addAction("Open All Links")
+            open_all_action.setData("open_all")
+            
+            open_all_new_window_action = menu.addAction("Open All in New Window")
+            open_all_new_window_action.setData("open_all_new_window")
+        
+        # Execute menu
+        action = menu.exec(self.mapToGlobal(point_in_task_pill))
+        
+        if action:
+            action_data = action.data()
+            print(f"DEBUG: Selected action: {action_data}")
+            
+            if action_data == "open_all":
+                # Open all links in current window
+                for _, url, _ in links:
+                    if url:
+                        self.open_link(url)
+            elif action_data == "open_all_new_window":
+                # Open all links in new window
+                self.open_links_in_new_window(links)
+            else:
+                # Open individual link
+                self.open_link(action_data)
+    
     def _get_section_color(self, section_type, section_data):
         """Get color for a specific section type"""
         if section_type == "Category":
