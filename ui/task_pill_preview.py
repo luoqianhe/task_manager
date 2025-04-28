@@ -16,6 +16,7 @@ class TaskPillPreviewWidget(QWidget):
     """Widget that shows a preview of task pills based on current display settings"""
     
     def __init__(self, parent=None):
+        print("DEBUG: TaskPillPreviewWidget.__init__ called")
         super().__init__(parent)
         self.settings_widget = parent
         self.main_window = self._find_main_window()
@@ -280,9 +281,6 @@ class TaskPillPreviewWidget(QWidget):
         if hasattr(self.settings_widget, 'left_panel_bold_check'):
             panel_bold = self.settings_widget.left_panel_bold_check.isChecked()
             settings.set_setting("left_panel_bold", panel_bold)
-    
-    # Remove this method as we'll be using the built-in toggle functionality in the tree widget
-
 
 class SampleTaskTreeWidget(QTreeWidget):
     """Specialized tree widget for the sample task preview"""

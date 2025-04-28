@@ -219,7 +219,6 @@ class DatabaseConfig:
                 id INTEGER PRIMARY KEY,
                 title TEXT NOT NULL,
                 description TEXT,
-                link TEXT,
                 status TEXT NOT NULL DEFAULT 'Not Started',
                 priority TEXT NOT NULL DEFAULT 'Medium',
                 due_date TEXT,
@@ -234,6 +233,25 @@ class DatabaseConfig:
                 FOREIGN KEY (parent_id) REFERENCES tasks (id)
             )
         """)
+        
+        # Create links table for multiple links per task
+        print("Creating links table...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS links (
+                id INTEGER PRIMARY KEY,
+                task_id INTEGER NOT NULL,
+                url TEXT NOT NULL,
+                label TEXT,
+                display_order INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE
+            )
+        """)
+        
+        # Add index for faster lookups by task_id
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_links_task_id ON links (task_id)
+        """)
+        
         print("All tables created successfully")
     
 # Create a global instance to be imported by other modules

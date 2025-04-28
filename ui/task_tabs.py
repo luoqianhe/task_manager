@@ -19,6 +19,7 @@ class TabTaskTreeWidget(TaskTreeWidget):
     
     def __init__(self, filter_type="current"):
         super().__init__()
+        print(f"TabTaskTreeWidget.init() DEBUG: TabTaskTreeWidget.__init__ called with filter_type={filter_type}")
         self.filter_type = filter_type
         self.use_priority_headers = filter_type == "current"
         
@@ -26,14 +27,34 @@ class TabTaskTreeWidget(TaskTreeWidget):
         self.setRootIsDecorated(True)
         self.setIndentation(40)  # Ensure consistent indentation
         
-    def load_tasks(self):
-        """Override load_tasks to apply filters based on tab type"""
+        # Defer loading tasks to avoid initialization order issues
+        # This allows subclasses to fully initialize before loading tasks
+        from PyQt6.QtCore import QTimer
+        print(f"QTIMER DEBUG: Scheduling deferred load for {filter_type} tab")
+        QTimer.singleShot(0, self._init_load_tasks_tab)
+        
+        # Debug delegate setup
+        self.debug_delegate_setup()
+        
+    def _init_load_tasks_tab(self):
+        """Deferred task loading to handle initialization order"""
+        try:
+            print(f"DEBUG: _init_load_tasks_tab called for {self.filter_type} tab")
+            self.load_tasks_tab()
+        except Exception as e:
+            print(f"Error during deferred task loading: {e}")
+            import traceback
+            traceback.print_exc()
+      
+    def load_tasks_tab(self):
+        """Load tasks with tab-specific filtering and fetch links from database"""
+        print(f"DEBUG: TabTaskTreeWidget.load_tasks_tab called for {self.filter_type} tab")
         try:
             self.clear()
             
             # Import database manager
-            from database.database_manager import get_db_manager
-            db_manager = get_db_manager()
+            from database.memory_db_manager import get_memory_db_manager
+            db_manager = get_memory_db_manager()
             
             # First check if completed_at column exists
             with db_manager.get_connection() as conn:
@@ -49,7 +70,7 @@ class TabTaskTreeWidget(TaskTreeWidget):
             if self.filter_type == "current":
                 # For current tab - filter tasks that are not Backlog or Completed
                 query = f"""
-                    SELECT t.id, t.title, t.description, t.link, t.status, t.priority, 
+                    SELECT t.id, t.title, t.description, '', t.status, t.priority, 
                         t.due_date, c.name, t.is_compact, t.parent_id{completed_at_field}
                     FROM tasks t
                     LEFT JOIN categories c ON t.category_id = c.id
@@ -58,8 +79,8 @@ class TabTaskTreeWidget(TaskTreeWidget):
                     """
                 tasks = db_manager.execute_query(query)
                 
-                # Format tasks with priority headers
-                self._format_tasks_with_priority_headers(tasks)
+                # Process tasks with proper link loading
+                self._process_tasks_with_links(tasks, use_priority_headers=True)
                 
             elif self.filter_type in ["backlog", "completed"]:
                 # For backlog and completed tabs - simplified list without priority headers
@@ -71,7 +92,7 @@ class TabTaskTreeWidget(TaskTreeWidget):
                     order_by = "t.completed_at DESC"
                     
                 query = f"""
-                    SELECT t.id, t.title, t.description, t.link, t.status, t.priority, 
+                    SELECT t.id, t.title, t.description, '', t.status, t.priority, 
                         t.due_date, c.name, t.is_compact, t.parent_id{completed_at_field}
                     FROM tasks t
                     LEFT JOIN categories c ON t.category_id = c.id
@@ -80,141 +101,131 @@ class TabTaskTreeWidget(TaskTreeWidget):
                     """
                 tasks = db_manager.execute_query(query, (status_name,))
                 
-                # Format tasks as flat list without priority headers
-                self._format_tasks_flat_list(tasks)
+                # Process tasks with proper link loading
+                self._process_tasks_with_links(tasks, use_priority_headers=False)
         
         except Exception as e:
             print(f"Error loading tasks for {self.filter_type} tab: {e}")
+            import traceback
+            traceback.print_exc()
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(None, "Error", f"Failed to load {self.filter_type} tasks: {str(e)}")
 
-    def change_status_with_timestamp(self, item, new_status):
-        """Change status with timestamp tracking for Completed tasks"""
+    def _process_tasks_with_links(self, tasks, use_priority_headers=True):
+        """Process tasks and load links for each task"""
         try:
             # Import database manager
-            from database.database_manager import get_db_manager
-            db_manager = get_db_manager()
+            from database.memory_db_manager import get_memory_db_manager
+            db_manager = get_memory_db_manager()
             
-            # Check if completed_at column exists
-            with db_manager.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("PRAGMA table_info(tasks)")
-                columns = [info[1] for info in cursor.fetchall()]
-                has_completed_at = 'completed_at' in columns
-            
-            # Check if this is a status change to or from "Completed"
-            data = item.data(0, Qt.ItemDataRole.UserRole)
-            old_status = data.get('status', '')
-            
-            # Determine if this is a status change that would move the task between tabs
-            is_tab_transition = False
-            
-            # Check for transitions between tabs
-            if self.filter_type == "current":
-                if new_status == "Backlog" or new_status == "Completed":
-                    is_tab_transition = True
-            elif self.filter_type == "backlog":
-                if new_status != "Backlog":
-                    is_tab_transition = True
-            elif self.filter_type == "completed":
-                if new_status != "Completed":
-                    is_tab_transition = True
-            
-            # If we're changing task status, we need to collect all children
-            # so we can also update their status to match
-            child_tasks = []
-            if is_tab_transition:
-                self._collect_child_tasks(item, child_tasks)
-            
-            # Update main task status
-            if has_completed_at:
-                # Get current timestamp formatted as ISO string if status is changing to Completed
-                completed_at = None
-                if new_status == "Completed" and old_status != "Completed":
-                    completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    print(f"Task completed at: {completed_at}")
-                    
-                    # Update database with completed_at timestamp
-                    db_manager.execute_update(
-                        "UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?", 
-                        (new_status, completed_at, item.task_id)
-                    )
-                elif old_status == "Completed" and new_status != "Completed":
-                    # If changing from Completed to another status, clear the timestamp
-                    db_manager.execute_update(
-                        "UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?", 
-                        (new_status, item.task_id)
-                    )
-                else:
-                    # Normal status update without changing completion state
-                    db_manager.execute_update(
-                        "UPDATE tasks SET status = ? WHERE id = ?", 
-                        (new_status, item.task_id)
-                    )
-                
-                # Update item data
-                data['status'] = new_status
-                if completed_at:
-                    data['completed_at'] = completed_at
-                elif 'completed_at' in data and new_status != "Completed":
-                    data.pop('completed_at', None)
-            else:
-                # No completed_at column, just update status
-                db_manager.execute_update(
-                    "UPDATE tasks SET status = ? WHERE id = ?", 
-                    (new_status, item.task_id)
+            if use_priority_headers:
+                # Get priority order map and colors
+                priority_order = {}
+                priority_colors = {}
+                result = db_manager.execute_query(
+                    "SELECT name, display_order, color FROM priorities ORDER BY display_order"
                 )
-                # Update item data
-                data['status'] = new_status
+                for name, order, color in result:
+                    priority_order[name] = order
+                    priority_colors[name] = color
                 
-            item.setData(0, Qt.ItemDataRole.UserRole, data)
-            
-            # Now update all child tasks with the same status
-            if is_tab_transition and child_tasks:
-                for child_id in child_tasks:
-                    if has_completed_at:
-                        if new_status == "Completed":
-                            # All children of a completed task also get completed
-                            child_completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            db_manager.execute_update(
-                                "UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?", 
-                                (new_status, child_completed_at, child_id)
-                            )
-                        else:
-                            # Children of non-completed tasks should also be non-completed
-                            db_manager.execute_update(
-                                "UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?", 
-                                (new_status, child_id)
-                            )
+                # Create headers for each priority
+                priority_headers = {}
+                for priority, color in priority_colors.items():
+                    header_item = PriorityHeaderItem(priority, color)
+                    self.addTopLevelItem(header_item)
+                    priority_headers[priority] = header_item
+                
+                # Restore expanded state from settings
+                settings = self.get_settings_manager()
+                all_priorities = list(priority_colors.keys())
+                expanded_priorities = settings.get_setting("expanded_priorities", all_priorities)
+                
+                for priority, header_item in priority_headers.items():
+                    if priority in expanded_priorities:
+                        self.expandItem(header_item)
+                        header_item.setData(0, Qt.ItemDataRole.UserRole, {
+                            'is_priority_header': True,
+                            'priority': priority,
+                            'color': priority_colors[priority],
+                            'expanded': True
+                        })
                     else:
-                        # Just update status
-                        db_manager.execute_update(
-                            "UPDATE tasks SET status = ? WHERE id = ?", 
-                            (new_status, child_id)
-                        )
-                        
-                print(f"Updated status of {len(child_tasks)} child tasks to {new_status}")
+                        self.collapseItem(header_item)
+                        header_item.setData(0, Qt.ItemDataRole.UserRole, {
+                            'is_priority_header': True,
+                            'priority': priority,
+                            'color': priority_colors[priority],
+                            'expanded': False
+                        })
             
-            # Force a repaint
-            self.viewport().update()
+            items = {}
             
-            # Notify parent about status change if we're in a tabbed interface
-            # The task needs to move to another tab
-            if is_tab_transition:
-                parent = self.parent()
-                while parent and not hasattr(parent, 'reload_all'):
-                    parent = parent.parent()
+            # First pass: create all items with proper links
+            for row in tasks:
+                task_id = row[0]
+                
+                # Load links for this task
+                task_links = []
+                try:
+                    task_links = db_manager.get_task_links(task_id)
+                    print(f"Tab load task debug: Retrieved links for task {task_id}: {task_links}")
+                except Exception as e:
+                    print(f"Tab load task debug: Error loading links for task {task_id}: {e}")
+                
+                # Create the task item WITH links
+                item = self.add_task_item(
+                    row[0],      # task_id
+                    row[1],      # title
+                    row[2],      # description
+                    '',          # link (empty legacy field)
+                    row[4],      # status
+                    row[5],      # priority
+                    row[6],      # due_date
+                    row[7],      # category
+                    row[8],      # is_compact
+                    links=task_links  # Pass links as named parameter
+                )
+                items[task_id] = item
+                
+                # Store parent info for second pass
+                parent_id = row[9]  # parent_id
+                
+                if use_priority_headers:
+                    # Process using priority headers logic
+                    priority = row[5] or "Medium"  # Default to Medium if None
                     
-                if parent and hasattr(parent, 'reload_all'):
-                    # Use a short timer to let the current operation complete first
-                    QTimer.singleShot(100, parent.reload_all)
+                    if parent_id is None:
+                        # This is a top-level task, add it to the priority header
+                        if priority in priority_headers:
+                            priority_headers[priority].addChild(item)
+                        else:
+                            # If no matching header (should not happen), use Medium
+                            priority_headers["Medium"].addChild(item)
+                    else:
+                        # This is a child task, will be handled in second pass
+                        item.setData(0, Qt.ItemDataRole.UserRole + 1, parent_id)
+                else:
+                    # Simple flat list processing
+                    if parent_id is None:
+                        # This is a top-level task, add directly to the tree
+                        self.addTopLevelItem(item)
+                    else:
+                        # This is a child task, will be handled in second pass
+                        item.setData(0, Qt.ItemDataRole.UserRole + 1, parent_id)
+                        
+            # Second pass: handle parent-child relationships for non-top-level tasks
+            for task_id, item in items.items():
+                parent_id = item.data(0, Qt.ItemDataRole.UserRole + 1)
+                if parent_id is not None and parent_id in items:
+                    parent_item = items[parent_id]
+                    parent_item.addChild(item)
             
         except Exception as e:
-            print(f"Error changing task status: {e}")
+            print(f"Error processing tasks with links: {e}")
             import traceback
             traceback.print_exc()
-            QMessageBox.critical(self, "Error", f"Failed to change task status: {str(e)}")
-
+    
     def _format_tasks_with_priority_headers(self, tasks):
         """Format tasks with priority headers (for Current Tasks tab)"""
         try:
@@ -437,6 +448,7 @@ class TaskTabWidget(QTabWidget):
     """Widget that contains the tabbed task interface"""
     
     def __init__(self, main_window):
+        print("DEBUG: TaskTabWidget.__init__ called")
         super().__init__()
         self.main_window = main_window
         self.setup_tabs()
@@ -446,6 +458,7 @@ class TaskTabWidget(QTabWidget):
     
     def setup_tabs(self):
         """Set up the three tabs"""
+        print("DEBUG: TaskTabWidget.setup_tabs called")
         # Create the three tab widgets
         self.current_tasks_tab = self.create_tab("current")
         self.backlog_tab = self.create_tab("backlog")
@@ -457,15 +470,16 @@ class TaskTabWidget(QTabWidget):
         self.addTab(self.completed_tab, "Completed Tasks")
         
         # Force load the current tasks tab data
-        self.current_tasks_tab.task_tree.load_tasks()
+        self.current_tasks_tab.task_tree.load_tasks_tab()
         
         # Set tab tool tips for better UX
         self.setTabToolTip(0, "View and manage current active tasks")
         self.setTabToolTip(1, "View and manage tasks in your backlog")
         self.setTabToolTip(2, "View completed tasks")
-    
+        
     def create_tab(self, filter_type):
         """Create a tab widget with a task tree for the given filter type"""
+        print(f"DEBUG: TaskTabWidget.create_tab called with filter_type={filter_type}")
         tab_widget = QWidget()
         layout = QVBoxLayout(tab_widget)
         
@@ -490,11 +504,11 @@ class TaskTabWidget(QTabWidget):
         for i in range(self.count()):
             tab = self.widget(i)
             if hasattr(tab, 'task_tree'):
-                tab.task_tree.load_tasks()
+                tab.task_tree.load_tasks_tab()
     
     def handle_tab_changed(self, index):
         """Handle tab changed event"""
         # Refresh the newly selected tab's content
         tab = self.widget(index)
         if hasattr(tab, 'task_tree'):
-            tab.task_tree.load_tasks()
+            tab.task_tree.load_tasks_tab()

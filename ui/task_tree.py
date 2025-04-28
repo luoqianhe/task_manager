@@ -25,6 +25,7 @@ class TaskTreeWidget(QTreeWidget):
 
     def __init__(self):
         super().__init__()
+        print("DEBUG: TaskTreeWidget.__init__ called")
         self.setRootIsDecorated(False)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
@@ -84,23 +85,30 @@ class TaskTreeWidget(QTreeWidget):
         # Defer loading tasks to avoid initialization order issues
         # This allows subclasses to fully initialize before loading tasks
         from PyQt6.QtCore import QTimer
-        QTimer.singleShot(0, self._init_load_tasks)
+        QTimer.singleShot(0, self._init_load_tasks_tree)
         
         # Debug delegate setup
         self.debug_delegate_setup()
 
-    def _init_load_tasks(self):
+    def _init_load_tasks_tree(self):
         """Deferred task loading to handle initialization order"""
         try:
-            self.load_tasks()
+            print(f"DEBUG: _init_load_tasks_tree called")
+            self.load_tasks_tree()
         except Exception as e:
             print(f"Error during deferred task loading: {e}")
+            import traceback
+            traceback.print_exc()
             
     def add_new_task(self, data):
+        print(f"DEBUG: add_new_task called with data: {data}")
+        print(f"DEBUG: Stack trace:")
+        import traceback
+        traceback.print_stack()
         try:
             # Import database manager
-            from database.database_manager import get_db_manager
-            db_manager = get_db_manager()
+            from database.memory_db_manager import get_memory_db_manager
+            db_manager = get_memory_db_manager()
             
             # Use a single connection for the entire operation
             with db_manager.get_connection() as conn:
@@ -142,22 +150,21 @@ class TaskTreeWidget(QTreeWidget):
                     # Column doesn't exist, need to add it
                     cursor.execute("ALTER TABLE tasks ADD COLUMN is_compact INTEGER NOT NULL DEFAULT 0")
                     conn.commit()
-                    print("Added is_compact column to tasks table")
+                    print("ADD_NEW_TASK DEBUG: Added is_compact column to tasks table")
                 
                 # Default is_compact value (new tasks are expanded by default)
                 is_compact = 0
                 
-                # Insert new task
+                # Insert new task - no more legacy link field
                 cursor.execute(
                     """
-                    INSERT INTO tasks (title, description, link, status, priority, 
+                    INSERT INTO tasks (title, description, status, priority, 
                                     due_date, category_id, parent_id, display_order, is_compact)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, 
                     (
                         data.get('title', ''),
                         data.get('description', ''),
-                        data.get('link', ''),
                         data.get('status', 'Not Started'), 
                         data.get('priority', 'Medium'),
                         data.get('due_date', ''),
@@ -172,20 +179,40 @@ class TaskTreeWidget(QTreeWidget):
                 cursor.execute("SELECT last_insert_rowid()")
                 new_id = cursor.fetchone()[0]
                 
+                # Add links if any
+                links = data.get('links', [])
+                print(f"ADD_NEW_TASK DEBUG: Adding task with links: {links}")
+                for i, (link_id, url, label) in enumerate(links):
+                    if url and url.strip():
+                        cursor.execute(
+                            """
+                            INSERT INTO links (task_id, url, label, display_order)
+                            VALUES (?, ?, ?, ?)
+                            """,
+                            (new_id, url, label, i)
+                        )
+                        print(f"DEBUG: Inserted link for task {new_id}: url={url}, label={label}")
+
                 # Commit changes
                 conn.commit()
+
+                # Verify links were saved
+                cursor.execute("SELECT * FROM links WHERE task_id = ?", (new_id,))
+                saved_links = cursor.fetchall()
+                print(f"DEBUG: Links saved in database for task {new_id}: {saved_links}")
             
             # Add to tree UI
             new_item = self.add_task_item(
                 new_id, 
                 data.get('title', ''),
                 data.get('description', ''),
-                data.get('link', ''),
+                '',  # Empty legacy link placeholder
                 data.get('status', 'Not Started'),
                 data.get('priority', 'Medium'),
                 data.get('due_date', ''),
                 category_name,
-                is_compact  # Pass the is_compact value
+                is_compact,  # Pass the is_compact value
+                links=links  # Pass links directly
             )
             
             priority = data.get('priority', 'Medium')
@@ -216,25 +243,161 @@ class TaskTreeWidget(QTreeWidget):
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(None, "Error", f"Failed to add task: {str(e)}")
             return None
+        
+    def change_status_with_timestamp(self, item, new_status):
+        """Change status with timestamp tracking for Completed tasks"""
+        try:
+            # Import database manager
+            from database.database_manager import get_db_manager
+            db_manager = get_db_manager()
+            
+            # Check if completed_at column exists
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA table_info(tasks)")
+                columns = [info[1] for info in cursor.fetchall()]
+                has_completed_at = 'completed_at' in columns
+            
+            # Check if this is a status change to or from "Completed"
+            data = item.data(0, Qt.ItemDataRole.UserRole)
+            old_status = data.get('status', '')
+            
+            # Determine if this is a status change that would move the task between tabs
+            is_tab_transition = False
+            
+            # Check for transitions between tabs
+            if self.filter_type == "current":
+                if new_status == "Backlog" or new_status == "Completed":
+                    is_tab_transition = True
+            elif self.filter_type == "backlog":
+                if new_status != "Backlog":
+                    is_tab_transition = True
+            elif self.filter_type == "completed":
+                if new_status != "Completed":
+                    is_tab_transition = True
+            
+            # If we're changing task status, we need to collect all children
+            # so we can also update their status to match
+            child_tasks = []
+            if is_tab_transition:
+                self._collect_child_tasks(item, child_tasks)
+            
+            # Update main task status
+            if has_completed_at:
+                # Get current timestamp formatted as ISO string if status is changing to Completed
+                completed_at = None
+                if new_status == "Completed" and old_status != "Completed":
+                    completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    print(f"Task completed at: {completed_at}")
+                    
+                    # Update database with completed_at timestamp
+                    db_manager.execute_update(
+                        "UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?", 
+                        (new_status, completed_at, item.task_id)
+                    )
+                elif old_status == "Completed" and new_status != "Completed":
+                    # If changing from Completed to another status, clear the timestamp
+                    db_manager.execute_update(
+                        "UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?", 
+                        (new_status, item.task_id)
+                    )
+                else:
+                    # Normal status update without changing completion state
+                    db_manager.execute_update(
+                        "UPDATE tasks SET status = ? WHERE id = ?", 
+                        (new_status, item.task_id)
+                    )
+                
+                # Update item data
+                data['status'] = new_status
+                if completed_at:
+                    data['completed_at'] = completed_at
+                elif 'completed_at' in data and new_status != "Completed":
+                    data.pop('completed_at', None)
+            else:
+                # No completed_at column, just update status
+                db_manager.execute_update(
+                    "UPDATE tasks SET status = ? WHERE id = ?", 
+                    (new_status, item.task_id)
+                )
+                # Update item data
+                data['status'] = new_status
+                
+            item.setData(0, Qt.ItemDataRole.UserRole, data)
+            
+            # Now update all child tasks with the same status
+            if is_tab_transition and child_tasks:
+                for child_id in child_tasks:
+                    if has_completed_at:
+                        if new_status == "Completed":
+                            # All children of a completed task also get completed
+                            child_completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            db_manager.execute_update(
+                                "UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?", 
+                                (new_status, child_completed_at, child_id)
+                            )
+                        else:
+                            # Children of non-completed tasks should also be non-completed
+                            db_manager.execute_update(
+                                "UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?", 
+                                (new_status, child_id)
+                            )
+                    else:
+                        # Just update status
+                        db_manager.execute_update(
+                            "UPDATE tasks SET status = ? WHERE id = ?", 
+                            (new_status, child_id)
+                        )
+                        
+                print(f"Updated status of {len(child_tasks)} child tasks to {new_status}")
+            
+            # Force a repaint
+            self.viewport().update()
+            
+            # Notify parent about status change if we're in a tabbed interface
+            # The task needs to move to another tab
+            if is_tab_transition:
+                parent = self.parent()
+                while parent and not hasattr(parent, 'reload_all'):
+                    parent = parent.parent()
+                    
+                if parent and hasattr(parent, 'reload_all'):
+                    # Use a short timer to let the current operation complete first
+                    QTimer.singleShot(100, parent.reload_all)
+            
+        except Exception as e:
+            print(f"Error changing task status: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"Failed to change task status: {str(e)}")
 
-    def add_task_item(self, task_id, title, description, link, status, priority, due_date, category, is_compact=0):
+    def add_task_item(self, task_id, title, description, link, status, priority, due_date, category, is_compact=0, links=None):
         # Create a single-column item
         item = QTreeWidgetItem([title or ""])
         
-        # Debug: Print the status to see if it's being passed in correctly
-        print(f"Adding task: {title} with status: {status}")
+        # Debug prints
+        print(f"ADD_TASK_ITEM DEBUG: Adding task: {title}")
+        print(f"ADD_TASK_ITEM DEBUG: Links parameter: {links}")
         
         # Store all data as item data
-        item.setData(0, Qt.ItemDataRole.UserRole, {
-            'id': task_id,  # Store ID in user data too for easier access
+        user_data = {
+            'id': task_id,
             'title': title or "",
             'description': description or "",
-            'link': link or "", 
             'status': status or "Not Started", 
             'priority': priority or "Medium",
             'due_date': due_date or "",
-            'category': category or ""
-        })
+            'category': category or "",
+            'links': links if links is not None else []
+        }
+        
+        print(f"ADD_TASK_ITEM DEBUG: Setting user data with links: {user_data.get('links', [])}")
+        item.setData(0, Qt.ItemDataRole.UserRole, user_data)
+        
+        # Verify the data was set correctly
+        verify_data = item.data(0, Qt.ItemDataRole.UserRole)
+        print(f"ADD_TASK_ITEM DEBUG: Verified user data links: {verify_data.get('links', [])}")
+        
         
         item.task_id = task_id
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled)
@@ -676,7 +839,7 @@ class TaskTreeWidget(QTreeWidget):
             else:
                 # Just refresh this tree
                 print("Tab parent not found, refreshing current tree only")
-                self.load_tasks()
+                self.load_tasks_tree()
         except Exception as e:
             print(f"Error reloading tabs: {e}")
             import traceback
@@ -698,6 +861,16 @@ class TaskTreeWidget(QTreeWidget):
         if isinstance(delegate, TaskPillDelegate):
             is_compact = item.task_id in delegate.compact_items
         
+        # Get links from the database
+        from database.memory_db_manager import get_memory_db_manager
+        db_manager = get_memory_db_manager()
+        links = db_manager.get_task_links(item.task_id)
+        
+        # If no links in database but we have a legacy link, add it
+        legacy_link = data.get('link')
+        if not links and legacy_link and legacy_link.strip():
+            links = [(None, legacy_link, None)]
+        
         # Determine the parent ID safely
         parent_id = None
         if item.parent():
@@ -715,7 +888,7 @@ class TaskTreeWidget(QTreeWidget):
             'id': item.task_id,
             'title': data['title'],
             'description': data['description'],
-            'link': data['link'],
+            'links': links,       # New links structure
             'status': data['status'],
             'priority': data['priority'],  # Now properly preserves the header's priority
             'due_date': data['due_date'],
@@ -730,10 +903,6 @@ class TaskTreeWidget(QTreeWidget):
             try:
                 updated_data = dialog.get_data()
                 
-                # Import database manager
-                from database.database_manager import get_db_manager
-                db_manager = get_db_manager()
-                
                 # Get category ID
                 category_name = updated_data['category']
                 category_id = None
@@ -746,18 +915,17 @@ class TaskTreeWidget(QTreeWidget):
                     if result and result[0]:
                         category_id = result[0][0]
                 
-                # Update database
+                # Update database - now with empty legacy link field
                 db_manager.execute_update(
                     """
                     UPDATE tasks 
-                    SET title = ?, description = ?, link = ?, status = ?, 
+                    SET title = ?, description = ?, status = ?, 
                         priority = ?, due_date = ?, category_id = ?, parent_id = ?
                     WHERE id = ?
                     """, 
                     (
                         updated_data['title'], 
                         updated_data['description'], 
-                        updated_data['link'],
                         updated_data['status'], 
                         updated_data['priority'],
                         updated_data['due_date'],
@@ -767,6 +935,35 @@ class TaskTreeWidget(QTreeWidget):
                     )
                 )
                 
+                # Update links
+                # First, get existing links to identify which ones to remove
+                existing_links = db_manager.get_task_links(updated_data['id'])
+                existing_ids = set(link_id for link_id, _, _ in existing_links if link_id is not None)
+                
+                # Get new links
+                new_links = updated_data.get('links', [])
+                new_ids = set(link_id for link_id, _, _ in new_links if link_id is not None)
+                
+                # Delete links that no longer exist
+                for link_id in existing_ids - new_ids:
+                    db_manager.delete_task_link(link_id)
+                
+                # Add or update links
+                for i, (link_id, url, label) in enumerate(new_links):
+                    if url and url.strip():
+                        if link_id is None:
+                            # New link - add it
+                            db_manager.add_task_link(updated_data['id'], url, label)
+                        else:
+                            # Existing link - update it
+                            db_manager.update_task_link(link_id, url, label)
+                            
+                            # Also update its display order
+                            db_manager.execute_update(
+                                "UPDATE links SET display_order = ? WHERE id = ?",
+                                (i, link_id)
+                            )
+                
                 # Check if status, category, or priority changed
                 status_changed = task_data['status'] != updated_data['status']
                 category_changed = task_data['category'] != updated_data['category']
@@ -774,16 +971,20 @@ class TaskTreeWidget(QTreeWidget):
                 
                 # Update item directly
                 item.setText(0, updated_data['title'])
-                item.setData(0, Qt.ItemDataRole.UserRole, {
-                    'id': updated_data['id'],  # Include the ID in user data
+                
+                # Update item data
+                new_item_data = {
+                    'id': updated_data['id'],
                     'title': updated_data['title'],
                     'description': updated_data['description'],
-                    'link': updated_data['link'],
+                    'link': '',  # Empty legacy link
+                    'links': new_links,  # Store new links structure
                     'status': updated_data['status'],
                     'priority': updated_data['priority'],
                     'due_date': updated_data['due_date'],
                     'category': updated_data['category']
-                })
+                }
+                item.setData(0, Qt.ItemDataRole.UserRole, new_item_data)
                 
                 # Handle parent change if needed
                 old_parent_id = task_data['parent_id']
@@ -805,7 +1006,7 @@ class TaskTreeWidget(QTreeWidget):
                         new_parent_found = False
                         for i in range(self.topLevelItemCount()):
                             top_item = self.topLevelItem(i)
-                            if top_item.task_id == new_parent_id:
+                            if hasattr(top_item, 'task_id') and top_item.task_id == new_parent_id:
                                 top_item.addChild(item)
                                 new_parent_found = True
                                 break
@@ -846,9 +1047,11 @@ class TaskTreeWidget(QTreeWidget):
             
             except Exception as e:
                 print(f"Error updating task: {e}")
+                import traceback
+                traceback.print_exc()
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.critical(self, "Error", f"Failed to update task: {str(e)}")
-            
+                        
     def get_settings_manager(self):
         """Get the settings manager instance"""
         try:
@@ -868,6 +1071,117 @@ class TaskTreeWidget(QTreeWidget):
         from database.database_manager import get_db_manager
         return get_db_manager().get_connection()
 
+    def handle_links_click(self, item, point_in_task_pill):
+        """Handle clicks on the links section of a task pill"""
+        # Get item data
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        
+        # Check if we have any links
+        links = data.get('links', [])
+        print(f"DEBUG: Links in handle_links_click: {links}")
+        
+        # Also check legacy link
+        legacy_link = data.get('link')
+        if not links and legacy_link and legacy_link.strip():
+            links = [(None, legacy_link, None)]
+        
+        # If no links, return
+        if not links:
+            print("DEBUG: No links found")
+            return
+        
+        # Create links menu
+        menu = QMenu(self)
+        
+        # Add individual links with labels if available
+        for link_id, url, label in links:
+            action_text = label if label else url
+            action = menu.addAction(action_text)
+            action.setData(url)
+            print(f"DEBUG: Added link menu item: {action_text}")
+        
+        # Add separator if we have more than one link
+        if len(links) > 1:
+            menu.addSeparator()
+            
+            # Add "Open All" actions
+            open_all_action = menu.addAction("Open All Links")
+            open_all_action.setData("open_all")
+            
+            open_all_new_window_action = menu.addAction("Open All in New Window")
+            open_all_new_window_action.setData("open_all_new_window")
+        
+        # Execute menu
+        action = menu.exec(self.mapToGlobal(point_in_task_pill))
+        
+        if action:
+            action_data = action.data()
+            print(f"DEBUG: Selected action: {action_data}")
+            
+            if action_data == "open_all":
+                # Open all links in current window
+                for _, url, _ in links:
+                    if url:
+                        self.open_link(url)
+            elif action_data == "open_all_new_window":
+                # Open all links in new window
+                self.open_links_in_new_window(links)
+            else:
+                # Open individual link
+                self.open_link(action_data)
+
+    def open_link(self, url):
+        """Open a single link in the default browser"""
+        try:
+            import webbrowser
+            # Make sure URL has a protocol
+            if not (url.startswith("http://") or url.startswith("https://") or url.startswith("ftp://")):
+                url = "https://" + url
+                
+            webbrowser.open(url)
+        except Exception as e:
+            print(f"Error opening link: {e}")
+            QMessageBox.warning(self, "Error", f"Could not open link: {e}")
+
+    def open_links_in_new_window(self, links):
+        """Open all links in a new browser window"""
+        try:
+            import webbrowser
+            import time
+            
+            # Filter out empty URLs
+            valid_links = [(link_id, url, label) for link_id, url, label in links if url]
+            
+            if not valid_links:
+                return
+                
+            # Open the first link in a new window
+            first_link_id, first_url, _ = valid_links[0]
+            
+            # Make sure URL has a protocol
+            if not (first_url.startswith("http://") or first_url.startswith("https://") or first_url.startswith("ftp://")):
+                first_url = "https://" + first_url
+                
+            # Open first link in a new window
+            webbrowser.open_new(first_url)
+            
+            # Wait a bit for the window to open
+            time.sleep(0.5)
+            
+            # Open the rest of the links in new tabs in the same window
+            for link_id, url, _ in valid_links[1:]:
+                # Make sure URL has a protocol
+                if not (url.startswith("http://") or url.startswith("https://") or url.startswith("ftp://")):
+                    url = "https://" + url
+                    
+                webbrowser.open_new_tab(url)
+                # Small delay to prevent overwhelming the browser
+                time.sleep(0.1)
+                
+        except Exception as e:
+            print(f"Error opening links in new window: {e}")
+            QMessageBox.warning(self, "Error", f"Could not open links in new window: {e}")
+            
     def handle_double_click(self, item, column):
         """Handle double-click events with special case for priority headers"""
         # Get the item data
@@ -964,7 +1278,7 @@ class TaskTreeWidget(QTreeWidget):
         QTimer.singleShot(100, self.reconnectExpandCollapsedSignals)
 
     def handleTaskDoubleClick(self, item):
-        """Handle double-click on task items"""
+        """Handle double-click on task items with updated link handling"""
         data = item.data(0, Qt.ItemDataRole.UserRole)
         print(f"Double-clicked task: {data.get('title', 'Unknown')}")
         
@@ -972,26 +1286,30 @@ class TaskTreeWidget(QTreeWidget):
         pos = self.mapFromGlobal(self.cursor().pos())
         rect = self.visualItemRect(item)
         
-        # Calculate the right section boundary (where the link area begins)
-        # This should match the width used in the delegate's _draw_right_panel method
-        right_section_width = 100  # Same as in TaskPillDelegate
+        # Calculate the right section boundary using settings
+        settings = self.get_settings_manager()
+        right_section_width = settings.get_setting("right_panel_width", 100)
         right_section_boundary = rect.right() - right_section_width
         
-        # Check if the click was in the right section (link area)
-        if 'link' in data and data['link'] and pos.x() > right_section_boundary:
-            # Handle link click
-            link = data['link']
-            if not link.startswith(('http://', 'https://')):
-                link = 'https://' + link
-            try:
-                import webbrowser
-                webbrowser.open(link)
-            except Exception as e:
-                print(f"Error opening link: {e}")
-        else:
-            # For clicks in the main content area, open edit dialog
-            self.edit_task(item)
-    
+        # Check if the click was in the right section
+        if pos.x() > right_section_boundary:
+            # Find out what's in the right panel
+            right_panel_contents = settings.get_setting("right_panel_contents", ["Link", "Due Date"])
+            
+            # If "Link" is in the right panel, handle the click
+            if "Link" in right_panel_contents:
+                # Check for links
+                links = data.get('links', [])
+                legacy_link = data.get('link', '')
+                
+                if (links and isinstance(links, list) and len(links) > 0) or legacy_link:
+                    # Handle link section click
+                    self.handle_links_click(item, pos)
+                    return
+        
+        # For clicks in the main content area, open edit dialog
+        self.edit_task(item)
+     
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return:
             selected_items = self.selectedItems()
@@ -1004,14 +1322,22 @@ class TaskTreeWidget(QTreeWidget):
         else:
             super().keyPressEvent(event)
 
-    def load_tasks(self):
+    def load_tasks_tree(self):
+        print('TaskTreeWidget: LOAD_TASK_TREE CALLED')
         try:
             self.clear()
             
             # Import database manager
-            from database.database_manager import get_db_manager
-            db_manager = get_db_manager()
+            from database.memory_db_manager import get_memory_db_manager
+            db_manager = get_memory_db_manager()
             
+            # Debug check - verify links table exists and has data
+            try:
+                all_links = db_manager.execute_query("SELECT * FROM links")
+                print(f"LOAD TASK DEBUG: All links in database at load time: {all_links}")
+            except Exception as e:
+                print(f"LOAD TASK DEBUG: Error checking links table: {e}")
+        
             # Get priority order map and colors
             priority_order = {}
             priority_colors = {}
@@ -1038,12 +1364,12 @@ class TaskTreeWidget(QTreeWidget):
                 # Column doesn't exist, need to add it
                 cursor.execute("ALTER TABLE tasks ADD COLUMN is_compact INTEGER NOT NULL DEFAULT 0")
                 conn.commit()
-                print("Added is_compact column to tasks table")
+                print("LOAD TASK DEBUG: Added is_compact column to tasks table")
             
             # Get all tasks
             tasks = db_manager.execute_query(
                 """
-                SELECT t.id, t.title, t.description, t.link, t.status, t.priority, 
+                SELECT t.id, t.title, t.description, '', t.status, t.priority, 
                     t.due_date, c.name, t.is_compact, t.parent_id
                 FROM tasks t
                 LEFT JOIN categories c ON t.category_id = c.id
@@ -1057,9 +1383,33 @@ class TaskTreeWidget(QTreeWidget):
                 task_id = row[0]
                 priority = row[5] or "Medium"  # Default to Medium if None
                 
-                # Create the task item
-                item = self.add_task_item(*row[:9])  # First 9 elements
+                # Load links for this task BEFORE creating the item
+                task_links = []
+                try:
+                    task_links = db_manager.get_task_links(task_id)
+                    print(f"LOAD TASK DEBUG: Retrieved links for task {task_id}: {task_links}")
+                    print(f"LOAD TASK DEBUG: Type of task_links: {type(task_links)}")
+                    print(f"LOAD TASK DEBUG: Length of task_links: {len(task_links) if task_links else 0}")
+                except Exception as e:
+                    print(f"LOAD TASK DEBUG: Error loading links for task {task_id}: {e}")
+                
+                # Create the task item WITH links
+                # Note: We need to unpack row[:9] AND add the links parameter
+                item = self.add_task_item(
+                    row[0],  # task_id
+                    row[1],  # title
+                    row[2],  # description
+                    row[3],  # link (legacy, empty)
+                    row[4],  # status
+                    row[5],  # priority
+                    row[6],  # due_date
+                    row[7],  # category
+                    row[8],  # is_compact
+                    links=task_links  # Pass links as named parameter
+                )
                 items[task_id] = item
+                
+                print(f"LOAD TASK DEBUG: Created item for task_id={task_id}, item.task_id={getattr(item, 'task_id', 'NOT SET')}")
                 
                 # Store parent info for second pass
                 parent_id = row[9]  # Last element is parent_id
@@ -1082,10 +1432,12 @@ class TaskTreeWidget(QTreeWidget):
             self.synchronize_priority_headers()
             
         except Exception as e:
-            print(f"Error loading tasks: {e}")
+            print(f"LOAD TASK DEBUG: Error loading tasks: {e}")
+            import traceback
+            traceback.print_exc()
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(None, "Error", f"Failed to load tasks: {str(e)}")
-
+    
     def dragMoveEvent(self, event):
         """Handle drag move events and implement autoscroll"""
         # Call the parent implementation first
@@ -1414,8 +1766,7 @@ class TaskTreeWidget(QTreeWidget):
             
             # Force layout update
             self.scheduleDelayedItemsLayout()
-            self.viewport().update()
-        
+            self.viewport().update()   
     
     def _handle_drop_on_header(self, item, header):
         """Handle dropping a task onto a priority header"""
@@ -1528,7 +1879,7 @@ class TaskTreeWidget(QTreeWidget):
                 QTimer.singleShot(100, parent.reload_all)
             else:
                 # Just refresh this tree
-                self.load_tasks()
+                self.load_tasks_tree()
         except Exception as e:
             print(f"Error reloading tabs: {e}")
 

@@ -25,6 +25,24 @@ class DatabaseManager:
         self._connection = None  # Store a single connection
         self._initialized = True
     
+    def get_task_links(self, task_id):
+        """Get all links for a specific task"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT id, url, label, display_order
+                FROM links
+                WHERE task_id = ?
+                ORDER BY display_order
+            """, (task_id,))
+            
+            # Convert to proper three-element tuples (id, url, label)
+            results = cursor.fetchall()
+            return [(row[0], row[1], row[2]) for row in results]
+        finally:
+            cursor.close()
+            
     @property
     def db_path(self):
         """Get the current database path from the central configuration"""

@@ -36,6 +36,12 @@ class MainWindow(QMainWindow):
         # Initialize settings manager
         self.settings = SettingsManager()
         
+        # Set default display settings if not already set
+        if not self.settings.get_setting("right_panel_contents"):
+            self.settings.set_setting("right_panel_contents", ["Link", "Due Date"])
+        if not self.settings.get_setting("left_panel_contents"):
+            self.settings.set_setting("left_panel_contents", ["Category", "Status"])
+        
         # Get database path from settings
         self.db_path = self.settings.prompt_for_database_location(self)
         
@@ -144,6 +150,10 @@ class MainWindow(QMainWindow):
                     current_tree.edit_task(selected_items[0])
     
     def init_task_view(self):
+        print("DEBUG: MainWindow.init_task_view called")
+        print("DEBUG: Stack trace:")
+        import traceback
+        traceback.print_stack()
         self.task_widget = QWidget()
         layout = QVBoxLayout(self.task_widget)
         
@@ -449,6 +459,28 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error creating template: {str(e)}")
 
+    def closeEvent(self, event):
+        """Handle application shutdown"""
+        try:
+            # Save the in-memory database back to file
+            from database.memory_db_manager import get_memory_db_manager
+            db_manager = get_memory_db_manager()
+            db_manager.save_to_file()
+            print("Database saved successfully before exit")
+        except Exception as e:
+            print(f"Error saving database on exit: {e}")
+            reply = QMessageBox.question(
+                self, "Database Save Error",
+                f"Failed to save database: {e}\n\nDo you still want to exit?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.No:
+                event.ignore()
+                return
+        
+        # Accept the close event
+        event.accept()
+
 def apply_connection_method():
     """Apply the global connection method to all classes that need it"""
     # Import all needed classes
@@ -512,6 +544,6 @@ def main():
     # Show the window and start the application
     window.show()
     sys.exit(app.exec())
-
+         
 if __name__ == "__main__":
     main()

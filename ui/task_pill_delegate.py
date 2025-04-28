@@ -66,6 +66,7 @@ class TaskPillDelegate(QStyledItemDelegate):
     
     def _get_section_data(self, user_data, section_type):
         """Get data for a specific section type"""
+        
         if section_type == "Category":
             return user_data.get('category', '')
         elif section_type == "Status":
@@ -75,7 +76,18 @@ class TaskPillDelegate(QStyledItemDelegate):
         elif section_type == "Due Date":
             return user_data.get('due_date', '')
         elif section_type == "Link":
-            return user_data.get('link', '')
+            # Check for multiple links first
+            links = user_data.get('links', [])
+            print(f"DEBUG: Links found: {links}")
+            if links and isinstance(links, list) and len(links) > 0:
+                links_count = len(links)
+                result = f"Links ({links_count})" if links_count > 1 else "Link"
+                print(f"DEBUG: Returning for links: {result}")
+                return result
+            # Fall back to legacy link
+            legacy_link = user_data.get('link', '')
+            print(f"DEBUG: Legacy link: {legacy_link}")
+            return "Link" if legacy_link else "No Link"
         elif section_type == "Completion Date":
             return user_data.get('completed_at', '')
         elif section_type == "Progress":
@@ -94,7 +106,7 @@ class TaskPillDelegate(QStyledItemDelegate):
             return user_data.get('tag', '')
         else:
             return ""
-    
+        
     def _get_section_color(self, section_type, section_data):
         """Get color for a specific section type"""
         if section_type == "Category":
@@ -137,7 +149,6 @@ class TaskPillDelegate(QStyledItemDelegate):
                     # Column doesn't exist, need to add it
                     cursor.execute("ALTER TABLE tasks ADD COLUMN is_compact INTEGER NOT NULL DEFAULT 0")
                     conn.commit()
-                    print("Added is_compact column to tasks table")
                 
                 # Now load all task IDs that are marked as compact
                 cursor.execute("SELECT id FROM tasks WHERE is_compact = 1")
@@ -150,6 +161,8 @@ class TaskPillDelegate(QStyledItemDelegate):
     
     def _draw_task_item(self, painter, option, index):
         """Draw a regular task item - modified to support customizable panels"""
+        print(f"DEBUG: Drawing task item")
+        
         # Extract data using our existing method
         user_data, item_id, title, description, link, status, priority, due_date_str, category = self._extract_item_data(index)
         
@@ -274,6 +287,7 @@ class TaskPillDelegate(QStyledItemDelegate):
                 
             # Get section data
             section_data = self._get_section_data(user_data, content_type)
+            print(f"DEBUG: Drawing section {content_type} with data: {section_data}")
             
             # Get color based on content type
             section_color = self._get_section_color(content_type, section_data)
@@ -707,94 +721,6 @@ class TaskPillDelegate(QStyledItemDelegate):
         # Restore painter
         painter.restore()
 
-    def _draw_category_indicator(self, painter, path, rect, is_compact, category_color, status_color, category, status):
-        """Draw category and status indicators in the left side of the task pill with auto-adjusting width"""
-        # Get font settings from SettingsManager to apply the same font family
-        settings = self.get_settings_manager()
-        font_family = settings.get_setting("font_family", "Segoe UI")
-        left_panel_color = settings.get_setting("left_panel_color", "#FFFFFF")
-        left_panel_size = int(settings.get_setting("left_panel_size", 8))
-        left_panel_bold = settings.get_setting("left_panel_bold", False)
-        
-        # Set up font for text measurement
-        left_panel_font = QFont(font_family)
-        left_panel_font.setPointSize(left_panel_size)
-        if left_panel_bold:
-            left_panel_font.setBold(True)
-        
-        # Measure text width
-        font_metrics = QFontMetrics(left_panel_font)
-        category_text = category or "No Cat"
-        status_text = status or "No Status"
-        
-        # Calculate width needed for each label (adding padding)
-        category_width = font_metrics.horizontalAdvance(category_text) + 20  # 10px padding on each side
-        status_width = font_metrics.horizontalAdvance(status_text) + 20
-        
-        # Use the wider of the two with a minimum of 40px and maximum of 100px
-        left_section_width = max(40, min(100, max(category_width, status_width)))
-        
-        # Use clipping to ensure proper drawing within the pill
-        painter.setClipPath(path)
-        
-        # Split the left section into two parts - top half for category, bottom half for status
-        category_rect = QRectF(
-            rect.left(),
-            rect.top(),
-            left_section_width,  # Auto-adjusted width
-            rect.height() / 2  # Top half for category
-        )
-        
-        status_rect = QRectF(
-            rect.left(),
-            rect.top() + rect.height() / 2,  # Start at middle
-            left_section_width,  # Auto-adjusted width
-            rect.height() / 2  # Bottom half for status
-        )
-        
-        # Fill the category section
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(category_color))
-        painter.drawRect(category_rect)
-        
-        # Fill the status section
-        painter.setBrush(QBrush(status_color))
-        painter.drawRect(status_rect)
-        
-        # Draw labels in the sections if not compact view
-        if not is_compact:
-            painter.setFont(left_panel_font)
-            painter.setPen(QColor(left_panel_color))
-            
-            # Draw category label - centered in the category rect
-            painter.drawText(
-                category_rect,
-                Qt.AlignmentFlag.AlignCenter,
-                category_text
-            )
-            
-            # Draw status label - centered in the status rect
-            painter.drawText(
-                status_rect,
-                Qt.AlignmentFlag.AlignCenter,
-                status_text
-            )
-        
-        # Remove clipping
-        painter.setClipping(False)
-        
-        # Draw a divider line at the new position
-        painter.setPen(QPen(QColor("#cccccc"), 1))
-        painter.drawLine(
-            rect.left() + left_section_width,  # Updated right edge of indicators
-            rect.top(),
-            rect.left() + left_section_width,
-            rect.bottom()
-        )
-        
-        # Make sure to return the width value
-        return left_section_width
-
     def _extract_item_data(self, index):
         """Extract and normalize item data from the index"""
         user_data = index.data(Qt.ItemDataRole.UserRole)
@@ -849,97 +775,6 @@ class TaskPillDelegate(QStyledItemDelegate):
         painter.setPen(QPen(QColor("#cccccc"), 1))
         painter.setBrush(QBrush(QColor("#f5f5f5")))
         painter.drawPath(path)
-
-    def _draw_left_panel(self, painter, path, rect, is_compact, priority, priority_color, category, category_color, status, status_color):
-        """Draw the left panel with priority, category and status sections"""
-        # Calculate section heights
-        section_height = rect.height() / 3
-        
-        # Get settings for left panel text
-        settings = self.get_settings_manager()
-        left_panel_color = settings.get_setting("left_panel_color", "#FFFFFF")
-        left_panel_size = int(settings.get_setting("left_panel_size", 8))
-        left_panel_bold = settings.get_setting("left_panel_bold", False)
-        
-        # Use clipping to ensure proper drawing within the pill
-        painter.setClipPath(path)
-        
-        # Draw priority section (top left)
-        priority_rect = QRectF(
-            rect.left(),
-            rect.top(),
-            self.left_section_width,
-            section_height
-        )
-        
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(priority_color))
-        painter.drawRect(priority_rect)
-        
-        # Draw priority text on top of the color (only in full mode)
-        if not is_compact:
-            # Set up font for left panel text
-            left_panel_font = QFont(painter.font())
-            left_panel_font.setPointSize(left_panel_size)
-            if left_panel_bold:
-                left_panel_font.setBold(True)
-                
-            painter.setFont(left_panel_font)
-            painter.setPen(QColor(left_panel_color))  # Use custom text color
-            
-            painter.drawText(
-                priority_rect,
-                Qt.AlignmentFlag.AlignCenter,
-                priority or "No Priority"
-            )
-        
-        # Draw category section (middle left)
-        category_rect = QRectF(
-            rect.left(),
-            rect.top() + section_height,
-            self.left_section_width,
-            section_height
-        )
-        painter.setBrush(QBrush(category_color))
-        painter.drawRect(category_rect)
-        
-        # Draw category text (only in full mode)
-        if not is_compact:
-            painter.drawText(
-                category_rect,
-                Qt.AlignmentFlag.AlignCenter,
-                category or "No Category"
-            )
-        
-        # Draw status section (bottom left)
-        status_rect = QRectF(
-            rect.left(),
-            rect.top() + section_height * 2,
-            self.left_section_width,
-            section_height
-        )
-        painter.setBrush(QBrush(status_color))
-        painter.drawRect(status_rect)
-        
-        # Draw status text (only in full mode)
-        if not is_compact:
-            painter.drawText(
-                status_rect,
-                Qt.AlignmentFlag.AlignCenter,
-                status or "Not Started"
-            )
-        
-        # Remove clipping
-        painter.setClipping(False)
-        
-        # Draw left divider line
-        painter.setPen(QPen(QColor("#cccccc"), 1))
-        painter.drawLine(
-            rect.left() + self.left_section_width,
-            rect.top(),
-            rect.left() + self.left_section_width,
-            rect.bottom()
-        )
 
     def _draw_description(self, painter, rect, description, font_family, font_size, settings, left_width, right_width):
         """Draw the task description with custom font settings"""
@@ -998,70 +833,6 @@ class TaskPillDelegate(QStyledItemDelegate):
                 15
             )
             painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"Due: {due_date_str}")
-
-    def _draw_right_panel(self, painter, path, rect, link):
-        """Draw the right details section (Link indicator)"""
-        # Draw right details section
-        details_rect = QRectF(
-            rect.right() - self.right_section_width,
-            rect.top(),
-            self.right_section_width,
-            rect.height()
-        )
-        
-        # Use the same clipping approach
-        painter.setClipPath(path)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor("#f5f5f5")))  # Light gray background
-        painter.drawRect(details_rect)
-        painter.setClipping(False)
-        
-        # Draw second vertical divider
-        painter.setPen(QPen(QColor("#cccccc"), 1))
-        painter.drawLine(
-            rect.right() - self.right_section_width,
-            rect.top(),
-            rect.right() - self.right_section_width,
-            rect.bottom()
-        )
-        
-        # Draw details section (Link)
-        if link:
-            link_font = QFont(painter.font())
-            link_font.setPointSize(9)
-            painter.setFont(link_font)
-            painter.setPen(QColor(0, 0, 255))  # Blue text for link
-            
-            # Draw link icon
-            link_icon_rect = QRectF(
-                rect.right() - self.right_section_width + 20,
-                rect.top() + (rect.height() - 16) / 2,
-                16, 16
-            )
-            # Draw a simple link icon as a circle
-            painter.setBrush(QBrush(QColor(0, 0, 255, 50)))  # Transparent blue
-            painter.setPen(QPen(QColor(0, 0, 255), 1))
-            painter.drawEllipse(link_icon_rect)
-            
-            # Draw "Link" text
-            link_text_rect = QRectF(
-                rect.right() - self.right_section_width + 40,
-                rect.top(),
-                self.right_section_width - 50,
-                rect.height()
-            )
-            painter.drawText(link_text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "Link")
-        else:
-            # Draw "No Link" text
-            font = QFont(painter.font())
-            font.setPointSize(8)
-            painter.setFont(font)
-            painter.setPen(QColor(150, 150, 150))  # Light gray text
-            painter.drawText(
-                QRectF(rect.right() - self.right_section_width, rect.top(), self.right_section_width, rect.height()),
-                Qt.AlignmentFlag.AlignCenter,
-                "No Link"
-            )
 
     def _draw_toggle_button(self, painter, index, item_id, rect):
         """Draw the toggle button for all items (including headers)"""
