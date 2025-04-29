@@ -252,6 +252,23 @@ class DatabaseConfig:
             CREATE INDEX IF NOT EXISTS idx_links_task_id ON links (task_id)
         """)
         
+            # Create files table for file attachments
+        print("Creating files table...")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS files (
+                id INTEGER PRIMARY KEY,
+                task_id INTEGER NOT NULL,
+                file_path TEXT NOT NULL,
+                file_name TEXT,
+                display_order INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE
+            )
+        """)
+        
+        # Add index for faster lookups by task_id for files
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_files_task_id ON files (task_id)
+        """)
         print("All tables created successfully")
     
 # Create a global instance to be imported by other modules

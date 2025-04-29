@@ -63,7 +63,7 @@ class TaskPillDelegate(QStyledItemDelegate):
                 print("Event filter installed on parent")
             except Exception as e:
                 print(f"Error setting up event filters: {e}")
-    
+
     def _get_section_data(self, user_data, section_type):
         """Get data for a specific section type"""
         
@@ -78,13 +78,19 @@ class TaskPillDelegate(QStyledItemDelegate):
         elif section_type == "Link":
             # Check for links
             links = user_data.get('links', [])
-            print(f"DEBUG: Links found: {links}")
             if links and isinstance(links, list) and len(links) > 0:
                 links_count = len(links)
                 result = f"Links ({links_count})" if links_count > 1 else "Link"
-                print(f"DEBUG: Returning for links: {result}")
                 return result
             return "No Link"
+        elif section_type == "Files":  # New section type for files
+            # Check for file attachments
+            files = user_data.get('files', [])
+            if files and isinstance(files, list) and len(files) > 0:
+                files_count = len(files)
+                result = f"Files ({files_count})" if files_count > 1 else "File"
+                return result
+            return "No Files"
         elif section_type == "Completion Date":
             return user_data.get('completed_at', '')
         elif section_type == "Progress":
@@ -103,6 +109,37 @@ class TaskPillDelegate(QStyledItemDelegate):
             return user_data.get('tag', '')
         else:
             return ""
+
+    def _get_section_color(self, section_type, section_data):
+        """Get color for a specific section type"""
+        if section_type == "Category":
+            return self.get_category_color(section_data)
+        elif section_type == "Status":
+            return self.get_status_color(section_data)
+        elif section_type == "Priority":
+            return self.get_priority_color(section_data)
+        elif section_type == "Due Date":
+            return QColor("#E1F5FE")  # Light blue
+        elif section_type == "Link":
+            return QColor("#f5f5f5")  # Light gray
+        elif section_type == "Files":  # New section type for files
+            return QColor("#E8F5E9")  # Light green
+        elif section_type == "Completion Date":
+            return QColor("#F3E5F5")  # Light purple
+        elif section_type == "Progress":
+            # Color based on progress value
+            if section_data == "0%":
+                return QColor("#FFEBEE")  # Light red
+            elif section_data == "50%":
+                return QColor("#FFF8E1")  # Light yellow
+            elif section_data == "100%":
+                return QColor("#E8F5E9")  # Light green
+            else:
+                return QColor("#f0f0f0")  # Light gray
+        elif section_type == "Tag":
+            return QColor("#FFF8E1")  # Light yellow
+        else:
+            return QColor("#f0f0f0")  # Light gray    
 
     def handle_links_click(self, item, point_in_task_pill):
         """Handle clicks on the links section of a task pill"""
@@ -157,35 +194,6 @@ class TaskPillDelegate(QStyledItemDelegate):
             else:
                 # Open individual link
                 self.open_link(action_data)
-    
-    def _get_section_color(self, section_type, section_data):
-        """Get color for a specific section type"""
-        if section_type == "Category":
-            return self.get_category_color(section_data)
-        elif section_type == "Status":
-            return self.get_status_color(section_data)
-        elif section_type == "Priority":
-            return self.get_priority_color(section_data)
-        elif section_type == "Due Date":
-            return QColor("#E1F5FE")  # Light blue
-        elif section_type == "Link":
-            return QColor("#f5f5f5")  # Light gray
-        elif section_type == "Completion Date":
-            return QColor("#F3E5F5")  # Light purple
-        elif section_type == "Progress":
-            # Color based on progress value
-            if section_data == "0%":
-                return QColor("#FFEBEE")  # Light red
-            elif section_data == "50%":
-                return QColor("#FFF8E1")  # Light yellow
-            elif section_data == "100%":
-                return QColor("#E8F5E9")  # Light green
-            else:
-                return QColor("#f0f0f0")  # Light gray
-        elif section_type == "Tag":
-            return QColor("#FFF8E1")  # Light yellow
-        else:
-            return QColor("#f0f0f0")  # Light gray
     
     def load_compact_states(self):
         """Load compact states from the database"""

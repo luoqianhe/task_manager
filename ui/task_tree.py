@@ -99,12 +99,9 @@ class TaskTreeWidget(QTreeWidget):
             print(f"Error during deferred task loading: {e}")
             import traceback
             traceback.print_exc()
-            
+    
     def add_new_task(self, data):
         print(f"DEBUG: add_new_task called with data: {data}")
-        print(f"DEBUG: Stack trace:")
-        import traceback
-        traceback.print_stack()
         try:
             # Import database manager
             from database.memory_db_manager import get_memory_db_manager
@@ -155,7 +152,7 @@ class TaskTreeWidget(QTreeWidget):
                 # Default is_compact value (new tasks are expanded by default)
                 is_compact = 0
                 
-                # Insert new task - no more legacy link field
+                # Insert new task
                 cursor.execute(
                     """
                     INSERT INTO tasks (title, description, status, priority, 
@@ -192,14 +189,32 @@ class TaskTreeWidget(QTreeWidget):
                             (new_id, url, label, i)
                         )
                         print(f"DEBUG: Inserted link for task {new_id}: url={url}, label={label}")
+                
+                # Add files if any
+                files = data.get('files', [])
+                print(f"ADD_NEW_TASK DEBUG: Adding task with files: {files}")
+                for i, (file_id, file_path, file_name) in enumerate(files):
+                    if file_path and file_path.strip():
+                        cursor.execute(
+                            """
+                            INSERT INTO files (task_id, file_path, file_name, display_order)
+                            VALUES (?, ?, ?, ?)
+                            """,
+                            (new_id, file_path, file_name, i)
+                        )
+                        print(f"DEBUG: Inserted file for task {new_id}: path={file_path}, name={file_name}")
 
                 # Commit changes
                 conn.commit()
 
-                # Verify links were saved
+                # Verify links and files were saved
                 cursor.execute("SELECT * FROM links WHERE task_id = ?", (new_id,))
                 saved_links = cursor.fetchall()
                 print(f"DEBUG: Links saved in database for task {new_id}: {saved_links}")
+                
+                cursor.execute("SELECT * FROM files WHERE task_id = ?", (new_id,))
+                saved_files = cursor.fetchall()
+                print(f"DEBUG: Files saved in database for task {new_id}: {saved_files}")
             
             # Add to tree UI
             new_item = self.add_task_item(
@@ -212,7 +227,8 @@ class TaskTreeWidget(QTreeWidget):
                 data.get('due_date', ''),
                 category_name,
                 is_compact,  # Pass the is_compact value
-                links=links  # Pass links directly
+                links=links,  # Pass links directly
+                files=data.get('files', [])  # Pass files directly
             )
             
             priority = data.get('priority', 'Medium')
@@ -371,13 +387,14 @@ class TaskTreeWidget(QTreeWidget):
             traceback.print_exc()
             QMessageBox.critical(self, "Error", f"Failed to change task status: {str(e)}")
 
-    def add_task_item(self, task_id, title, description, link, status, priority, due_date, category, is_compact=0, links=None):
+    def add_task_item(self, task_id, title, description, link, status, priority, due_date, category, is_compact=0, links=None, files=None):
         # Create a single-column item
         item = QTreeWidgetItem([title or ""])
         
         # Debug prints
         print(f"ADD_TASK_ITEM DEBUG: Adding task: {title}")
         print(f"ADD_TASK_ITEM DEBUG: Links parameter: {links}")
+        print(f"ADD_TASK_ITEM DEBUG: Files parameter: {files}")
         
         # Store all data as item data
         user_data = {
@@ -388,15 +405,18 @@ class TaskTreeWidget(QTreeWidget):
             'priority': priority or "Medium",
             'due_date': due_date or "",
             'category': category or "",
-            'links': links if links is not None else []
+            'links': links if links is not None else [],
+            'files': files if files is not None else []
         }
         
         print(f"ADD_TASK_ITEM DEBUG: Setting user data with links: {user_data.get('links', [])}")
+        print(f"ADD_TASK_ITEM DEBUG: Setting user data with files: {user_data.get('files', [])}")
         item.setData(0, Qt.ItemDataRole.UserRole, user_data)
         
         # Verify the data was set correctly
         verify_data = item.data(0, Qt.ItemDataRole.UserRole)
         print(f"ADD_TASK_ITEM DEBUG: Verified user data links: {verify_data.get('links', [])}")
+        print(f"ADD_TASK_ITEM DEBUG: Verified user data files: {verify_data.get('files', [])}")
         
         
         item.task_id = task_id
@@ -866,10 +886,8 @@ class TaskTreeWidget(QTreeWidget):
         db_manager = get_memory_db_manager()
         links = db_manager.get_task_links(item.task_id)
         
-        # If no links in database but we have a legacy link, add it
-        legacy_link = data.get('link')
-        if not links and legacy_link and legacy_link.strip():
-            links = [(None, legacy_link, None)]
+        # Get files from the database
+        files = db_manager.get_task_files(item.task_id)
         
         # Determine the parent ID safely
         parent_id = None
@@ -888,7 +906,8 @@ class TaskTreeWidget(QTreeWidget):
             'id': item.task_id,
             'title': data['title'],
             'description': data['description'],
-            'links': links,       # New links structure
+            'links': links,       # Links structure
+            'files': files,       # Files structure
             'status': data['status'],
             'priority': data['priority'],  # Now properly preserves the header's priority
             'due_date': data['due_date'],
@@ -915,7 +934,7 @@ class TaskTreeWidget(QTreeWidget):
                     if result and result[0]:
                         category_id = result[0][0]
                 
-                # Update database - now with empty legacy link field
+                # Update database
                 db_manager.execute_update(
                     """
                     UPDATE tasks 
@@ -942,10 +961,10 @@ class TaskTreeWidget(QTreeWidget):
                 
                 # Get new links
                 new_links = updated_data.get('links', [])
-                new_ids = set(link_id for link_id, _, _ in new_links if link_id is not None)
+                new_link_ids = set(link_id for link_id, _, _ in new_links if link_id is not None)
                 
                 # Delete links that no longer exist
-                for link_id in existing_ids - new_ids:
+                for link_id in existing_ids - new_link_ids:
                     db_manager.delete_task_link(link_id)
                 
                 # Add or update links
@@ -964,6 +983,35 @@ class TaskTreeWidget(QTreeWidget):
                                 (i, link_id)
                             )
                 
+                # Update files
+                # First, get existing files to identify which ones to remove
+                existing_files = db_manager.get_task_files(updated_data['id'])
+                existing_file_ids = set(file_id for file_id, _, _ in existing_files if file_id is not None)
+                
+                # Get new files
+                new_files = updated_data.get('files', [])
+                new_file_ids = set(file_id for file_id, _, _ in new_files if file_id is not None)
+                
+                # Delete files that no longer exist
+                for file_id in existing_file_ids - new_file_ids:
+                    db_manager.delete_task_file(file_id)
+                
+                # Add or update files
+                for i, (file_id, file_path, file_name) in enumerate(new_files):
+                    if file_path and file_path.strip():
+                        if file_id is None:
+                            # New file - add it
+                            db_manager.add_task_file(updated_data['id'], file_path, file_name)
+                        else:
+                            # Existing file - update it
+                            db_manager.update_task_file(file_id, file_path, file_name)
+                            
+                            # Also update its display order
+                            db_manager.execute_update(
+                                "UPDATE files SET display_order = ? WHERE id = ?",
+                                (i, file_id)
+                            )
+                
                 # Check if status, category, or priority changed
                 status_changed = task_data['status'] != updated_data['status']
                 category_changed = task_data['category'] != updated_data['category']
@@ -977,8 +1025,8 @@ class TaskTreeWidget(QTreeWidget):
                     'id': updated_data['id'],
                     'title': updated_data['title'],
                     'description': updated_data['description'],
-                    'link': '',  # Empty legacy link
                     'links': new_links,  # Store new links structure
+                    'files': new_files,  # Store new files structure
                     'status': updated_data['status'],
                     'priority': updated_data['priority'],
                     'due_date': updated_data['due_date'],
@@ -1051,7 +1099,7 @@ class TaskTreeWidget(QTreeWidget):
                 traceback.print_exc()
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.critical(self, "Error", f"Failed to update task: {str(e)}")
-                        
+                                
     def get_settings_manager(self):
         """Get the settings manager instance"""
         try:
@@ -1236,6 +1284,167 @@ class TaskTreeWidget(QTreeWidget):
             # For clicks in the main content area, open edit dialog
             self.edit_task(item)
 
+    def handle_files_click(self, item, point_in_task_pill):
+        """Handle clicks on the files section of a task pill"""
+        # Get item data
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        
+        # Check if we have any files
+        files = data.get('files', [])
+        print(f"DEBUG: Files in handle_files_click: {files}")
+        
+        # If no files, return
+        if not files:
+            print("DEBUG: No files found")
+            return
+        
+        # Create files menu
+        menu = QMenu(self)
+        
+        # Add individual files with names if available
+        for file_id, file_path, file_name in files:
+            display_name = file_name if file_name else file_path
+            action = menu.addAction(display_name)
+            action.setData(file_path)
+            print(f"DEBUG: Added file menu item: {display_name}")
+        
+        # Add separator if we have files
+        if files:
+            menu.addSeparator()
+            
+            # Add "Open All" action
+            open_all_action = menu.addAction("Open All Files")
+            open_all_action.setData("open_all")
+            
+            # Add "Open All Locations" action
+            open_locations_action = menu.addAction("Open All File Locations")
+            open_locations_action.setData("open_locations")
+        
+        # Execute menu
+        action = menu.exec(self.mapToGlobal(point_in_task_pill))
+        
+        if action:
+            action_data = action.data()
+            print(f"DEBUG: Selected action: {action_data}")
+            
+            if action_data == "open_all":
+                # Open all files
+                self.open_all_files(files)
+            elif action_data == "open_locations":
+                # Open all file locations
+                self.open_all_file_locations(files)
+            else:
+                # Open individual file
+                self.open_file(item, action_data)
+
+    def open_all_files(self, files):
+        """Open all files with their default applications"""
+        for _, file_path, _ in files:
+            if file_path:
+                try:
+                    self.open_file(None, file_path)
+                    print(f"Opened file: {file_path}")
+                except Exception as e:
+                    print(f"Error opening file {file_path}: {e}")
+                    # Continue with the next file even if one fails
+
+    def open_all_file_locations(self, files):
+        """Open file explorer windows showing the location of each file"""
+        import os
+        import platform
+        import subprocess
+        
+        for _, file_path, _ in files:
+            if not file_path or not os.path.exists(file_path):
+                continue
+                
+            try:
+                # Get the directory containing the file
+                file_dir = os.path.dirname(file_path)
+                
+                # Open the directory based on platform
+                system = platform.system()
+                
+                if system == 'Windows':
+                    # On Windows, use Explorer to open the directory and select the file
+                    subprocess.run(['explorer', '/select,', os.path.normpath(file_path)])
+                elif system == 'Darwin':  # macOS
+                    # On macOS, use Finder to open and select the file
+                    subprocess.run(['open', '-R', file_path])
+                else:  # Linux and others
+                    # On Linux, just open the directory
+                    subprocess.run(['xdg-open', file_dir])
+                    
+                print(f"Opened location for: {file_path}")
+            except Exception as e:
+                print(f"Error opening location for {file_path}: {e}")
+                # Continue with the next file even if one fails
+
+    def open_file(self, item, file_path):
+        """Open a file with the default application"""
+        if not file_path:
+            return
+            
+        try:
+            import os
+            import platform
+            
+            # Check if file exists
+            if not os.path.exists(file_path):
+                # Handle file not found
+                if item is not None:  # Only show dialog if we have an item reference
+                    from PyQt6.QtWidgets import QMessageBox
+                    
+                    reply = QMessageBox.question(
+                        self,
+                        "File Not Found",
+                        f"The file '{file_path}' could not be found. Would you like to update the file path?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | 
+                        QMessageBox.StandardButton.Discard
+                    )
+                    
+                    if reply == QMessageBox.StandardButton.Yes:
+                        # Let the user select a new file
+                        from PyQt6.QtWidgets import QFileDialog
+                        
+                        new_path, _ = QFileDialog.getOpenFileName(
+                            self, "Update File Path", "", "All Files (*.*)"
+                        )
+                        
+                        if new_path:
+                            # Update the file path in the database
+                            self.update_file_path(item, file_path, new_path)
+                            
+                            # Try opening the new file
+                            self.open_file(item, new_path)
+                            
+                    elif reply == QMessageBox.StandardButton.Discard:
+                        # Remove the file from the task
+                        self.remove_file_from_task(item, file_path)
+                else:
+                    print(f"File not found: {file_path}")
+                return
+                
+            # Open file with default application based on platform
+            system = platform.system()
+            
+            if system == 'Windows':
+                os.startfile(file_path)
+            elif system == 'Darwin':  # macOS
+                import subprocess
+                subprocess.call(('open', file_path))
+            else:  # Linux and others
+                import subprocess
+                subprocess.call(('xdg-open', file_path))
+                
+        except Exception as e:
+            print(f"Error opening file: {e}")
+            
+            # Handle other errors if we have an item reference
+            if item is not None:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "Error", f"Could not open file: {str(e)}")
+                
     def handleHeaderDoubleClick(self, item):
         """Handle double-click on priority headers"""
         # Get item data
@@ -1331,12 +1540,15 @@ class TaskTreeWidget(QTreeWidget):
             from database.memory_db_manager import get_memory_db_manager
             db_manager = get_memory_db_manager()
             
-            # Debug check - verify links table exists and has data
+            # Debug check - verify links and files tables exist and have data
             try:
                 all_links = db_manager.execute_query("SELECT * FROM links")
                 print(f"LOAD TASK DEBUG: All links in database at load time: {all_links}")
+                
+                all_files = db_manager.execute_query("SELECT * FROM files")
+                print(f"LOAD TASK DEBUG: All files in database at load time: {all_files}")
             except Exception as e:
-                print(f"LOAD TASK DEBUG: Error checking links table: {e}")
+                print(f"LOAD TASK DEBUG: Error checking links/files tables: {e}")
         
             # Get priority order map and colors
             priority_order = {}
@@ -1388,13 +1600,18 @@ class TaskTreeWidget(QTreeWidget):
                 try:
                     task_links = db_manager.get_task_links(task_id)
                     print(f"LOAD TASK DEBUG: Retrieved links for task {task_id}: {task_links}")
-                    print(f"LOAD TASK DEBUG: Type of task_links: {type(task_links)}")
-                    print(f"LOAD TASK DEBUG: Length of task_links: {len(task_links) if task_links else 0}")
                 except Exception as e:
                     print(f"LOAD TASK DEBUG: Error loading links for task {task_id}: {e}")
                 
-                # Create the task item WITH links
-                # Note: We need to unpack row[:9] AND add the links parameter
+                # Load files for this task BEFORE creating the item
+                task_files = []
+                try:
+                    task_files = db_manager.get_task_files(task_id)
+                    print(f"LOAD TASK DEBUG: Retrieved files for task {task_id}: {task_files}")
+                except Exception as e:
+                    print(f"LOAD TASK DEBUG: Error loading files for task {task_id}: {e}")
+                
+                # Create the task item WITH links and files
                 item = self.add_task_item(
                     row[0],  # task_id
                     row[1],  # title
@@ -1405,7 +1622,8 @@ class TaskTreeWidget(QTreeWidget):
                     row[6],  # due_date
                     row[7],  # category
                     row[8],  # is_compact
-                    links=task_links  # Pass links as named parameter
+                    links=task_links,  # Pass links as named parameter
+                    files=task_files   # Pass files as named parameter
                 )
                 items[task_id] = item
                 
@@ -1430,14 +1648,14 @@ class TaskTreeWidget(QTreeWidget):
             # Instead of just setting the expanded state in the data, make sure to
             # synchronize the visual state with the stored state
             self.synchronize_priority_headers()
-            
+        
         except Exception as e:
             print(f"LOAD TASK DEBUG: Error loading tasks: {e}")
             import traceback
             traceback.print_exc()
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(None, "Error", f"Failed to load tasks: {str(e)}")
-    
+            
     def dragMoveEvent(self, event):
         """Handle drag move events and implement autoscroll"""
         # Call the parent implementation first

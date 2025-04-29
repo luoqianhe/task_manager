@@ -61,10 +61,14 @@ class AddTaskDialog(QDialog):
         # Get links from the links widget
         links = self.links_widget.get_links()
         
+        # Get files from the files widget
+        files = self.files_widget.get_files()
+        
         self.data = {
             'title': self.title_input.text(),
             'description': self.description_input.toPlainText(),
-            'links': links,  # Now storing a list of (id, url, label) tuples
+            'links': links,  # List of (id, url, label) tuples
+            'files': files,  # List of (id, file_path, file_name) tuples
             'status': self.status_combo.currentText(),
             'priority': selected_priority,
             'due_date': due_date,
@@ -249,9 +253,13 @@ class AddTaskDialog(QDialog):
         self.description_input.setMinimumHeight(80)
         form_layout.addRow("Description:", self.description_input)
         
-        # Links (replace single link field with LinkListWidget)
+        # Links
         self.links_widget = LinkListWidget(self)
         form_layout.addRow("Links:", self.links_widget)
+        
+        # Files - NEW SECTION
+        self.files_widget = FileListWidget(self)
+        form_layout.addRow("Files:", self.files_widget)
         
         # Status
         self.status_combo = QComboBox()
@@ -307,7 +315,7 @@ class AddTaskDialog(QDialog):
         self.setTabOrder(self.category_combo, self.parent_combo)
         self.setTabOrder(self.parent_combo, save_btn)
         self.setTabOrder(save_btn, cancel_btn)
-        
+    
     def load_categories(self):
         self.category_combo.addItem("None", None)
         with self.get_connection() as conn:
@@ -385,6 +393,11 @@ class EditTaskDialog(QDialog):
         self.load_links()  # Load existing links
         form_layout.addRow("Links:", self.links_widget)
         
+        # Files - NEW SECTION
+        self.files_widget = FileListWidget(self)
+        self.load_files()  # Load existing files
+        form_layout.addRow("Files:", self.files_widget)
+        
         # Status
         self.status_combo = QComboBox()
         self.status_combo.setFixedHeight(30)
@@ -450,7 +463,7 @@ class EditTaskDialog(QDialog):
         self.setTabOrder(self.category_combo, self.parent_combo)
         self.setTabOrder(self.parent_combo, save_btn)
         self.setTabOrder(save_btn, cancel_btn)
-    
+
     def get_data(self):
         return self.data
 
@@ -566,26 +579,30 @@ class EditTaskDialog(QDialog):
         due_date = None
         if self.due_date_edit.date() != QDate(2000, 1, 1):  # Default empty date
             due_date = self.due_date_edit.date().toString("yyyy-MM-dd")
-        
+
         # Get selected priority directly from combo box
         selected_priority = self.priority_combo.currentText()
-                    
+                
         # Get links from the widget
         links = self.links_widget.get_links()
-        
+
+        # Get files from the widget
+        files = self.files_widget.get_files()
+
         self.data = {
-            'id': self.task_data['id'],
-            'title': self.title_input.text(),
-            'description': self.description_input.toPlainText(),
-            'links': links,  # Now storing a list of (id, url, label) tuples
-            'status': self.status_combo.currentText(),
-            'priority': selected_priority,
-            'due_date': due_date,
-            'category': self.category_combo.currentText() if self.category_combo.currentIndex() > 0 else None,
-            'parent_id': self.parent_combo.currentData()
+        'id': self.task_data['id'],
+        'title': self.title_input.text(),
+        'description': self.description_input.toPlainText(),
+        'links': links,  # List of (id, url, label) tuples
+        'files': files,  # List of (id, file_path, file_name) tuples
+        'status': self.status_combo.currentText(),
+        'priority': selected_priority,
+        'due_date': due_date,
+        'category': self.category_combo.currentText() if self.category_combo.currentIndex() > 0 else None,
+        'parent_id': self.parent_combo.currentData()
         }
         super().accept()
-        
+
     def load_categories(self):
         self.category_combo.addItem("None", None)
         with self.get_connection() as conn:
@@ -616,7 +633,18 @@ class EditTaskDialog(QDialog):
                 self.parent_combo.addItem(display_text, task_id)
                 if task_id == current_parent:
                     self.parent_combo.setCurrentIndex(self.parent_combo.count() - 1)
-     
+    
+    def load_files(self):
+        """Load existing files for the task"""
+        try:
+            # Get files from the task_data (passed in during initialization)
+            files = self.task_data.get('files', [])
+            self.files_widget.set_files(files)
+        except Exception as e:
+            print(f"Error loading files: {e}")
+            import traceback
+            traceback.print_exc()
+            
 class EditStatusDialog(QDialog):
     @staticmethod
     def get_connection():
@@ -894,3 +922,207 @@ class LinkDialog(QDialog):
                 return
         
         self.accept()
+        
+class FileListWidget(QWidget):
+    """Widget for managing multiple file attachments for a task"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.files = []  # List of (id, file_path, file_name) tuples, id can be None for new files
+        self.setup_ui()
+    
+    def setup_ui(self):
+        # Main layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Files list
+        self.files_layout = QVBoxLayout()
+        self.files_layout.setSpacing(5)
+        
+        # Create a scroll area for files
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_content.setLayout(self.files_layout)
+        scroll_area.setWidget(scroll_content)
+        scroll_area.setMaximumHeight(150)
+        
+        # Add scroll area to main layout
+        layout.addWidget(scroll_area)
+        
+        # Add file button
+        add_file_button = QPushButton("Add File")
+        add_file_button.setIcon(QIcon.fromTheme("list-add"))
+        add_file_button.clicked.connect(self.add_file)
+        layout.addWidget(add_file_button)
+    
+    def add_file(self):
+        """Open dialog to select a new file"""
+        from PyQt6.QtWidgets import QFileDialog
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select File", "", "All Files (*.*)"
+        )
+        
+        if file_path:
+            # Extract filename for display
+            from pathlib import Path
+            file_name = Path(file_path).name
+            
+            # Add to internal list (None for id means it's a new file)
+            self.files.append((None, file_path, file_name))
+            
+            # Update UI
+            self.refresh_files()
+    
+    def edit_file(self, index):
+        """Edit a file path at the specified index"""
+        file_id, old_path, old_name = self.files[index]
+        
+        from PyQt6.QtWidgets import QFileDialog
+        
+        # Start dialog in the directory of the current file if possible
+        start_dir = str(Path(old_path).parent) if old_path else ""
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Update File", start_dir, "All Files (*.*)"
+        )
+        
+        if file_path:
+            # Extract filename for display
+            from pathlib import Path
+            file_name = Path(file_path).name
+            
+            # Update in internal list
+            self.files[index] = (file_id, file_path, file_name)
+            
+            # Update UI
+            self.refresh_files()
+    
+    def remove_file(self, index):
+        """Remove a file at the specified index"""
+        # Ask for confirmation
+        from PyQt6.QtWidgets import QMessageBox
+        
+        confirm = QMessageBox.question(
+            self, "Remove File", 
+            "Are you sure you want to remove this file?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if confirm == QMessageBox.StandardButton.Yes:
+            # Remove from internal list
+            self.files.pop(index)
+            
+            # Update UI
+            self.refresh_files()
+    
+    def set_files(self, files):
+        """Set the list of files (id, file_path, file_name) tuples"""
+        self.files = list(files)  # Create a copy
+        self.refresh_files()
+    
+    def get_files(self):
+        """Get the current list of files"""
+        return list(self.files)  # Return a copy
+    
+    def refresh_files(self):
+        """Refresh the files display"""
+        # Clear existing widgets
+        while self.files_layout.count():
+            item = self.files_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        # Add file items
+        for i, (file_id, file_path, file_name) in enumerate(self.files):
+            file_item = QWidget()
+            item_layout = QHBoxLayout(file_item)
+            item_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # File display label - show filename
+            file_label = QLabel(file_name)
+            file_label.setToolTip(file_path)  # Show full path on hover
+            file_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            item_layout.addWidget(file_label)
+            
+            # Spacer to push buttons to the right
+            item_layout.addStretch()
+            
+            # Open button
+            open_button = QPushButton("Open")
+            open_button.setFixedWidth(60)
+            open_button.clicked.connect(lambda checked, path=file_path: self.open_file(path))
+            item_layout.addWidget(open_button)
+            
+            # Edit button
+            edit_button = QPushButton("Change")
+            edit_button.setFixedWidth(60)
+            edit_button.clicked.connect(lambda checked, idx=i: self.edit_file(idx))
+            item_layout.addWidget(edit_button)
+            
+            # Remove button
+            remove_button = QPushButton("Remove")
+            remove_button.setFixedWidth(60)
+            remove_button.clicked.connect(lambda checked, idx=i: self.remove_file(idx))
+            item_layout.addWidget(remove_button)
+            
+            # Add to files layout
+            self.files_layout.addWidget(file_item)
+        
+        # Add a stretch at the end
+        self.files_layout.addStretch()
+    
+    def open_file(self, file_path):
+        """Open a file with the default application"""
+        if not file_path:
+            return
+            
+        try:
+            import os
+            import platform
+            
+            # Open file with default application based on platform
+            system = platform.system()
+            
+            if system == 'Windows':
+                os.startfile(file_path)
+            elif system == 'Darwin':  # macOS
+                import subprocess
+                subprocess.call(('open', file_path))
+            else:  # Linux and others
+                import subprocess
+                subprocess.call(('xdg-open', file_path))
+                
+        except Exception as e:
+            # Handle file not found or other errors
+            from PyQt6.QtWidgets import QMessageBox
+            
+            # Check if file exists
+            from pathlib import Path
+            if not Path(file_path).exists():
+                # File doesn't exist, offer to update or remove
+                reply = QMessageBox.question(
+                    self,
+                    "File Not Found",
+                    f"The file '{file_path}' could not be found. Would you like to update the file path?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | 
+                    QMessageBox.StandardButton.Discard
+                )
+                
+                if reply == QMessageBox.StandardButton.Yes:
+                    # Find the index of this file in the list
+                    for i, (_, path, _) in enumerate(self.files):
+                        if path == file_path:
+                            self.edit_file(i)
+                            break
+                elif reply == QMessageBox.StandardButton.Discard:
+                    # Remove the file
+                    for i, (_, path, _) in enumerate(self.files):
+                        if path == file_path:
+                            self.remove_file(i)
+                            break
+            else:
+                # Some other error occurred
+                QMessageBox.warning(self, "Error", f"Could not open file: {str(e)}")

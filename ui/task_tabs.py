@@ -112,7 +112,7 @@ class TabTaskTreeWidget(TaskTreeWidget):
             QMessageBox.warning(None, "Error", f"Failed to load {self.filter_type} tasks: {str(e)}")
 
     def _process_tasks_with_links(self, tasks, use_priority_headers=True):
-        """Process tasks and load links for each task"""
+        """Process tasks and load links and files for each task"""
         try:
             # Import database manager
             from database.memory_db_manager import get_memory_db_manager
@@ -161,7 +161,7 @@ class TabTaskTreeWidget(TaskTreeWidget):
             
             items = {}
             
-            # First pass: create all items with proper links
+            # First pass: create all items with proper links and files
             for row in tasks:
                 task_id = row[0]
                 
@@ -173,7 +173,15 @@ class TabTaskTreeWidget(TaskTreeWidget):
                 except Exception as e:
                     print(f"Tab load task debug: Error loading links for task {task_id}: {e}")
                 
-                # Create the task item WITH links
+                # Load files for this task
+                task_files = []
+                try:
+                    task_files = db_manager.get_task_files(task_id)
+                    print(f"Tab load task debug: Retrieved files for task {task_id}: {task_files}")
+                except Exception as e:
+                    print(f"Tab load task debug: Error loading files for task {task_id}: {e}")
+                
+                # Create the task item WITH links and files
                 item = self.add_task_item(
                     row[0],      # task_id
                     row[1],      # title
@@ -184,7 +192,8 @@ class TabTaskTreeWidget(TaskTreeWidget):
                     row[6],      # due_date
                     row[7],      # category
                     row[8],      # is_compact
-                    links=task_links  # Pass links as named parameter
+                    links=task_links,  # Pass links as named parameter
+                    files=task_files   # Pass files as named parameter
                 )
                 items[task_id] = item
                 
@@ -222,10 +231,10 @@ class TabTaskTreeWidget(TaskTreeWidget):
                     parent_item.addChild(item)
             
         except Exception as e:
-            print(f"Error processing tasks with links: {e}")
+            print(f"Error processing tasks with links and files: {e}")
             import traceback
             traceback.print_exc()
-    
+        
     def _format_tasks_with_priority_headers(self, tasks):
         """Format tasks with priority headers (for Current Tasks tab)"""
         try:
@@ -457,16 +466,21 @@ class TaskTabWidget(QTabWidget):
         self.currentChanged.connect(self.handle_tab_changed)
     
     def setup_tabs(self):
-        """Set up the three tabs"""
+        """Set up the four tabs"""
         print("DEBUG: TaskTabWidget.setup_tabs called")
-        # Create the three tab widgets
+        # Create the four tab widgets
         self.current_tasks_tab = self.create_tab("current")
         self.backlog_tab = self.create_tab("backlog")
+        
+        # Create Bee To Dos tab
+        self.bee_todos_tab = self.create_bee_todos_tab()
+        
         self.completed_tab = self.create_tab("completed")
         
-        # Add them to the tab widget
+        # Add them to the tab widget in the new order
         self.addTab(self.current_tasks_tab, "Current Tasks")
         self.addTab(self.backlog_tab, "Backlog")
+        self.addTab(self.bee_todos_tab, "Bee To Dos")  # New tab
         self.addTab(self.completed_tab, "Completed Tasks")
         
         # Force load the current tasks tab data
@@ -475,7 +489,8 @@ class TaskTabWidget(QTabWidget):
         # Set tab tool tips for better UX
         self.setTabToolTip(0, "View and manage current active tasks")
         self.setTabToolTip(1, "View and manage tasks in your backlog")
-        self.setTabToolTip(2, "View completed tasks")
+        self.setTabToolTip(2, "View and manage To-Dos from your Bee device")
+        self.setTabToolTip(3, "View completed tasks")   
         
     def create_tab(self, filter_type):
         """Create a tab widget with a task tree for the given filter type"""
@@ -506,9 +521,59 @@ class TaskTabWidget(QTabWidget):
             if hasattr(tab, 'task_tree'):
                 tab.task_tree.load_tasks_tab()
     
+    def create_bee_todos_tab(self):
+        """Create the Bee To Dos tab"""
+        # Create tab widget
+        tab_widget = QWidget()
+        layout = QVBoxLayout(tab_widget)
+        
+        # Create Bee To Dos widget
+        from ui.bee_todos import BeeToDoWidget
+        bee_todos_widget = BeeToDoWidget(self.main_window)
+        layout.addWidget(bee_todos_widget)
+        
+        # Store the widget for easy access
+        tab_widget.bee_todos_widget = bee_todos_widget
+        
+        return tab_widget
+    
     def handle_tab_changed(self, index):
         """Handle tab changed event"""
         # Refresh the newly selected tab's content
         tab = self.widget(index)
-        if hasattr(tab, 'task_tree'):
+        
+        # Special handling for Bee To Dos tab
+        if index == 2:  # Bee To Dos tab
+            if hasattr(tab, 'bee_todos_widget'):
+                # Check if we have an API key
+                api_key = self.main_window.settings.get_setting("bee_api_key", "")
+                if not api_key:
+                    # No API key, show dialog
+                    from ui.bee_api_dialog import BeeApiKeyDialog
+                    dialog = BeeApiKeyDialog(self)
+                    
+                    if dialog.exec():
+                        # User provided an API key
+                        api_key = dialog.get_api_key()
+                        key_label = dialog.get_key_label()
+                        
+                        if api_key:
+                            # Save to settings
+                            self.main_window.settings.set_setting("bee_api_key", api_key)
+                            if key_label:
+                                self.main_window.settings.set_setting("bee_api_key_label", key_label)
+                            
+                            # Initialize Bee To Dos with new key
+                            tab.bee_todos_widget.initialize_with_api_key(api_key)
+                        else:
+                            # No API key provided, switch back to previous tab
+                            self.setCurrentIndex(0)  # Default to Current Tasks
+                    else:
+                        # User cancelled, switch back to previous tab
+                        self.setCurrentIndex(0)  # Default to Current Tasks
+                else:
+                    # API key exists, initialize Bee To Dos widget
+                    tab.bee_todos_widget.initialize_with_api_key(api_key)
+        elif hasattr(tab, 'task_tree'):
+            # Regular task tab - load tasks
             tab.task_tree.load_tasks_tab()

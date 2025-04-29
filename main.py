@@ -72,23 +72,15 @@ class MainWindow(QMainWindow):
         self.combined_settings = CombinedSettingsManager()
         self.settings_tabs.addTab(self.combined_settings, "Task Organization")
         
-        # Create Combined Display Settings tab (replacing Font Settings and Task Pill Display)
+        # Create Combined Display Settings tab
         try:
             from ui.combined_display_settings import CombinedDisplaySettingsWidget
-            print("Import successful")
-            try:
-                self.display_settings = CombinedDisplaySettingsWidget(self)
-                print("Widget created")
-                self.settings_tabs.addTab(self.display_settings, "Display Settings")
-                print("Tab added")
-            except Exception as e:
-                print(f"ERROR creating widget: {e}")
-                import traceback
-                traceback.print_exc()
-        except ImportError as e:
-            print(f"Import error: {e}")
+            self.display_settings = CombinedDisplaySettingsWidget(self)
+            self.settings_tabs.addTab(self.display_settings, "Display Settings")
+        except Exception as e:
+            print(f"ERROR creating display settings widget: {e}")
         
-        # Create App Settings tab
+        # Create App Settings tab (Bee API key management is still here)
         self.app_settings = AppSettingsWidget(self)
         self.settings_tabs.addTab(self.app_settings, "App Settings")
         
@@ -108,9 +100,9 @@ class MainWindow(QMainWindow):
         # Add button to layout
         button_layout = QHBoxLayout()
         button_layout.addWidget(done_button)
-        button_layout.addStretch()  # Push button to the left
+        button_layout.addStretch()
         layout.addLayout(button_layout)
-    
+      
     def setup_shortcuts(self):
         # New Task
         new_shortcut = QShortcut(QKeySequence.StandardKey.New, self)
@@ -151,9 +143,6 @@ class MainWindow(QMainWindow):
     
     def init_task_view(self):
         print("DEBUG: MainWindow.init_task_view called")
-        print("DEBUG: Stack trace:")
-        import traceback
-        traceback.print_stack()
         self.task_widget = QWidget()
         layout = QVBoxLayout(self.task_widget)
         
@@ -481,6 +470,43 @@ class MainWindow(QMainWindow):
         # Accept the close event
         event.accept()
 
+    def on_settings_tab_changed(self, index):
+        """Handle settings tab changes"""
+        # If switching to Bee To Dos tab
+        if index == 3:  # Adjust index as needed based on tab position
+            # Check if we have an API key
+            api_key = self.settings.get_setting("bee_api_key", "")
+            if not api_key:
+                # No API key, show dialog
+                from ui.bee_api_dialog import BeeApiKeyDialog
+                dialog = BeeApiKeyDialog(self)
+                
+                if dialog.exec():
+                    # User provided an API key
+                    api_key = dialog.get_api_key()
+                    key_label = dialog.get_key_label()
+                    
+                    if api_key:
+                        # Save to settings
+                        self.settings.set_setting("bee_api_key", api_key)
+                        if key_label:
+                            self.settings.set_setting("bee_api_key_label", key_label)
+                        
+                        # Initialize Bee To Dos with new key
+                        self.bee_todos.initialize_with_api_key(api_key)
+                    else:
+                        # No API key provided, switch back to previous tab
+                        self.settings_tabs.setCurrentIndex(self.previous_tab_index)
+                else:
+                    # User cancelled, switch back to previous tab
+                    self.settings_tabs.setCurrentIndex(self.previous_tab_index)
+            else:
+                # API key exists, make sure Bee To Dos widget is initialized
+                self.bee_todos.initialize_with_api_key(api_key)
+        
+        # Store the current tab index for reference
+        self.previous_tab_index = index
+
 def apply_connection_method():
     """Apply the global connection method to all classes that need it"""
     # Import all needed classes
@@ -494,6 +520,7 @@ def apply_connection_method():
     for cls in [TaskTreeWidget, TabTaskTreeWidget, TaskTabWidget, CombinedSettingsManager, 
                SettingPillItem, EditItemDialog, AddTaskDialog, EditTaskDialog, TaskPillDelegate]:
         setattr(cls, 'get_connection', staticmethod(get_global_connection))
+
 
 def main():
     app = QApplication(sys.argv)

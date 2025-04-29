@@ -9,8 +9,8 @@ from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtCore import Qt, QSignalBlocker
 import platform
 
-# Import our new task pill preview widget
 from ui.task_pill_preview import TaskPillPreviewWidget
+from ui.task_pill_delegate import TaskPillDelegate
 
 class CombinedDisplaySettingsWidget(QWidget):
     def __init__(self, main_window):
@@ -250,7 +250,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.top_left_combo = QComboBox()
         self.top_left_combo.addItems([
             "None", "Category", "Status", "Priority", "Due Date",
-            "Link", "Progress", "Completion Date", "Tag"
+            "Link", "Progress", "Completion Date", "Tag", "Files"
         ])
         top_left_layout.addRow("Top:", self.top_left_combo)
         left_panel_layout.addLayout(top_left_layout)
@@ -260,7 +260,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.bottom_left_combo = QComboBox()
         self.bottom_left_combo.addItems([
             "None", "Category", "Status", "Priority", "Due Date",
-            "Link", "Progress", "Completion Date", "Tag"
+            "Link", "Progress", "Completion Date", "Tag", "Files"
         ])
         bottom_left_layout.addRow("Bottom:", self.bottom_left_combo)
         left_panel_layout.addLayout(bottom_left_layout)
@@ -274,7 +274,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.top_right_combo = QComboBox()
         self.top_right_combo.addItems([
             "None", "Category", "Status", "Priority", "Due Date",
-            "Link", "Progress", "Completion Date", "Tag"
+            "Link", "Progress", "Completion Date", "Tag", "Files"
         ])
         top_right_layout.addRow("Top:", self.top_right_combo)
         right_panel_layout.addLayout(top_right_layout)
@@ -284,7 +284,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.bottom_right_combo = QComboBox()
         self.bottom_right_combo.addItems([
             "None", "Category", "Status", "Priority", "Due Date",
-            "Link", "Progress", "Completion Date", "Tag"
+            "Link", "Progress", "Completion Date", "Tag", "Files"
         ])
         bottom_right_layout.addRow("Bottom:", self.bottom_right_combo)
         right_panel_layout.addLayout(bottom_right_layout)
@@ -403,7 +403,7 @@ class CombinedDisplaySettingsWidget(QWidget):
                 pass
     
     def save_settings(self):
-        """Save all display settings to the settings manager"""
+        """Save all display settings to the settings manager and apply changes immediately"""
         # Save font family and size
         self.settings.set_setting("font_family", self.font_family_combo.currentText())
         self.settings.set_setting("font_size", self.font_size_spin.value())
@@ -457,12 +457,15 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         # Notify the user
         QMessageBox.information(self, "Settings Saved", 
-                                "Display settings have been saved. Changes will be applied when tasks are reloaded.")
+                            "Display settings have been saved. Changes will be applied immediately.")
         
         # Update the preview
         if hasattr(self, 'task_preview'):
             self.task_preview.update_preview()
-    
+        
+        # APPLY CHANGES IMMEDIATELY
+        self.apply_changes_to_all_tabs()
+        
     def load_current_settings(self):
         """Load current settings from settings manager"""
         # Block signals during loading to prevent multiple preview updates
@@ -550,3 +553,29 @@ class CombinedDisplaySettingsWidget(QWidget):
         # After loading settings, update the preview
         if hasattr(self, 'task_preview'):
             self.task_preview.update_preview()
+            
+    def apply_changes_to_all_tabs(self):
+        """Apply display settings changes to all task trees immediately"""
+        # Find the main window
+        main_window = self.main_window
+        
+        # Get the tab widget from the main window
+        if hasattr(main_window, 'tabs'):
+            tabs = main_window.tabs
+            
+            # Apply changes to each tab's task tree
+            for i in range(tabs.count()):
+                tab = tabs.widget(i)
+                if hasattr(tab, 'task_tree'):
+                    task_tree = tab.task_tree
+                    
+                    # Create a new delegate with the updated settings
+                    new_delegate = TaskPillDelegate(task_tree)
+                    
+                    # Apply the new delegate to the task tree
+                    task_tree.setItemDelegate(new_delegate)
+                    
+                    # Force a viewport update to redraw with new settings
+                    task_tree.viewport().update()
+                    
+            print("Display settings changes applied to all tabs")

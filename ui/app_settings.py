@@ -179,6 +179,40 @@ class AppSettingsWidget(QWidget):
         csv_group.setLayout(csv_layout)
         layout.addWidget(csv_group)
         
+        # Bee API Settings group
+        if hasattr(self.main_window, 'settings'):
+            bee_api_group = QGroupBox("Bee API Settings")
+            bee_api_layout = QVBoxLayout()
+            
+            # Get API key and label from settings
+            api_key = self.settings.get_setting("bee_api_key", "")
+            api_key_label = self.settings.get_setting("bee_api_key_label", "")
+            
+            if api_key:
+                # Display API key label or a default message
+                display_text = f'API Key: "{api_key_label}"' if api_key_label else "API Key: [Configured]"
+                key_label = QLabel(display_text)
+                bee_api_layout.addWidget(key_label)
+                
+                # Delete button
+                delete_btn = QPushButton("Delete API Key")
+                delete_btn.setFixedHeight(30)
+                delete_btn.clicked.connect(self.delete_bee_api_key)
+                bee_api_layout.addWidget(delete_btn)
+            else:
+                # No API key configured
+                key_label = QLabel("No Bee API key configured")
+                bee_api_layout.addWidget(key_label)
+                
+                # Add button
+                add_btn = QPushButton("Add API Key")
+                add_btn.setFixedHeight(30)
+                add_btn.clicked.connect(self.add_bee_api_key)
+                bee_api_layout.addWidget(add_btn)
+            
+            bee_api_group.setLayout(bee_api_layout)
+            layout.addWidget(bee_api_group)
+        
         # Add stretch to push Done button to bottom
         layout.addStretch()
         
@@ -258,3 +292,45 @@ class AppSettingsWidget(QWidget):
                                        f"Database backed up to {backup_path}")
             except Exception as e:
                 QMessageBox.critical(self, "Backup Failed", str(e))
+                
+    def delete_bee_api_key(self):
+        """Delete the stored Bee API key"""
+        from PyQt6.QtWidgets import QMessageBox
+        
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            "Are you sure you want to delete your Bee API key? " +
+            "You'll need to enter it again to access your Bee To-Dos.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Delete key from settings
+            self.settings.set_setting("bee_api_key", "")
+            self.settings.set_setting("bee_api_key_label", "")
+            
+            # Refresh the UI
+            self.setup_ui()
+            
+            QMessageBox.information(self, "API Key Deleted", "Your Bee API key has been deleted.")
+
+    def add_bee_api_key(self):
+        """Add a new Bee API key"""
+        from ui.bee_api_dialog import BeeApiKeyDialog
+        
+        dialog = BeeApiKeyDialog(self)
+        if dialog.exec():
+            # Get key and label
+            api_key = dialog.get_api_key()
+            key_label = dialog.get_key_label()
+            
+            if api_key:
+                # Save to settings
+                self.settings.set_setting("bee_api_key", api_key)
+                if key_label:
+                    self.settings.set_setting("bee_api_key_label", key_label)
+                
+                # Refresh the UI
+                self.setup_ui()
