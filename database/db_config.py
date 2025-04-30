@@ -229,6 +229,7 @@ class DatabaseConfig:
                 is_compact INTEGER NOT NULL DEFAULT 0,
                 completed_at TEXT DEFAULT NULL,
                 priority_header_id INTEGER DEFAULT NULL,
+                bee_item_id TEXT DEFAULT NULL,  -- Added field for Bee item ID
                 FOREIGN KEY (category_id) REFERENCES categories (id),
                 FOREIGN KEY (parent_id) REFERENCES tasks (id)
             )

@@ -2,7 +2,7 @@
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
                            QHBoxLayout, QListWidget, QListWidgetItem, QCheckBox, 
-                           QGroupBox, QMessageBox, QProgressBar)
+                           QGroupBox, QMessageBox, QProgressBar, QDialog, QRadioButton, QComboBox)
 from PyQt6.QtCore import Qt, QThreadPool, QRunnable, pyqtSignal, QObject
 from PyQt6.QtGui import QFont
 
@@ -38,8 +38,9 @@ class Worker(QRunnable):
             loop.close()
             self.signals.finished.emit(result)
         except Exception as e:
+            print(f"Worker error: {e}")
             self.signals.error.emit(str(e))
-
+            
 class BeeToDoWidget(QWidget):
     """Widget for the Bee To Dos tab"""
     
@@ -390,15 +391,222 @@ class BeeToDoWidget(QWidget):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            # We'll implement the actual deletion later
-            QMessageBox.information(self, "Delete", f"Deletion of {len(selected_todos)} To-Do items.\nThis feature is coming soon!")
+            # Get the IDs of selected to-dos
+            todo_ids = [todo.get('id') for todo in selected_todos]
+            
+            # Show progress dialog
+            progress_dialog = QMessageBox(self)
+            progress_dialog.setWindowTitle("Deleting To-Dos")
+            progress_dialog.setText(f"Deleting {len(todo_ids)} to-do items...")
+            progress_dialog.setStandardButtons(QMessageBox.StandardButton.NoButton)
+            progress_dialog.show()
+            
+            # Create worker to delete todos in background
+            worker = Worker(self.bee_manager.delete_multiple_todos, todo_ids)
+            worker.signals.finished.connect(lambda results: self.on_delete_completed(results, progress_dialog))
+            worker.signals.error.connect(lambda error: self.on_delete_error(error, progress_dialog))
+            
+            # Execute the worker
+            self.thread_pool.start(worker)
 
-# Bee To-Do Manager class
+    def on_delete_completed(self, results, progress_dialog):
+        """Handle completion of to-do deletion"""
+        # Close progress dialog
+        progress_dialog.close()
+        
+        # Count successes and failures
+        successes = sum(1 for _, success in results if success)
+        failures = len(results) - successes
+        
+        # Show result message
+        if failures == 0:
+            QMessageBox.information(
+                self,
+                "Deletion Complete",
+                f"Successfully deleted {successes} to-do items."
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "Deletion Partially Complete",
+                f"Successfully deleted {successes} to-do items.\n"
+                f"Failed to delete {failures} to-do items."
+            )
+        
+        # Refresh to-dos list
+        self.load_todos()
+
+    def on_delete_error(self, error, progress_dialog):
+        """Handle error during to-do deletion"""
+        # Close progress dialog
+        progress_dialog.close()
+        
+        # Show error message
+        QMessageBox.critical(
+            self,
+            "Deletion Error",
+            f"An error occurred while deleting to-do items: {error}"
+        )
+
+    def get_categories(self):
+        """Get list of categories from database"""
+        categories = []
+        try:
+            # Get database manager
+            from database.database_manager import get_db_manager
+            db_manager = get_db_manager()
+            
+            # Query categories
+            results = db_manager.execute_query("SELECT name FROM categories ORDER BY name")
+            categories = [row[0] for row in results]
+        except Exception as e:
+            print(f"Error getting categories: {e}")
+        
+        return categories
+
+    def get_priorities(self):
+        """Get list of priorities from database"""
+        priorities = []
+        try:
+            # Get database manager
+            from database.database_manager import get_db_manager
+            db_manager = get_db_manager()
+            
+            # Query priorities
+            results = db_manager.execute_query("SELECT name FROM priorities ORDER BY display_order")
+            priorities = [row[0] for row in results]
+        except Exception as e:
+            print(f"Error getting priorities: {e}")
+            # Default priorities if query fails
+            priorities = ["High", "Medium", "Low", "Unprioritized"]
+        
+        return priorities
+
+    def batch_edit(self):
+        """Show batch edit dialog for selected to-dos"""
+        selected_todos = self.get_selected_todos()
+        
+        if not selected_todos:
+            QMessageBox.information(self, "No Selection", "Please select one or more To-Do items first.")
+            return
+        
+        # Create batch edit dialog
+        dialog = BatchEditDialog(self, len(selected_todos))
+        
+        # Load categories and priorities
+        dialog.load_categories(self.get_categories())
+        dialog.load_priorities(self.get_priorities())
+        
+        if dialog.exec():
+            # Get batch edit options
+            import_location = dialog.get_import_location()
+            priority = dialog.get_priority()
+            category = dialog.get_category()
+            
+            # Process imports
+            self.import_selected_todos(selected_todos, import_location, priority, category)
+
+    def import_selected_todos(self, todos, destination, priority=None, category=None):
+        """Import selected to-dos to the app"""
+        if not todos:
+            return
+        
+        # Show progress dialog
+        progress_dialog = QMessageBox(self)
+        progress_dialog.setWindowTitle("Importing To-Dos")
+        progress_dialog.setText(f"Importing {len(todos)} to-do items...")
+        progress_dialog.setStandardButtons(QMessageBox.StandardButton.NoButton)
+        progress_dialog.show()
+        
+        try:
+            # Format todos for import
+            formatted_todos = []
+            for todo in todos:
+                # Create task data structure matching app's format
+                task_data = {
+                    'title': todo.get('text', 'Untitled To-Do'),
+                    'description': '',  # Bee API doesn't have descriptions
+                    'status': 'Completed' if todo.get('completed') else 
+                            ('Backlog' if destination == 'Backlog' else 'Not Started'),
+                    'priority': priority if priority else 'Medium',
+                    'due_date': todo.get('due_date') if 'due_date' in todo else '',
+                    'category': category,
+                    'parent_id': None,  # No parent information from Bee
+                    'bee_item_id': todo.get('id')  # Save the Bee item ID
+                }
+                formatted_todos.append(task_data)
+            
+            # Use the app's main window to add tasks
+            tasks_added = 0
+            
+            # Get the appropriate task tree
+            if destination == "Backlog":
+                current_tree = self.main_window.tabs.backlog_tab.task_tree
+            else:
+                current_tree = self.main_window.tabs.current_tasks_tab.task_tree
+            
+            # Add all tasks to the tree
+            for task_data in formatted_todos:
+                try:
+                    # Add the task
+                    task_id = current_tree.add_new_task(task_data)
+                    if task_id:
+                        tasks_added += 1
+                except Exception as e:
+                    print(f"Error adding task: {e}")
+            
+            # Close progress dialog
+            progress_dialog.close()
+            
+            # Reload all tabs to reflect changes
+            self.main_window.tabs.reload_all()
+            
+            # Show success message
+            QMessageBox.information(
+                self, 
+                "Import Complete", 
+                f"Successfully imported {tasks_added} To-Do items from Bee"
+            )
+            
+        except Exception as e:
+            # Close progress dialog
+            progress_dialog.close()
+            
+            # Show error message
+            QMessageBox.critical(
+                self,
+                "Import Error",
+                f"An error occurred while importing to-do items: {str(e)}"
+            )
+            
 class BeeToDoManager:
     def __init__(self, api_key):
         self.api_key = api_key
         self.bee = Bee(api_key)
-    
+
+    async def delete_todo(self, todo_id):
+        """Delete a to-do item"""
+        try:
+            await self.bee.delete_todo("me", todo_id)
+            return True
+        except Exception as e:
+            print(f"Error deleting todo: {e}")
+            return False
+
+    async def delete_multiple_todos(self, todo_ids):
+        """Delete multiple to-do items"""
+        results = []
+        for todo_id in todo_ids:
+            try:
+                # Delete the todo
+                success = await self.bee.delete_todo("me", todo_id)
+                results.append((todo_id, True))
+            except Exception as e:
+                print(f"Error deleting todo {todo_id}: {e}")
+                results.append((todo_id, False))
+        
+        return results
+
     async def get_all_todos(self):
         """Fetch all to-do items from the Bee API using SDK with pagination"""
         try:
@@ -441,3 +649,118 @@ class BeeToDoManager:
         except Exception as e:
             print(f"Error fetching todos: {e}")
             raise
+
+class BatchEditDialog(QDialog):
+    """Dialog for batch editing to-do items"""
+    
+    def __init__(self, parent=None, selected_count=0):
+        super().__init__(parent)
+        self.selected_count = selected_count
+        self.setWindowTitle("Batch Edit Selected Items")
+        self.setMinimumWidth(400)
+        self.setup_ui()
+        
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Header with count of selected items
+        header_label = QLabel(f"{self.selected_count} items selected")
+        header_label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(header_label)
+        
+        # Import location (Current Tasks or Backlog)
+        location_group = QGroupBox("Import Location")
+        location_layout = QVBoxLayout()
+        
+        self.current_radio = QRadioButton("Current Tasks")
+        self.backlog_radio = QRadioButton("Backlog")
+        
+        # Default to Current Tasks
+        self.current_radio.setChecked(True)
+        
+        location_layout.addWidget(self.current_radio)
+        location_layout.addWidget(self.backlog_radio)
+        location_group.setLayout(location_layout)
+        layout.addWidget(location_group)
+        
+        # Priority selection
+        priority_group = QGroupBox("Set Priority")
+        priority_layout = QVBoxLayout()
+        
+        self.priority_combo = QComboBox()
+        # Will be populated with priorities from database
+        self.priority_combo.addItems(["Medium", "High", "Low", "Unprioritized"])
+        self.priority_combo.setCurrentText("Medium")
+        
+        self.apply_priority_check = QCheckBox("Apply to selected items")
+        self.apply_priority_check.setChecked(False)
+        
+        priority_layout.addWidget(self.priority_combo)
+        priority_layout.addWidget(self.apply_priority_check)
+        priority_group.setLayout(priority_layout)
+        layout.addWidget(priority_group)
+        
+        # Category selection
+        category_group = QGroupBox("Set Category")
+        category_layout = QVBoxLayout()
+        
+        self.category_combo = QComboBox()
+        # Will be populated with categories from database
+        self.category_combo.addItem("None")
+        
+        self.apply_category_check = QCheckBox("Apply to selected items")
+        self.apply_category_check.setChecked(False)
+        
+        category_layout.addWidget(self.category_combo)
+        category_layout.addWidget(self.apply_category_check)
+        category_group.setLayout(category_layout)
+        layout.addWidget(category_group)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        
+        apply_btn = QPushButton("Apply Changes")
+        apply_btn.clicked.connect(self.accept)
+        apply_btn.setDefault(True)
+        
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(apply_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def get_import_location(self):
+        """Get selected import location"""
+        return "Backlog" if self.backlog_radio.isChecked() else "Current Tasks"
+    
+    def get_priority(self):
+        """Get selected priority if checked"""
+        if self.apply_priority_check.isChecked():
+            return self.priority_combo.currentText()
+        return None
+    
+    def get_category(self):
+        """Get selected category if checked"""
+        if self.apply_category_check.isChecked():
+            category = self.category_combo.currentText()
+            return None if category == "None" else category
+        return None
+    
+    def load_categories(self, categories):
+        """Load categories into the combo box"""
+        self.category_combo.clear()
+        self.category_combo.addItem("None")
+        for category in categories:
+            self.category_combo.addItem(category)
+    
+    def load_priorities(self, priorities):
+        """Load priorities into the combo box"""
+        self.priority_combo.clear()
+        for priority in priorities:
+            self.priority_combo.addItem(priority)
+        # Default to Medium
+        index = self.priority_combo.findText("Medium")
+        if index >= 0:
+            self.priority_combo.setCurrentIndex(index)

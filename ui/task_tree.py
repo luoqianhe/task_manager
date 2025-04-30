@@ -152,26 +152,49 @@ class TaskTreeWidget(QTreeWidget):
                 # Default is_compact value (new tasks are expanded by default)
                 is_compact = 0
                 
-                # Insert new task
-                cursor.execute(
-                    """
-                    INSERT INTO tasks (title, description, status, priority, 
-                                    due_date, category_id, parent_id, display_order, is_compact)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, 
-                    (
-                        data.get('title', ''),
-                        data.get('description', ''),
-                        data.get('status', 'Not Started'), 
-                        data.get('priority', 'Medium'),
-                        data.get('due_date', ''),
-                        category_id,
-                        parent_id,
-                        display_order,
-                        is_compact
-                    )
-                )
+                # Check if bee_item_id exists in the data
+                bee_item_id = data.get('bee_item_id')
                 
+                # Insert new task including bee_item_id if present
+                if bee_item_id:
+                    cursor.execute(
+                        """
+                        INSERT INTO tasks (title, description, status, priority, 
+                                        due_date, category_id, parent_id, display_order, is_compact, bee_item_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, 
+                        (
+                            data.get('title', ''),
+                            data.get('description', ''),
+                            data.get('status', 'Not Started'), 
+                            data.get('priority', 'Medium'),
+                            data.get('due_date', ''),
+                            category_id,
+                            parent_id,
+                            display_order,
+                            is_compact,
+                            bee_item_id
+                        )
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        INSERT INTO tasks (title, description, status, priority, 
+                                        due_date, category_id, parent_id, display_order, is_compact)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, 
+                        (
+                            data.get('title', ''),
+                            data.get('description', ''),
+                            data.get('status', 'Not Started'), 
+                            data.get('priority', 'Medium'),
+                            data.get('due_date', ''),
+                            category_id,
+                            parent_id,
+                            display_order,
+                            is_compact
+                        )
+                    )            
                 # Get the new task's ID
                 cursor.execute("SELECT last_insert_rowid()")
                 new_id = cursor.fetchone()[0]

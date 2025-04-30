@@ -26,23 +26,14 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.load_current_settings()
     
     def setup_ui(self):
+        """Set up the main layout and components"""
         # Create a main layout for the entire widget
-        main_layout = QHBoxLayout(self)
+        main_layout = QVBoxLayout(self)
         
-        # Add a splitter to allow resizing between controls and preview
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        # Add top buttons and header
+        self._setup_header_section(main_layout)
         
-        # Create left side for settings controls
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Header
-        header_label = QLabel("Task Display Settings")
-        header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
-        left_layout.addWidget(header_label)
-        
-        # Create a scroll area to contain the settings
+        # Add scroll area for settings
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
@@ -52,18 +43,157 @@ class CombinedDisplaySettingsWidget(QWidget):
         content_layout = QVBoxLayout(scroll_content)
         content_layout.setSpacing(15)
         
-        # ==================== FONT SETTINGS GROUP ====================
-        font_settings_group = QGroupBox("Font Settings")
+        # Add all settings sections
+        self._setup_font_settings(content_layout)
+        self._setup_color_settings(content_layout)
+        self._setup_panel_layout(content_layout)
+        self._setup_preview_section(content_layout)
+        
+        # Set the content widget for the scroll area
+        scroll_area.setWidget(scroll_content)
+        
+        # Add the scroll area to the main layout
+        main_layout.addWidget(scroll_area, 1)  # 1 = stretch factor
+        
+        # Add bottom buttons
+        self._setup_bottom_buttons(main_layout)
+
+    def _setup_header_section(self, parent_layout):
+        """Set up the header section with top buttons"""
+        # Add top buttons for Save and Cancel
+        top_button_layout = QHBoxLayout()
+        save_btn_top = QPushButton("Save Settings")
+        save_btn_top.setFixedHeight(40)
+        save_btn_top.setStyleSheet("""
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+        """)
+        save_btn_top.clicked.connect(self.save_and_return)
+        
+        cancel_btn_top = QPushButton("Cancel")
+        cancel_btn_top.setFixedHeight(40)
+        cancel_btn_top.clicked.connect(self.cancel_and_return)
+        
+        top_button_layout.addWidget(save_btn_top)
+        top_button_layout.addStretch()
+        top_button_layout.addWidget(cancel_btn_top)
+        
+        parent_layout.addLayout(top_button_layout)
+
+    def _setup_font_settings(self, parent_layout):
+        """Set up the font settings section as three panels side by side with equal width"""
+        # Create horizontal layout for the three panels
         font_settings_layout = QHBoxLayout()
         
-        # Left: Font and Size
-        font_size_layout = QVBoxLayout()
-        font_family_label = QLabel("Font Family:")
-        self.font_family_combo = QComboBox()
-        font_size_layout.addWidget(font_family_label)
-        font_size_layout.addWidget(self.font_family_combo)
+        # ===== PANEL 1: Font Family and Sizes =====
+        font_basics_panel = QGroupBox("Font Basics")
+        font_basics_layout = QVBoxLayout(font_basics_panel)
         
-        # Add cross-platform safe fonts
+        # Create and configure widgets
+        self.font_family_combo = QComboBox()
+        self.font_family_combo.setMaximumWidth(200)
+        self._populate_font_combo()
+        
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setRange(8, 24)
+        self.font_size_spin.setValue(10)
+        self.font_size_spin.setFixedWidth(60)
+        
+        self.left_panel_size_spin = QSpinBox()
+        self.left_panel_size_spin.setRange(6, 14)
+        self.left_panel_size_spin.setValue(8)
+        self.left_panel_size_spin.setFixedWidth(60)
+        
+        # Add Font Family (horizontal layout)
+        font_family_layout = QHBoxLayout()
+        font_family_label = QLabel("Font Family:")
+        font_family_layout.addWidget(font_family_label)
+        font_family_layout.addWidget(self.font_family_combo)
+        font_family_layout.addStretch()
+        font_basics_layout.addLayout(font_family_layout)
+        
+        # Add Main Text Size (horizontal layout)
+        main_size_layout = QHBoxLayout()
+        main_size_label = QLabel("Main Text Size:")
+        main_size_layout.addWidget(main_size_label)
+        main_size_layout.addWidget(self.font_size_spin)
+        main_size_layout.addStretch()
+        font_basics_layout.addLayout(main_size_layout)
+        
+        # Add Panel Text Size (horizontal layout)
+        panel_size_layout = QHBoxLayout()
+        panel_size_label = QLabel("Panel Text Size:")
+        panel_size_layout.addWidget(panel_size_label)
+        panel_size_layout.addWidget(self.left_panel_size_spin)
+        panel_size_layout.addStretch()
+        font_basics_layout.addLayout(panel_size_layout)
+        
+        # Add stretch to push everything to the top
+        font_basics_layout.addStretch()
+        
+        # ===== PANEL 2: Font Weight =====
+        font_weight_panel = QGroupBox("Font Weight")
+        font_weight_layout = QVBoxLayout(font_weight_panel)
+        
+        # Create and configure widgets
+        self.weight_group = QButtonGroup(self)
+        
+        self.regular_radio = QRadioButton("Regular")
+        self.regular_radio.setChecked(True)
+        self.weight_group.addButton(self.regular_radio, 0)
+        
+        self.medium_radio = QRadioButton("Medium")
+        self.weight_group.addButton(self.medium_radio, 1)
+        
+        self.bold_radio = QRadioButton("Bold")
+        self.weight_group.addButton(self.bold_radio, 2)
+        
+        # Add radio buttons to layout
+        font_weight_layout.addWidget(self.regular_radio)
+        font_weight_layout.addWidget(self.medium_radio)
+        font_weight_layout.addWidget(self.bold_radio)
+        
+        # Add stretch to push everything to the top
+        font_weight_layout.addStretch()
+        
+        # ===== PANEL 3: Style Options =====
+        style_options_panel = QGroupBox("Style Options")
+        style_options_layout = QVBoxLayout(style_options_panel)
+        
+        # Create and configure widgets
+        self.bold_titles_check = QCheckBox("Bold titles")
+        self.bold_titles_check.setChecked(True)
+        
+        self.italic_desc_check = QCheckBox("Italic descriptions")
+        
+        self.compact_view_check = QCheckBox("Use compact view by default")
+        
+        self.left_panel_bold_check = QCheckBox("Bold panel text")
+        
+        # Add checkboxes to layout
+        style_options_layout.addWidget(self.bold_titles_check)
+        style_options_layout.addWidget(self.italic_desc_check)
+        style_options_layout.addWidget(self.compact_view_check)
+        style_options_layout.addWidget(self.left_panel_bold_check)
+        
+        # Add stretch to push everything to the top
+        style_options_layout.addStretch()
+        
+        # Set equal width for all panels using size policies
+        for panel in [font_basics_panel, font_weight_panel, style_options_panel]:
+            panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        
+        # Add all three panels to the horizontal layout with equal width (1:1:1 ratio)
+        font_settings_layout.addWidget(font_basics_panel, 1)
+        font_settings_layout.addWidget(font_weight_panel, 1)
+        font_settings_layout.addWidget(style_options_panel, 1)
+        
+        # Add the horizontal layout to the parent layout
+        parent_layout.addLayout(font_settings_layout)
+
+    def _populate_font_combo(self):
+        """Populate the font family combo box with available fonts"""
         cross_platform_fonts = [
             "Arial", "Helvetica", "Times New Roman", "Times",
             "Courier New", "Courier", "Verdana", "Georgia",
@@ -91,20 +221,14 @@ class CombinedDisplaySettingsWidget(QWidget):
         index = self.font_family_combo.findText(default_font)
         if index >= 0:
             self.font_family_combo.setCurrentIndex(index)
-        
-        font_size_label = QLabel("Font Size:")
-        self.font_size_spin = QSpinBox()
-        self.font_size_spin.setRange(8, 24)
-        self.font_size_spin.setValue(10)
-        font_size_layout.addWidget(font_size_label)
-        font_size_layout.addWidget(self.font_size_spin)
-        font_size_layout.addStretch()
-        
-        # Middle: Style Options
+
+    def _setup_style_options(self):
+        """Set up style options section"""
         style_options_layout = QVBoxLayout()
         style_options_label = QLabel("Style Options:")
         style_options_layout.addWidget(style_options_label)
         
+        # Option checkboxes
         self.bold_titles_check = QCheckBox("Bold titles")
         self.bold_titles_check.setChecked(True)
         
@@ -112,12 +236,18 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         self.compact_view_check = QCheckBox("Use compact view by default")
         
+        # Moved the panel bold check here
+        self.left_panel_bold_check = QCheckBox("Bold panel text")
+        
         style_options_layout.addWidget(self.bold_titles_check)
         style_options_layout.addWidget(self.italic_desc_check)
         style_options_layout.addWidget(self.compact_view_check)
-        style_options_layout.addStretch()
+        style_options_layout.addWidget(self.left_panel_bold_check)
         
-        # Right: Font Weight
+        return style_options_layout
+
+    def _setup_font_weight(self):
+        """Set up font weight section"""
         font_weight_layout = QVBoxLayout()
         font_weight_label = QLabel("Font Weight:")
         font_weight_layout.addWidget(font_weight_label)
@@ -137,156 +267,251 @@ class CombinedDisplaySettingsWidget(QWidget):
         font_weight_layout.addWidget(self.regular_radio)
         font_weight_layout.addWidget(self.medium_radio)
         font_weight_layout.addWidget(self.bold_radio)
-        font_weight_layout.addStretch()
         
-        # Combine all font settings sections
-        font_settings_layout.addLayout(font_size_layout)
-        font_settings_layout.addLayout(style_options_layout)
-        font_settings_layout.addLayout(font_weight_layout)
-        font_settings_group.setLayout(font_settings_layout)
-        
-        # Add to the content layout
-        content_layout.addWidget(font_settings_group)
-        
-        # ==================== COLOR SETTINGS GROUP ====================
-        colors_group = QGroupBox("Text Colors")
-        colors_layout = QHBoxLayout()
-        
-        # Left column for main text colors
-        main_colors_layout = QFormLayout()
-        
-        # Title color
-        title_color_layout = QHBoxLayout()
+        return font_weight_layout
+
+    def _setup_color_settings(self, parent_layout):
+        """Set up the color settings section"""
+        # Create all color buttons and hex fields first
         self.title_color_btn = QPushButton()
-        self.title_color_btn.setFixedSize(30, 20)
-        self.title_color_btn.setStyleSheet("background-color: #333333; border: 1px solid #666666;")
-        self.title_color_btn.clicked.connect(lambda: self.pick_color("title"))
-        
         self.title_color_hex = QLineEdit("#333333")
-        self.title_color_hex.setFixedWidth(80)
-        self.title_color_hex.textChanged.connect(lambda: self.update_color_from_hex("title"))
-        
-        title_color_layout.addWidget(self.title_color_btn)
-        title_color_layout.addWidget(self.title_color_hex)
-        
-        # Description color
-        desc_color_layout = QHBoxLayout()
         self.desc_color_btn = QPushButton()
-        self.desc_color_btn.setFixedSize(30, 20)
-        self.desc_color_btn.setStyleSheet("background-color: #666666; border: 1px solid #666666;")
-        self.desc_color_btn.clicked.connect(lambda: self.pick_color("description"))
-        
         self.desc_color_hex = QLineEdit("#666666")
-        self.desc_color_hex.setFixedWidth(80)
-        self.desc_color_hex.textChanged.connect(lambda: self.update_color_from_hex("description"))
-        
-        desc_color_layout.addWidget(self.desc_color_btn)
-        desc_color_layout.addWidget(self.desc_color_hex)
-        
-        # Due date color
-        due_color_layout = QHBoxLayout()
         self.due_color_btn = QPushButton()
-        self.due_color_btn.setFixedSize(30, 20)
-        self.due_color_btn.setStyleSheet("background-color: #888888; border: 1px solid #666666;")
-        self.due_color_btn.clicked.connect(lambda: self.pick_color("due_date"))
-        
         self.due_color_hex = QLineEdit("#888888")
-        self.due_color_hex.setFixedWidth(80)
-        self.due_color_hex.textChanged.connect(lambda: self.update_color_from_hex("due_date"))
-        
-        due_color_layout.addWidget(self.due_color_btn)
-        due_color_layout.addWidget(self.due_color_hex)
-        
-        main_colors_layout.addRow("Title:", title_color_layout)
-        main_colors_layout.addRow("Description:", desc_color_layout)
-        main_colors_layout.addRow("Due Date:", due_color_layout)
-        
-        # Right column for panel text settings
-        panel_settings_layout = QFormLayout()
-        
-        # Left panel font color
-        left_panel_color_layout = QHBoxLayout()
         self.left_panel_color_btn = QPushButton()
-        self.left_panel_color_btn.setFixedSize(30, 20)
-        self.left_panel_color_btn.setStyleSheet("background-color: #FFFFFF; border: 1px solid #666666;")
-        self.left_panel_color_btn.clicked.connect(lambda: self.pick_color("left_panel"))
-
         self.left_panel_color_hex = QLineEdit("#FFFFFF")
-        self.left_panel_color_hex.setFixedWidth(80)
+        
+        # Configure buttons
+        for btn, color in [
+            (self.title_color_btn, "#333333"),
+            (self.desc_color_btn, "#666666"),
+            (self.due_color_btn, "#888888"),
+            (self.left_panel_color_btn, "#FFFFFF")
+        ]:
+            btn.setFixedSize(30, 20)
+            btn.setStyleSheet(f"background-color: {color}; border: 1px solid #666666;")
+        
+        # Configure hex fields
+        for hex_field in [self.title_color_hex, self.desc_color_hex, 
+                        self.due_color_hex, self.left_panel_color_hex]:
+            hex_field.setFixedWidth(80)
+        
+        # Connect signals
+        self.title_color_btn.clicked.connect(lambda: self.pick_color("title"))
+        self.title_color_hex.textChanged.connect(lambda: self.update_color_from_hex("title"))
+        self.desc_color_btn.clicked.connect(lambda: self.pick_color("description"))
+        self.desc_color_hex.textChanged.connect(lambda: self.update_color_from_hex("description"))
+        self.due_color_btn.clicked.connect(lambda: self.pick_color("due_date"))
+        self.due_color_hex.textChanged.connect(lambda: self.update_color_from_hex("due_date"))
+        self.left_panel_color_btn.clicked.connect(lambda: self.pick_color("left_panel"))
         self.left_panel_color_hex.textChanged.connect(lambda: self.update_color_from_hex("left_panel"))
-
-        left_panel_color_layout.addWidget(self.left_panel_color_btn)
-        left_panel_color_layout.addWidget(self.left_panel_color_hex)
-
-        # Left panel font size
-        self.left_panel_size_spin = QSpinBox()
-        self.left_panel_size_spin.setRange(6, 14)  # Smaller range since panel is limited
-        self.left_panel_size_spin.setValue(8)
-
-        # Left panel font options
-        self.left_panel_bold_check = QCheckBox("Bold panel text")
         
-        panel_settings_layout.addRow("Panel Text:", left_panel_color_layout)
-        panel_settings_layout.addRow("Panel Size:", self.left_panel_size_spin)
-        panel_settings_layout.addRow("", self.left_panel_bold_check)
+        # Now create the group and layout
+        colors_group = QGroupBox("Text Colors")
+        colors_layout = QVBoxLayout()
         
-        # Add both columns to the colors layout
-        colors_layout.addLayout(main_colors_layout)
-        colors_layout.addLayout(panel_settings_layout)
+        # First row: Title and Description
+        first_row = QHBoxLayout()
+        
+        # Title color layout
+        title_layout = QVBoxLayout()
+        title_layout.addWidget(QLabel("Task Title:"))
+        title_color_row = QHBoxLayout()
+        title_color_row.addWidget(self.title_color_btn)
+        title_color_row.addWidget(self.title_color_hex)
+        title_color_row.addStretch()
+        title_layout.addLayout(title_color_row)
+        
+        # Description color layout
+        desc_layout = QVBoxLayout()
+        desc_layout.addWidget(QLabel("Task Description:"))
+        desc_color_row = QHBoxLayout()
+        desc_color_row.addWidget(self.desc_color_btn)
+        desc_color_row.addWidget(self.desc_color_hex)
+        desc_color_row.addStretch()
+        desc_layout.addLayout(desc_color_row)
+        
+        first_row.addLayout(title_layout)
+        first_row.addLayout(desc_layout)
+        
+        # Due date color layout
+        due_layout = QVBoxLayout()
+        due_layout.addWidget(QLabel("Due Date:"))
+        due_color_row = QHBoxLayout()
+        due_color_row.addWidget(self.due_color_btn)
+        due_color_row.addWidget(self.due_color_hex)
+        due_color_row.addStretch()
+        due_layout.addLayout(due_color_row)
+        
+        # Panel color layout
+        panel_layout = QVBoxLayout()
+        panel_layout.addWidget(QLabel("Left/Right Panel Text:"))
+        panel_color_row = QHBoxLayout()
+        panel_color_row.addWidget(self.left_panel_color_btn)
+        panel_color_row.addWidget(self.left_panel_color_hex)
+        panel_color_row.addStretch()
+        panel_layout.addLayout(panel_color_row)
+        
+        first_row.addLayout(panel_layout)
+        first_row.addLayout(due_layout)
+        
+        # Add rows to main layout
+        colors_layout.addLayout(first_row)
         
         colors_group.setLayout(colors_layout)
-        content_layout.addWidget(colors_group)
+        parent_layout.addWidget(colors_group)
+
+    def _create_color_picker_compact(self, label_text, color_type, default_color):
+        """Helper method to create a compact color picker column"""
+        color_layout = QVBoxLayout()
+        label = QLabel(label_text)
         
-        # ==================== PANEL LAYOUT GROUP ====================
+        picker_layout = QHBoxLayout()
+        color_btn = QPushButton()
+        color_btn.setFixedSize(30, 20)
+        color_btn.setStyleSheet(f"background-color: {default_color}; border: 1px solid #666666;")
+        
+        color_hex = QLineEdit(default_color)
+        color_hex.setFixedWidth(80)
+        
+        # Store references to the widgets
+        if color_type == "title":
+            self.title_color_btn = color_btn
+            self.title_color_hex = color_hex
+            color_btn.clicked.connect(lambda: self.pick_color("title"))
+            color_hex.textChanged.connect(lambda: self.update_color_from_hex("title"))
+        elif color_type == "description":
+            self.desc_color_btn = color_btn
+            self.desc_color_hex = color_hex
+            color_btn.clicked.connect(lambda: self.pick_color("description"))
+            color_hex.textChanged.connect(lambda: self.update_color_from_hex("description"))
+        elif color_type == "due_date":
+            self.due_color_btn = color_btn
+            self.due_color_hex = color_hex
+            color_btn.clicked.connect(lambda: self.pick_color("due_date"))
+            color_hex.textChanged.connect(lambda: self.update_color_from_hex("due_date"))
+        elif color_type == "left_panel":
+            self.left_panel_color_btn = color_btn
+            self.left_panel_color_hex = color_hex
+            color_btn.clicked.connect(lambda: self.pick_color("left_panel"))
+            color_hex.textChanged.connect(lambda: self.update_color_from_hex("left_panel"))
+        
+        picker_layout.addWidget(color_btn)
+        picker_layout.addWidget(color_hex)
+        picker_layout.addStretch()
+        
+        color_layout.addWidget(label)
+        color_layout.addLayout(picker_layout)
+        
+        return color_layout
+    
+    def _create_color_picker(self, label_text, color_type, default_color):
+        """Helper method to create a consistent color picker row"""
+        color_layout = QHBoxLayout()
+        label = QLabel(label_text)
+        label.setMinimumWidth(100)
+        
+        color_btn = QPushButton()
+        color_btn.setFixedSize(30, 20)
+        color_btn.setStyleSheet(f"background-color: {default_color}; border: 1px solid #666666;")
+        
+        color_hex = QLineEdit(default_color)
+        color_hex.setFixedWidth(80)
+        
+        # Store references to the widgets
+        if color_type == "title":
+            self.title_color_btn = color_btn
+            self.title_color_hex = color_hex
+            color_btn.clicked.connect(lambda: self.pick_color("title"))
+            color_hex.textChanged.connect(lambda: self.update_color_from_hex("title"))
+        elif color_type == "description":
+            self.desc_color_btn = color_btn
+            self.desc_color_hex = color_hex
+            color_btn.clicked.connect(lambda: self.pick_color("description"))
+            color_hex.textChanged.connect(lambda: self.update_color_from_hex("description"))
+        elif color_type == "due_date":
+            self.due_color_btn = color_btn
+            self.due_color_hex = color_hex
+            color_btn.clicked.connect(lambda: self.pick_color("due_date"))
+            color_hex.textChanged.connect(lambda: self.update_color_from_hex("due_date"))
+        elif color_type == "left_panel":
+            self.left_panel_color_btn = color_btn
+            self.left_panel_color_hex = color_hex
+            color_btn.clicked.connect(lambda: self.pick_color("left_panel"))
+            color_hex.textChanged.connect(lambda: self.update_color_from_hex("left_panel"))
+        
+        color_layout.addWidget(label)
+        color_layout.addWidget(color_btn)
+        color_layout.addWidget(color_hex)
+        color_layout.addStretch()
+        
+        return color_layout
+
+    def _setup_panel_layout(self, parent_layout):
+        """Set up the panel layout section"""
         panel_layout_group = QGroupBox("Task Pill Layout")
         panel_layout = QHBoxLayout()
         
+        # Create all combo boxes first
+        self.top_left_combo = QComboBox()
+        self.bottom_left_combo = QComboBox()
+        self.top_right_combo = QComboBox()
+        self.bottom_right_combo = QComboBox()
+        
+        # Populate the dropdowns
+        panel_options = [
+            "None", "Category", "Status", "Priority", "Due Date",
+            "Link", "Progress", "Completion Date", "Tag", "Files"
+        ]
+        for combo in [self.top_left_combo, self.bottom_left_combo, 
+                    self.top_right_combo, self.bottom_right_combo]:
+            combo.addItems(panel_options)
+        
         # Left Panel Configuration
         left_panel_layout = QVBoxLayout()
-        left_panel_layout.addWidget(QLabel("Left Panel:"))
         
-        # Top Left Section
-        top_left_layout = QFormLayout()
-        self.top_left_combo = QComboBox()
-        self.top_left_combo.addItems([
-            "None", "Category", "Status", "Priority", "Due Date",
-            "Link", "Progress", "Completion Date", "Tag", "Files"
-        ])
-        top_left_layout.addRow("Top:", self.top_left_combo)
+        # Top Left Section - left justified
+        top_left_layout = QHBoxLayout()
+        top_left_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        top_left_label = QLabel("Top Left:")
+        top_left_label.setMinimumWidth(50)
+        top_left_layout.addWidget(top_left_label)
+        top_left_layout.addWidget(self.top_left_combo)
+        top_left_layout.addStretch()
         left_panel_layout.addLayout(top_left_layout)
         
-        # Bottom Left Section
-        bottom_left_layout = QFormLayout()
-        self.bottom_left_combo = QComboBox()
-        self.bottom_left_combo.addItems([
-            "None", "Category", "Status", "Priority", "Due Date",
-            "Link", "Progress", "Completion Date", "Tag", "Files"
-        ])
-        bottom_left_layout.addRow("Bottom:", self.bottom_left_combo)
+        # Bottom Left Section - left justified
+        bottom_left_layout = QHBoxLayout()
+        bottom_left_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        bottom_left_label = QLabel("Bottom Left:")
+        bottom_left_label.setMinimumWidth(50)
+        bottom_left_layout.addWidget(bottom_left_label)
+        bottom_left_layout.addWidget(self.bottom_left_combo)
+        bottom_left_layout.addStretch()
         left_panel_layout.addLayout(bottom_left_layout)
         
         # Right Panel Configuration
         right_panel_layout = QVBoxLayout()
-        right_panel_layout.addWidget(QLabel("Right Panel:"))
-        
-        # Top Right Section
-        top_right_layout = QFormLayout()
-        self.top_right_combo = QComboBox()
-        self.top_right_combo.addItems([
-            "None", "Category", "Status", "Priority", "Due Date",
-            "Link", "Progress", "Completion Date", "Tag", "Files"
-        ])
-        top_right_layout.addRow("Top:", self.top_right_combo)
+
+        # Top Right Section - left justified
+        top_right_layout = QHBoxLayout()
+        top_right_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        top_right_label = QLabel("Top Right:")
+        top_right_label.setMinimumWidth(50)
+        top_right_layout.addWidget(top_right_label)
+        top_right_layout.addWidget(self.top_right_combo)
+        top_right_layout.addStretch()
         right_panel_layout.addLayout(top_right_layout)
         
-        # Bottom Right Section
-        bottom_right_layout = QFormLayout()
-        self.bottom_right_combo = QComboBox()
-        self.bottom_right_combo.addItems([
-            "None", "Category", "Status", "Priority", "Due Date",
-            "Link", "Progress", "Completion Date", "Tag", "Files"
-        ])
-        bottom_right_layout.addRow("Bottom:", self.bottom_right_combo)
+        # Bottom Right Section - left justified
+        bottom_right_layout = QHBoxLayout()
+        bottom_right_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        bottom_right_label = QLabel("Bottom Right:")
+        bottom_right_label.setMinimumWidth(50)
+        bottom_right_layout.addWidget(bottom_right_label)
+        bottom_right_layout.addWidget(self.bottom_right_combo)
+        bottom_right_layout.addStretch()
         right_panel_layout.addLayout(bottom_right_layout)
         
         # Add both panel configurations to the layout
@@ -294,62 +519,60 @@ class CombinedDisplaySettingsWidget(QWidget):
         panel_layout.addLayout(right_panel_layout)
         
         panel_layout_group.setLayout(panel_layout)
-        content_layout.addWidget(panel_layout_group)
+        parent_layout.addWidget(panel_layout_group)        
+
+    def _populate_panel_dropdowns(self):
+        """Populate the panel dropdowns with content options"""
+        options = [
+            "None", "Category", "Status", "Priority", "Due Date",
+            "Link", "Progress", "Completion Date", "Tag", "Files"
+        ]
         
-        # Set the content widget for the scroll area
-        scroll_area.setWidget(scroll_content)
+        # Add options to all dropdowns
+        self.top_left_combo.addItems(options)
+        self.bottom_left_combo.addItems(options)
+        self.top_right_combo.addItems(options)
+        self.bottom_right_combo.addItems(options)
+
+    def _setup_preview_section(self, parent_layout):
+        """Set up the preview section with a single group box"""
+        preview_group = QGroupBox("Preview")
+        preview_layout = QVBoxLayout(preview_group)
         
-        # Add the scroll area to the left layout
-        left_layout.addWidget(scroll_area)
+        # Add instruction label
+        instruction_label = QLabel("Click the toggle button above the task pill to switch between compact and full views")
+        instruction_label.setStyleSheet("color: #666666; font-style: italic;")
+        preview_layout.addWidget(instruction_label)
         
-        # Add save button
-        save_btn = QPushButton("Save Display Settings")
-        save_btn.setFixedHeight(40)
-        save_btn.setStyleSheet("""
+        # Create and add task pill preview widget WITHOUT its own group box
+        self.task_preview = TaskPillPreviewWidget(self, use_group_box=False)
+        preview_layout.addWidget(self.task_preview)
+        
+        
+        parent_layout.addWidget(preview_group)
+    
+    def _setup_bottom_buttons(self, parent_layout):
+        """Set up the bottom button section"""
+        bottom_button_layout = QHBoxLayout()
+        save_btn_bottom = QPushButton("Save Settings")
+        save_btn_bottom.setFixedHeight(40)
+        save_btn_bottom.setStyleSheet("""
             background-color: #4CAF50;
             color: white;
             font-weight: bold;
         """)
-        save_btn.clicked.connect(self.save_settings)
+        save_btn_bottom.clicked.connect(self.save_and_return)
         
-        left_layout.addWidget(save_btn)
+        cancel_btn_bottom = QPushButton("Cancel")
+        cancel_btn_bottom.setFixedHeight(40)
+        cancel_btn_bottom.clicked.connect(self.cancel_and_return)
         
-        # Create the right side with preview
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(10, 0, 0, 0)
+        bottom_button_layout.addWidget(save_btn_bottom)
+        bottom_button_layout.addStretch()
+        bottom_button_layout.addWidget(cancel_btn_bottom)
         
-        # Create and add task pill preview widget
-        self.task_preview = TaskPillPreviewWidget(self)
-        right_layout.addWidget(self.task_preview)
+        parent_layout.addLayout(bottom_button_layout)
         
-        # Set size policies and widths
-        left_widget.setMinimumWidth(500)
-        right_widget.setMinimumWidth(300)
-        
-        # Add widgets to splitter
-        splitter.addWidget(left_widget)
-        splitter.addWidget(right_widget)
-        
-        # Set initial sizes (2:1 ratio)
-        splitter.setSizes([600, 300])
-        
-        # Style the splitter handle
-        splitter.setHandleWidth(6)
-        splitter.setStyleSheet("""
-            QSplitter::handle {
-                background-color: #f0f0f0;
-                border: 1px solid #cccccc;
-                border-radius: 1px;
-            }
-            QSplitter::handle:hover {
-                background-color: #2196F3;
-            }
-        """)
-        
-        # Add splitter to main layout
-        main_layout.addWidget(splitter)
-    
     def pick_color(self, color_type):
         """Open color picker dialog for the specified color type"""
         color_btn = None
@@ -465,7 +688,24 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         # APPLY CHANGES IMMEDIATELY
         self.apply_changes_to_all_tabs()
+   
+    def save_and_return(self):
+            """Save settings and return to task view"""
+            # First save all settings
+            self.save_settings()
+            
+            # Then return to task view
+            self.main_window.show_task_view()
+
+    def cancel_and_return(self):
+        """Cancel changes and return to task view"""
+        # Restore original settings
+        self.load_current_settings()
         
+        # Return to task view without saving
+        self.main_window.show_task_view()
+        # Close the settings window     
+    
     def load_current_settings(self):
         """Load current settings from settings manager"""
         # Block signals during loading to prevent multiple preview updates

@@ -15,11 +15,12 @@ from .task_tree import PriorityHeaderItem
 class TaskPillPreviewWidget(QWidget):
     """Widget that shows a preview of task pills based on current display settings"""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, use_group_box=True):
         print("DEBUG: TaskPillPreviewWidget.__init__ called")
         super().__init__(parent)
         self.settings_widget = parent
         self.main_window = self._find_main_window()
+        self.use_group_box = use_group_box
         self.setup_ui()
         
         # Connect to settings changes
@@ -32,7 +33,7 @@ class TaskPillPreviewWidget(QWidget):
         self.hover_timer = QTimer(self)
         self.hover_timer.timeout.connect(self.simulate_hover)
         self.hover_timer.start(2000)  # Every 2 seconds
-    
+        
     def _find_main_window(self):
         """Find the main window by traversing parents"""
         parent = self.parent()
@@ -98,18 +99,9 @@ class TaskPillPreviewWidget(QWidget):
         """Set up the preview UI"""
         layout = QVBoxLayout(self)
         
-        # Add header
-        header_label = QLabel("Preview")
-        header_label.setStyleSheet("font-size: 16px; font-weight: bold;")
-        layout.addWidget(header_label)
-        
-        # Add description
-        desc_label = QLabel("This shows how your tasks will look based on current settings")
-        layout.addWidget(desc_label)
-        
-        # Create preview group box
-        preview_group = QGroupBox("Task Display Preview")
-        preview_layout = QVBoxLayout(preview_group)
+        # Create the actual content without a group box
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
         
         # Create sample tree widget
         self.sample_tree = SampleTaskTreeWidget(self)
@@ -119,25 +111,38 @@ class TaskPillPreviewWidget(QWidget):
         self.delegate = TaskPillDelegate(self.sample_tree)
         self.sample_tree.setItemDelegate(self.delegate)
         
-        preview_layout.addWidget(self.sample_tree)
+        content_layout.addWidget(self.sample_tree)
         
-        # Add instruction label
-        instruction_label = QLabel("Click the toggle button above the task pill to switch between compact and full views")
-        instruction_label.setStyleSheet("color: #666666; font-style: italic;")
-        preview_layout.addWidget(instruction_label)
-        
-        layout.addWidget(preview_group)
-        layout.addStretch()
+        # If we should use a group box, wrap the content in it
+        if self.use_group_box:
+            # Add header to group box
+            header_label = QLabel("Task Pill Preview")
+            header_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+            layout.addWidget(header_label)
+            
+            # Add description
+            desc_label = QLabel("This shows how your tasks will look based on current settings")
+            layout.addWidget(desc_label)
+            
+            layout.addWidget(content_widget)
+            
+            # Add instruction label inside the group box if we're using one
+            instruction_label = QLabel("Click the toggle button above the task pill to switch between compact and full views")
+            instruction_label.setStyleSheet("color: #666666; font-style: italic;")
+            layout.addWidget(instruction_label)
+        else:
+            # Just add the content directly without a group box
+            layout.addWidget(content_widget)
         
         # Initialize preview items
         self.create_sample_items()
-    
+        
     def create_sample_items(self):
         """Create sample items for the preview"""
         self.sample_tree.clear()
         
         # Add a sample priority header
-        header_item = PriorityHeaderItem("High", "#F44336")
+        header_item = PriorityHeaderItem("SAMPLE PRIORITY LEVEL", "#F44336")
         self.sample_tree.addTopLevelItem(header_item)
         
         # Add a sample task
