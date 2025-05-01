@@ -288,14 +288,9 @@ class CombinedSettingsManager(QWidget):
         main_layout.setContentsMargins(10, 10, 10, 10)
         
         # Header
-        header_label = QLabel("Task Organization Settings")
+        header_label = QLabel("Categories, Priorities, and Statuses")
         header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         main_layout.addWidget(header_label)
-        
-        # Description
-        desc_label = QLabel("Manage categories, priorities, and statuses for your tasks.")
-        desc_label.setWordWrap(True)
-        main_layout.addWidget(desc_label)
         
         # Setting type selector
         selector_layout = QHBoxLayout()
@@ -386,6 +381,34 @@ class CombinedSettingsManager(QWidget):
         form_layout.addWidget(self.add_btn)
         
         main_layout.addLayout(form_layout)
+        
+        # Add stretch to push buttons to bottom
+        main_layout.addStretch()
+        
+        # Add Save and Cancel buttons
+        button_layout = QHBoxLayout()
+        
+        save_button = QPushButton("Save")
+        save_button.setFixedHeight(30)
+        save_button.setMinimumWidth(120)
+        save_button.clicked.connect(self.save_settings)
+        
+        cancel_button = QPushButton("Cancel")
+        cancel_button.setFixedHeight(30)
+        cancel_button.setMinimumWidth(120)
+        # Try to find the main window to connect to show_task_view
+        parent = self.parent()
+        while parent and not hasattr(parent, 'show_task_view'):
+            parent = parent.parent()
+        if parent and hasattr(parent, 'show_task_view'):
+            cancel_button.clicked.connect(parent.show_task_view)
+        
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(cancel_button)
+        button_layout.addStretch()
+        
+        main_layout.addLayout(button_layout)
+        
         self.setLayout(main_layout)
     
     def pick_color(self):
@@ -412,6 +435,19 @@ class CombinedSettingsManager(QWidget):
             self.statuses_list.show()
             self.add_btn.setText("Add Status")
             self.name_input.setPlaceholderText("Status Name")
+    
+    def save_settings(self):
+        """Save settings and notify the user"""
+        # You can add any additional saving logic here if needed
+        
+        QMessageBox.information(self, "Settings Saved", "Your settings have been saved.")
+        
+        # Try to find main window to return to task view
+        parent = self.parent()
+        while parent and not hasattr(parent, 'show_task_view'):
+            parent = parent.parent()
+        if parent and hasattr(parent, 'show_task_view'):
+            parent.show_task_view()
     
     def load_all_items(self):
         """Load all categories, priorities, and statuses"""

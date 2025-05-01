@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
 from pathlib import Path
 import sqlite3
 from PyQt6.QtGui import QKeySequence, QShortcut, QIcon
-from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtCore import Qt, QDate, QTimer
 from datetime import datetime, date
 
 class AddTaskDialog(QDialog):
@@ -79,7 +79,7 @@ class AddTaskDialog(QDialog):
 
     def get_data(self):
         return self.data
-        
+    
     def setup_ui(self):
         layout = QVBoxLayout(self)
         
@@ -89,69 +89,14 @@ class AddTaskDialog(QDialog):
         # Title
         self.title_input = QLineEdit()
         self.title_input.setFixedHeight(30)
+        self.title_input.setMinimumWidth(400)  # Make title wider
         form_layout.addRow("Title:", self.title_input)
         
         # Description
         self.description_input = QTextEdit()
         self.description_input.setMinimumHeight(80)
+        self.description_input.setMinimumWidth(400)  # Make description wider
         form_layout.addRow("Description:", self.description_input)
-        
-        # Links section
-        links_widget = QWidget()
-        links_layout = QVBoxLayout(links_widget)
-        links_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # List to display links
-        self.links_list = QListWidget()
-        self.links_list.setFixedHeight(100)
-        links_layout.addWidget(self.links_list)
-        
-        # Buttons for managing links
-        links_buttons_layout = QHBoxLayout()
-        self.add_link_btn = QPushButton("Add Link")
-        self.add_link_btn.clicked.connect(self.add_link)
-        self.edit_link_btn = QPushButton("Edit Link")
-        self.edit_link_btn.clicked.connect(self.edit_link)
-        self.edit_link_btn.setEnabled(False)  # Disabled until a link is selected
-        self.remove_link_btn = QPushButton("Remove Link")
-        self.remove_link_btn.clicked.connect(self.remove_link)
-        self.remove_link_btn.setEnabled(False)  # Disabled until a link is selected
-        
-        links_buttons_layout.addWidget(self.add_link_btn)
-        links_buttons_layout.addWidget(self.edit_link_btn)
-        links_buttons_layout.addWidget(self.remove_link_btn)
-        links_layout.addLayout(links_buttons_layout)
-        
-        form_layout.addRow("Links:", links_widget)
-        
-        # Connect selection changes in links list to update button state
-        self.links_list.itemSelectionChanged.connect(self.update_link_buttons)
-        
-        # Rest of the UI setup
-        # Status
-        self.status_combo = QComboBox()
-        self.status_combo.setFixedHeight(30)
-        form_layout.addRow("Status:", self.status_combo)
-        
-        # Priority
-        self.priority_combo = QComboBox()
-        self.priority_combo.setFixedHeight(30)
-        self.load_priorities()
-        form_layout.addRow("Priority:", self.priority_combo)
-        
-        # Due Date
-        self.due_date_edit = QDateEdit()
-        self.due_date_edit.setFixedHeight(30)
-        self.due_date_edit.setCalendarPopup(True)
-        self.due_date_edit.setDate(QDate(2000, 1, 1))  # Default empty date
-        self.due_date_edit.setSpecialValueText("No Due Date")
-        form_layout.addRow("Due Date:", self.due_date_edit)
-        
-        # Category
-        self.category_combo = QComboBox()
-        self.category_combo.setFixedHeight(30)
-        self.load_categories()
-        form_layout.addRow("Category:", self.category_combo)
         
         # Parent Task
         self.parent_combo = QComboBox()
@@ -160,6 +105,88 @@ class AddTaskDialog(QDialog):
         form_layout.addRow("Parent Task:", self.parent_combo)
         
         layout.addLayout(form_layout)
+        
+        # Status/Priority and Category/Due Date section in a 2x2 grid
+        grid_layout = QHBoxLayout()
+        
+        # Left column: Status and Priority
+        left_column = QFormLayout()
+        left_column.setSpacing(10)
+        
+        # Status
+        self.status_combo = QComboBox()
+        self.status_combo.setFixedHeight(30)
+        left_column.addRow("Status:", self.status_combo)
+        
+        # Priority
+        self.priority_combo = QComboBox()
+        self.priority_combo.setFixedHeight(30)
+        self.load_priorities()
+        left_column.addRow("Priority:", self.priority_combo)
+        
+        # Right column: Category and Due Date
+        right_column = QFormLayout()
+        right_column.setSpacing(10)
+        
+        # Category
+        self.category_combo = QComboBox()
+        self.category_combo.setFixedHeight(30)
+        self.load_categories()
+        right_column.addRow("Category:", self.category_combo)
+        
+        # Due Date
+        self.due_date_edit = QDateEdit()
+        self.due_date_edit.setFixedHeight(30)
+        self.due_date_edit.setCalendarPopup(True)
+        self.due_date_edit.setDate(QDate(2000, 1, 1))  # Default empty date
+        self.due_date_edit.setSpecialValueText("No Due Date")
+        right_column.addRow("Due Date:", self.due_date_edit)
+        
+        # Add both columns to the grid with equal size
+        left_widget = QWidget()
+        left_widget.setLayout(left_column)
+        
+        right_widget = QWidget()
+        right_widget.setLayout(right_column)
+        
+        grid_layout.addWidget(left_widget)
+        grid_layout.addWidget(right_widget)
+        
+        layout.addLayout(grid_layout)
+        
+        # Links and Files side by side with labels
+        attachments_layout = QVBoxLayout()
+        
+        # Labels for sections
+        labels_layout = QHBoxLayout()
+        links_label = QLabel("Links:")
+        files_label = QLabel("Files:")
+        links_label.setStyleSheet("font-weight: bold;")
+        files_label.setStyleSheet("font-weight: bold;")
+        
+        # Equal width for both sides
+        labels_layout.addWidget(links_label)
+        labels_layout.addWidget(files_label)
+        attachments_layout.addLayout(labels_layout)
+        
+        # Widget containers
+        widgets_layout = QHBoxLayout()
+        
+        # Links widget - using existing LinkListWidget
+        self.links_widget = LinkListWidget(self)
+        
+        # Files widget - using existing FileListWidget
+        self.files_widget = FileListWidget(self)
+        
+        # Add both widgets to horizontal layout
+        widgets_layout.addWidget(self.links_widget)
+        widgets_layout.addWidget(self.files_widget)
+        
+        # Add widgets layout to attachments layout
+        attachments_layout.addLayout(widgets_layout)
+        
+        # Add attachments layout to main layout
+        layout.addLayout(attachments_layout)
         
         # Buttons
         button_layout = QHBoxLayout()
@@ -175,16 +202,12 @@ class AddTaskDialog(QDialog):
         
         # Set tab order
         self.setTabOrder(self.title_input, self.description_input)
-        self.setTabOrder(self.description_input, self.links_list)
-        self.setTabOrder(self.links_list, self.add_link_btn)
-        self.setTabOrder(self.add_link_btn, self.edit_link_btn)
-        self.setTabOrder(self.edit_link_btn, self.remove_link_btn)
-        self.setTabOrder(self.remove_link_btn, self.status_combo)
+        self.setTabOrder(self.description_input, self.parent_combo)
+        self.setTabOrder(self.parent_combo, self.status_combo)
         self.setTabOrder(self.status_combo, self.priority_combo)
-        self.setTabOrder(self.priority_combo, self.due_date_edit)
-        self.setTabOrder(self.due_date_edit, self.category_combo)
-        self.setTabOrder(self.category_combo, self.parent_combo)
-        self.setTabOrder(self.parent_combo, save_btn)
+        self.setTabOrder(self.priority_combo, self.category_combo)
+        self.setTabOrder(self.category_combo, self.due_date_edit)
+        self.setTabOrder(self.due_date_edit, save_btn)
         self.setTabOrder(save_btn, cancel_btn)
     
     def add_link(self):
@@ -237,7 +260,6 @@ class AddTaskDialog(QDialog):
         self.edit_link_btn.setEnabled(has_selection)
         self.remove_link_btn.setEnabled(has_selection)
 
-    def setup_ui(self):
         layout = QVBoxLayout(self)
         
         form_layout = QFormLayout()
@@ -370,7 +392,7 @@ class EditTaskDialog(QDialog):
         self.setMinimumHeight(500)
         self.setup_ui()
         self.load_statuses()
-        
+
     def setup_ui(self):
         layout = QVBoxLayout(self)
         
@@ -380,35 +402,52 @@ class EditTaskDialog(QDialog):
         # Title
         self.title_input = QLineEdit(self.task_data['title'])
         self.title_input.setFixedHeight(30)
+        self.title_input.setMinimumWidth(400)  # Make title wider
         form_layout.addRow("Title:", self.title_input)
         
         # Description
         self.description_input = QTextEdit()
         self.description_input.setMinimumHeight(80)
+        self.description_input.setMinimumWidth(400)  # Make description wider
         self.description_input.setText(self.task_data['description'] or "")
         form_layout.addRow("Description:", self.description_input)
         
-        # Links
-        self.links_widget = LinkListWidget(self)
-        self.load_links()  # Load existing links
-        form_layout.addRow("Links:", self.links_widget)
+        # Parent Task
+        self.parent_combo = QComboBox()
+        self.parent_combo.setFixedHeight(30)
+        self.load_possible_parents()
+        form_layout.addRow("Parent Task:", self.parent_combo)
         
-        # Files - NEW SECTION
-        self.files_widget = FileListWidget(self)
-        self.load_files()  # Load existing files
-        form_layout.addRow("Files:", self.files_widget)
+        layout.addLayout(form_layout)
+        
+        # Status/Priority and Category/Due Date section in a 2x2 grid
+        grid_layout = QHBoxLayout()
+        
+        # Left column: Status and Priority
+        left_column = QFormLayout()
+        left_column.setSpacing(10)
         
         # Status
         self.status_combo = QComboBox()
         self.status_combo.setFixedHeight(30)
         self.status_combo.setCurrentText(self.task_data['status'] or "Not Started")
-        form_layout.addRow("Status:", self.status_combo)
+        left_column.addRow("Status:", self.status_combo)
         
         # Priority
         self.priority_combo = QComboBox()
         self.priority_combo.setFixedHeight(30)
         self.load_priorities()
-        form_layout.addRow("Priority:", self.priority_combo)
+        left_column.addRow("Priority:", self.priority_combo)
+        
+        # Right column: Category and Due Date
+        right_column = QFormLayout()
+        right_column.setSpacing(10)
+        
+        # Category
+        self.category_combo = QComboBox()
+        self.category_combo.setFixedHeight(30)
+        self.load_categories()
+        right_column.addRow("Category:", self.category_combo)
         
         # Due Date
         self.due_date_edit = QDateEdit()
@@ -426,21 +465,55 @@ class EditTaskDialog(QDialog):
             self.due_date_edit.setDate(QDate(2000, 1, 1))  # Default empty date
             
         self.due_date_edit.setSpecialValueText("No Due Date")
-        form_layout.addRow("Due Date:", self.due_date_edit)
+        right_column.addRow("Due Date:", self.due_date_edit)
         
-        # Category
-        self.category_combo = QComboBox()
-        self.category_combo.setFixedHeight(30)
-        self.load_categories()
-        form_layout.addRow("Category:", self.category_combo)
+        # Add both columns to the grid with equal size
+        left_widget = QWidget()
+        left_widget.setLayout(left_column)
         
-        # Parent Task
-        self.parent_combo = QComboBox()
-        self.parent_combo.setFixedHeight(30)
-        self.load_possible_parents()
-        form_layout.addRow("Parent Task:", self.parent_combo)
+        right_widget = QWidget()
+        right_widget.setLayout(right_column)
         
-        layout.addLayout(form_layout)
+        grid_layout.addWidget(left_widget)
+        grid_layout.addWidget(right_widget)
+        
+        layout.addLayout(grid_layout)
+        
+        # Links and Files side by side with labels
+        attachments_layout = QVBoxLayout()
+        
+        # Labels for sections
+        labels_layout = QHBoxLayout()
+        links_label = QLabel("Links:")
+        files_label = QLabel("Files:")
+        links_label.setStyleSheet("font-weight: bold;")
+        files_label.setStyleSheet("font-weight: bold;")
+        
+        # Equal width for both sides
+        labels_layout.addWidget(links_label)
+        labels_layout.addWidget(files_label)
+        attachments_layout.addLayout(labels_layout)
+        
+        # Widget containers
+        widgets_layout = QHBoxLayout()
+        
+        # Links widget - using existing LinkListWidget
+        self.links_widget = LinkListWidget(self)
+        self.load_links()  # Load existing links
+        
+        # Files widget - using existing FileListWidget
+        self.files_widget = FileListWidget(self)
+        self.load_files()  # Load existing files
+        
+        # Add both widgets to horizontal layout
+        widgets_layout.addWidget(self.links_widget)
+        widgets_layout.addWidget(self.files_widget)
+        
+        # Add widgets layout to attachments layout
+        attachments_layout.addLayout(widgets_layout)
+        
+        # Add attachments layout to main layout
+        layout.addLayout(attachments_layout)
         
         # Buttons
         button_layout = QHBoxLayout()
@@ -456,13 +529,13 @@ class EditTaskDialog(QDialog):
         
         # Set tab order
         self.setTabOrder(self.title_input, self.description_input)
-        self.setTabOrder(self.description_input, self.status_combo)
+        self.setTabOrder(self.description_input, self.parent_combo)
+        self.setTabOrder(self.parent_combo, self.status_combo)
         self.setTabOrder(self.status_combo, self.priority_combo)
-        self.setTabOrder(self.priority_combo, self.due_date_edit)
-        self.setTabOrder(self.due_date_edit, self.category_combo)
-        self.setTabOrder(self.category_combo, self.parent_combo)
-        self.setTabOrder(self.parent_combo, save_btn)
-        self.setTabOrder(save_btn, cancel_btn)
+        self.setTabOrder(self.priority_combo, self.category_combo)
+        self.setTabOrder(self.category_combo, self.due_date_edit)
+        self.setTabOrder(self.due_date_edit, save_btn)
+        self.setTabOrder(save_btn, cancel_btn)        
 
     def get_data(self):
         return self.data

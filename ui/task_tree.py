@@ -1,7 +1,7 @@
 # src/ui/task_tree.py
 
 from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem, QMenu, QHeaderView, QMessageBox, QDateEdit
-from PyQt6.QtCore import Qt, QDate, QSize
+from PyQt6.QtCore import Qt, QDate, QSize, QTimer
 from PyQt6.QtGui import QBrush, QColor
 import sqlite3
 from pathlib import Path
@@ -101,7 +101,7 @@ class TaskTreeWidget(QTreeWidget):
             traceback.print_exc()
     
     def add_new_task(self, data):
-        print(f"DEBUG: add_new_task called with data: {data}")
+        # print(f"DEBUG: add_new_task called with data: {data}")
         try:
             # Import database manager
             from database.memory_db_manager import get_memory_db_manager
@@ -147,7 +147,7 @@ class TaskTreeWidget(QTreeWidget):
                     # Column doesn't exist, need to add it
                     cursor.execute("ALTER TABLE tasks ADD COLUMN is_compact INTEGER NOT NULL DEFAULT 0")
                     conn.commit()
-                    print("ADD_NEW_TASK DEBUG: Added is_compact column to tasks table")
+                    # print("ADD_NEW_TASK DEBUG: Added is_compact column to tasks table")
                 
                 # Default is_compact value (new tasks are expanded by default)
                 is_compact = 0
@@ -201,7 +201,7 @@ class TaskTreeWidget(QTreeWidget):
                 
                 # Add links if any
                 links = data.get('links', [])
-                print(f"ADD_NEW_TASK DEBUG: Adding task with links: {links}")
+                # print(f"ADD_NEW_TASK DEBUG: Adding task with links: {links}")
                 for i, (link_id, url, label) in enumerate(links):
                     if url and url.strip():
                         cursor.execute(
@@ -415,7 +415,7 @@ class TaskTreeWidget(QTreeWidget):
         item = QTreeWidgetItem([title or ""])
         
         # Debug prints
-        print(f"ADD_TASK_ITEM DEBUG: Adding task: {title}")
+        # print(f"ADD_TASK_ITEM DEBUG: Adding task: {title}")
         print(f"ADD_TASK_ITEM DEBUG: Links parameter: {links}")
         print(f"ADD_TASK_ITEM DEBUG: Files parameter: {files}")
         
@@ -432,14 +432,14 @@ class TaskTreeWidget(QTreeWidget):
             'files': files if files is not None else []
         }
         
-        print(f"ADD_TASK_ITEM DEBUG: Setting user data with links: {user_data.get('links', [])}")
-        print(f"ADD_TASK_ITEM DEBUG: Setting user data with files: {user_data.get('files', [])}")
+       # print(f"ADD_TASK_ITEM DEBUG: Setting user data with links: {user_data.get('links', [])}")
+       # print(f"ADD_TASK_ITEM DEBUG: Setting user data with files: {user_data.get('files', [])}")
         item.setData(0, Qt.ItemDataRole.UserRole, user_data)
         
         # Verify the data was set correctly
         verify_data = item.data(0, Qt.ItemDataRole.UserRole)
-        print(f"ADD_TASK_ITEM DEBUG: Verified user data links: {verify_data.get('links', [])}")
-        print(f"ADD_TASK_ITEM DEBUG: Verified user data files: {verify_data.get('files', [])}")
+        # print(f"ADD_TASK_ITEM DEBUG: Verified user data links: {verify_data.get('links', [])}")
+        # print(f"ADD_TASK_ITEM DEBUG: Verified user data files: {verify_data.get('files', [])}")
         
         
         item.task_id = task_id

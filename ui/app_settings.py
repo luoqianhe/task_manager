@@ -112,7 +112,10 @@ class AppSettingsWidget(QWidget):
     def setup_ui(self):
         layout = QVBoxLayout(self)
         
-        # Database section
+        # Create a horizontal layout for the two main panels
+        panels_layout = QHBoxLayout()
+        
+        # Left panel: Database location
         db_group = QGroupBox("Database")
         db_layout = QFormLayout()
         
@@ -128,36 +131,8 @@ class AppSettingsWidget(QWidget):
         db_layout.addRow(change_db_btn)
         
         db_group.setLayout(db_layout)
-        layout.addWidget(db_group)
         
-        # Backup settings
-        backup_group = QGroupBox("Backup Settings")
-        backup_layout = QFormLayout()
-        
-        # Auto backup option
-        self.auto_backup = QCheckBox("Enable automatic backups")
-        self.auto_backup.setChecked(self.settings.get_setting("auto_backup", False))
-        self.auto_backup.toggled.connect(self.toggle_backup_options)
-        backup_layout.addRow(self.auto_backup)
-        
-        # Backup interval
-        self.backup_interval = QSpinBox()
-        self.backup_interval.setMinimum(1)
-        self.backup_interval.setMaximum(90)
-        self.backup_interval.setValue(self.settings.get_setting("backup_interval_days", 7))
-        self.backup_interval.setEnabled(self.auto_backup.isChecked())
-        backup_layout.addRow("Backup interval (days):", self.backup_interval)
-        
-        # Manual backup button
-        manual_backup_btn = QPushButton("Backup Now")
-        manual_backup_btn.setFixedHeight(30)
-        manual_backup_btn.clicked.connect(self.perform_backup)
-        backup_layout.addRow(manual_backup_btn)
-        
-        backup_group.setLayout(backup_layout)
-        layout.addWidget(backup_group)
-        
-        # CSV Buttons group
+        # Right panel: Import/Export
         csv_group = QGroupBox("Import/Export")
         csv_layout = QFormLayout()
         
@@ -177,10 +152,18 @@ class AppSettingsWidget(QWidget):
         csv_layout.addRow("Import tasks:", import_button)
         
         csv_group.setLayout(csv_layout)
-        layout.addWidget(csv_group)
         
-        # Bee API Settings group
+        # Add both panels to the horizontal layout
+        panels_layout.addWidget(db_group)
+        panels_layout.addWidget(csv_group)
+        
+        # Add the panels layout to the main layout
+        layout.addLayout(panels_layout)
+        
+        # Bee API Settings group with reduced width
         if hasattr(self.main_window, 'settings'):
+            bee_container = QHBoxLayout()
+            
             bee_api_group = QGroupBox("Bee API Settings")
             bee_api_layout = QVBoxLayout()
             
@@ -211,29 +194,35 @@ class AppSettingsWidget(QWidget):
                 bee_api_layout.addWidget(add_btn)
             
             bee_api_group.setLayout(bee_api_layout)
-            layout.addWidget(bee_api_group)
+            
+            # Add the Bee API group to a container with additional space to make it half-width
+            bee_container.addWidget(bee_api_group)
+            bee_container.addStretch()  # This makes the group take only half the width
+            layout.addLayout(bee_container)
         
         # Add stretch to push Done button to bottom
         layout.addStretch()
         
-        # Save and Done buttons
+        # Save and Cancel buttons - keep these at the bottom
         button_layout = QHBoxLayout()
         
         save_button = QPushButton("Save Settings")
         save_button.setFixedHeight(30)
+        save_button.setMinimumWidth(120)  # Make sure buttons are the same size
         save_button.clicked.connect(self.save_settings)
         button_layout.addWidget(save_button)
         
+        cancel_button = QPushButton("Cancel")
+        cancel_button.setFixedHeight(30)
+        cancel_button.setMinimumWidth(120)  # Make sure buttons are the same size
+        cancel_button.clicked.connect(self.main_window.show_task_view)  # Go back without saving
+        button_layout.addWidget(cancel_button)
+        
+        button_layout.addStretch()  # This pushes buttons to the left
+        
         layout.addLayout(button_layout)
     
-    def toggle_backup_options(self, enabled):
-        self.backup_interval.setEnabled(enabled)
-    
     def save_settings(self):
-        # Save backup settings
-        self.settings.set_setting("auto_backup", self.auto_backup.isChecked())
-        self.settings.set_setting("backup_interval_days", self.backup_interval.value())
-        
         QMessageBox.information(self, "Settings Saved", "Your settings have been saved.")
     
     def change_database_location(self):
@@ -264,35 +253,8 @@ class AppSettingsWidget(QWidget):
             
             # Update UI
             QMessageBox.information(self, "Database Location Changed", 
-                                   "Database location has been changed. The application will need to be restarted.")
+                                   "Database location has been changed. The application will need to be restarted.")       
     
-    def perform_backup(self):
-        source_path = Path(self.settings.get_setting("database_path"))
-        
-        if not source_path.exists():
-            QMessageBox.warning(self, "Backup Failed", "Database file not found.")
-            return
-        
-        # Ask user for backup location
-        backup_dir = QFileDialog.getExistingDirectory(
-            self, "Select Backup Directory", str(source_path.parent))
-        
-        if backup_dir:
-            try:
-                from datetime import datetime
-                # Create timestamped backup
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                backup_file = f"task_manager_backup_{timestamp}.db"
-                backup_path = Path(backup_dir) / backup_file
-                
-                # Copy the database file
-                shutil.copy2(source_path, backup_path)
-                
-                QMessageBox.information(self, "Backup Successful", 
-                                       f"Database backed up to {backup_path}")
-            except Exception as e:
-                QMessageBox.critical(self, "Backup Failed", str(e))
-                
     def delete_bee_api_key(self):
         """Delete the stored Bee API key"""
         from PyQt6.QtWidgets import QMessageBox

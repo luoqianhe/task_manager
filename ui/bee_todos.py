@@ -2,7 +2,8 @@
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
                            QHBoxLayout, QListWidget, QListWidgetItem, QCheckBox, 
-                           QGroupBox, QMessageBox, QProgressBar, QDialog, QRadioButton, QComboBox)
+                           QGroupBox, QMessageBox, QProgressBar, QDialog, QRadioButton, 
+                           QComboBox, QListView, QSizePolicy)
 from PyQt6.QtCore import Qt, QThreadPool, QRunnable, pyqtSignal, QObject
 from PyQt6.QtGui import QFont
 
@@ -59,16 +60,6 @@ class BeeToDoWidget(QWidget):
     def setup_ui(self):
         """Set up the initial UI"""
         layout = QVBoxLayout(self)
-        
-        # Header
-        header_label = QLabel("Bee To Dos")
-        header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
-        layout.addWidget(header_label)
-        
-        # Description
-        desc_label = QLabel("Manage and import To-Do items from your Bee wearable device")
-        desc_label.setWordWrap(True)
-        layout.addWidget(desc_label)
         
         # Content area - we'll populate this when initialized with API key
         self.content_area = QWidget()
@@ -158,6 +149,8 @@ class BeeToDoWidget(QWidget):
         # To-Do list
         self.todos_list = QListWidget()
         self.todos_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.todos_list.setResizeMode(QListView.ResizeMode.Adjust)
+        self.todos_list.setUniformItemSizes(False)  # Allow variable height items
         todos_layout.addWidget(self.todos_list)
         
         # Progress bar (initially hidden)
@@ -301,6 +294,10 @@ class BeeToDoWidget(QWidget):
         # To-do text
         todo_text = todo.get('text', 'Untitled To-Do')
         text_label = QLabel(todo_text)
+        
+        # Enable word wrap
+        text_label.setWordWrap(True)
+        text_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
         
         # Apply styling based on completion state
         if todo.get('completed', False):

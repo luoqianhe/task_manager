@@ -30,7 +30,7 @@ class MainWindow(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Task Organizer")
+        # self.setWindowTitle("Task Organizer")
         self.setGeometry(100, 100, 900, 600)
         
         # Initialize settings manager
@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
         
         # Create Combined Settings Manager tab
         self.combined_settings = CombinedSettingsManager()
-        self.settings_tabs.addTab(self.combined_settings, "Task Organization")
+        self.settings_tabs.addTab(self.combined_settings, "Task Attributes")
         
         # Create Combined Display Settings tab
         try:
@@ -86,22 +86,6 @@ class MainWindow(QMainWindow):
         
         # Add tabs to layout
         layout.addWidget(self.settings_tabs)
-        
-        # Add Done button
-        done_button = QPushButton("Back to Tasks")
-        done_button.setFixedHeight(40)
-        done_button.setStyleSheet("""
-            background-color: #2196F3;
-            color: white;
-            font-weight: bold;
-        """)
-        done_button.clicked.connect(self.show_task_view)
-        
-        # Add button to layout
-        button_layout = QHBoxLayout()
-        button_layout.addWidget(done_button)
-        button_layout.addStretch()
-        layout.addLayout(button_layout)
       
     def setup_shortcuts(self):
         # New Task
@@ -148,14 +132,6 @@ class MainWindow(QMainWindow):
         
         # Add header
         header_layout = QHBoxLayout()
-        title_label = QLabel("Task Organizer")
-        title_label.setStyleSheet("""
-            font-size: 24px;
-            font-weight: bold;
-            color: #333333;
-            margin-bottom: 10px;
-        """)
-        header_layout.addWidget(title_label)
         header_layout.addStretch()
         layout.addLayout(header_layout)
         

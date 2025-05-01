@@ -220,7 +220,7 @@ class TaskPillDelegate(QStyledItemDelegate):
     
     def _draw_task_item(self, painter, option, index):
         """Draw a regular task item - modified to support customizable panels"""
-        print(f"DEBUG: Drawing task item")
+        # print(f"DEBUG: Drawing task item")
         
         # Extract data using our existing method
         user_data, item_id, title, description, link, status, priority, due_date_str, category = self._extract_item_data(index)
@@ -346,7 +346,7 @@ class TaskPillDelegate(QStyledItemDelegate):
                 
             # Get section data
             section_data = self._get_section_data(user_data, content_type)
-            print(f"DEBUG: Drawing section {content_type} with data: {section_data}")
+            # print(f"DEBUG: Drawing section {content_type} with data: {section_data}")
             
             # Get color based on content type
             section_color = self._get_section_color(content_type, section_data)

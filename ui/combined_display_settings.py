@@ -58,29 +58,6 @@ class CombinedDisplaySettingsWidget(QWidget):
         # Add bottom buttons
         self._setup_bottom_buttons(main_layout)
 
-    def _setup_header_section(self, parent_layout):
-        """Set up the header section with top buttons"""
-        # Add top buttons for Save and Cancel
-        top_button_layout = QHBoxLayout()
-        save_btn_top = QPushButton("Save Settings")
-        save_btn_top.setFixedHeight(40)
-        save_btn_top.setStyleSheet("""
-            background-color: #4CAF50;
-            color: white;
-            font-weight: bold;
-        """)
-        save_btn_top.clicked.connect(self.save_and_return)
-        
-        cancel_btn_top = QPushButton("Cancel")
-        cancel_btn_top.setFixedHeight(40)
-        cancel_btn_top.clicked.connect(self.cancel_and_return)
-        
-        top_button_layout.addWidget(save_btn_top)
-        top_button_layout.addStretch()
-        top_button_layout.addWidget(cancel_btn_top)
-        
-        parent_layout.addLayout(top_button_layout)
-
     def _setup_font_settings(self, parent_layout):
         """Set up the font settings section as three panels side by side with equal width"""
         # Create horizontal layout for the three panels
@@ -468,6 +445,12 @@ class CombinedDisplaySettingsWidget(QWidget):
                     self.top_right_combo, self.bottom_right_combo]:
             combo.addItems(panel_options)
         
+        # Connect combo box signals to update preview directly
+        self.top_left_combo.currentIndexChanged.connect(self.force_preview_update)
+        self.bottom_left_combo.currentIndexChanged.connect(self.force_preview_update)
+        self.top_right_combo.currentIndexChanged.connect(self.force_preview_update)
+        self.bottom_right_combo.currentIndexChanged.connect(self.force_preview_update)
+            
         # Left Panel Configuration
         left_panel_layout = QVBoxLayout()
         
@@ -519,7 +502,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         panel_layout.addLayout(right_panel_layout)
         
         panel_layout_group.setLayout(panel_layout)
-        parent_layout.addWidget(panel_layout_group)        
+        parent_layout.addWidget(panel_layout_group)
 
     def _populate_panel_dropdowns(self):
         """Populate the panel dropdowns with content options"""
@@ -533,6 +516,45 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.bottom_left_combo.addItems(options)
         self.top_right_combo.addItems(options)
         self.bottom_right_combo.addItems(options)
+
+    def force_preview_update(self):
+        """Force a direct update of the preview when panel dropdowns change"""
+        # Get current settings
+        left_contents = []
+        right_contents = []
+        
+        # Left panel contents
+        if self.top_left_combo.currentText() != "None":
+            left_contents.append(self.top_left_combo.currentText())
+        
+        if self.bottom_left_combo.currentText() != "None":
+            left_contents.append(self.bottom_left_combo.currentText())
+        
+        # Right panel contents
+        if self.top_right_combo.currentText() != "None":
+            right_contents.append(self.top_right_combo.currentText())
+        
+        if self.bottom_right_combo.currentText() != "None":
+            right_contents.append(self.bottom_right_combo.currentText())
+        
+        # Save settings directly
+        self.settings.set_setting("left_panel_contents", left_contents)
+        self.settings.set_setting("right_panel_contents", right_contents)
+        
+        # Directly modify the delegate if it exists
+        if hasattr(self.task_preview, 'sample_tree') and self.task_preview.sample_tree:
+            delegate = self.task_preview.sample_tree.itemDelegate()
+            if delegate:
+                delegate.left_panel_contents = left_contents
+                delegate.right_panel_contents = right_contents
+        
+        # Force a complete recreation of the sample items
+        if hasattr(self.task_preview, 'create_sample_items'):
+            self.task_preview.create_sample_items()
+            
+        # Force a viewport repaint
+        if hasattr(self.task_preview, 'sample_tree') and self.task_preview.sample_tree:
+            self.task_preview.sample_tree.viewport().update()
 
     def _setup_preview_section(self, parent_layout):
         """Set up the preview section with a single group box"""
@@ -548,31 +570,12 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.task_preview = TaskPillPreviewWidget(self, use_group_box=False)
         preview_layout.addWidget(self.task_preview)
         
+        # Set layout margins to reduce white space
+        preview_layout.setContentsMargins(10, 10, 10, 10)
+        preview_layout.setSpacing(5)
         
         parent_layout.addWidget(preview_group)
     
-    def _setup_bottom_buttons(self, parent_layout):
-        """Set up the bottom button section"""
-        bottom_button_layout = QHBoxLayout()
-        save_btn_bottom = QPushButton("Save Settings")
-        save_btn_bottom.setFixedHeight(40)
-        save_btn_bottom.setStyleSheet("""
-            background-color: #4CAF50;
-            color: white;
-            font-weight: bold;
-        """)
-        save_btn_bottom.clicked.connect(self.save_and_return)
-        
-        cancel_btn_bottom = QPushButton("Cancel")
-        cancel_btn_bottom.setFixedHeight(40)
-        cancel_btn_bottom.clicked.connect(self.cancel_and_return)
-        
-        bottom_button_layout.addWidget(save_btn_bottom)
-        bottom_button_layout.addStretch()
-        bottom_button_layout.addWidget(cancel_btn_bottom)
-        
-        parent_layout.addLayout(bottom_button_layout)
-        
     def pick_color(self, color_type):
         """Open color picker dialog for the specified color type"""
         color_btn = None
@@ -598,6 +601,63 @@ class CombinedDisplaySettingsWidget(QWidget):
             hex_color = color.name()
             color_btn.setStyleSheet(f"background-color: {hex_color}; border: 1px solid #666666;")
             color_hex.setText(hex_color)
+    
+    def _setup_header_section(self, parent_layout):
+        """Set up the header section with top buttons"""
+        # Add top buttons for Save and Cancel (left-aligned)
+        top_button_layout = QHBoxLayout()
+        
+        save_btn_top = QPushButton("Save Settings")
+        save_btn_top.setFixedSize(100, 30)
+        save_btn_top.setStyleSheet("""
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+        """)
+        save_btn_top.clicked.connect(self.save_and_return)
+        
+        cancel_btn_top = QPushButton("Cancel")
+        cancel_btn_top.setFixedSize(100, 30)
+        cancel_btn_top.setStyleSheet("""
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+        """)
+        cancel_btn_top.clicked.connect(self.cancel_and_return)
+        
+        top_button_layout.addWidget(save_btn_top)
+        top_button_layout.addWidget(cancel_btn_top)
+        top_button_layout.addStretch()  # Push buttons to the left by placing stretch AFTER the buttons
+        
+        parent_layout.addLayout(top_button_layout)
+
+    def _setup_bottom_buttons(self, parent_layout):
+        """Set up the bottom button section (left-aligned)"""
+        bottom_button_layout = QHBoxLayout()
+        
+        save_btn_bottom = QPushButton("Save Settings")
+        save_btn_bottom.setFixedSize(100, 30)
+        save_btn_bottom.setStyleSheet("""
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+        """)
+        save_btn_bottom.clicked.connect(self.save_and_return)
+        
+        cancel_btn_bottom = QPushButton("Cancel")
+        cancel_btn_bottom.setFixedSize(100, 30)
+        cancel_btn_bottom.setStyleSheet("""
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+        """)
+        cancel_btn_bottom.clicked.connect(self.cancel_and_return)
+        
+        bottom_button_layout.addWidget(save_btn_bottom)
+        bottom_button_layout.addWidget(cancel_btn_bottom)
+        bottom_button_layout.addStretch()  # Push buttons to the left by placing stretch AFTER the buttons
+        
+        parent_layout.addLayout(bottom_button_layout)
     
     def update_color_from_hex(self, color_type):
         """Update color button when hex value changes"""
@@ -819,3 +879,36 @@ class CombinedDisplaySettingsWidget(QWidget):
                     task_tree.viewport().update()
                     
             print("Display settings changes applied to all tabs")
+    
+    def update_preview_now(self):
+        """Immediately update settings and refresh the preview"""
+        print("PREVIEW DEBUG: update_preview_now called!")
+        # Get current combo box values
+        left_contents = []
+        right_contents = []
+        
+        # Left panel contents
+        if self.top_left_combo.currentText() != "None":
+            left_contents.append(self.top_left_combo.currentText())
+        
+        if self.bottom_left_combo.currentText() != "None":
+            left_contents.append(self.bottom_left_combo.currentText())
+        
+        # Right panel contents
+        if self.top_right_combo.currentText() != "None":
+            right_contents.append(self.top_right_combo.currentText())
+        
+        if self.bottom_right_combo.currentText() != "None":
+            right_contents.append(self.bottom_right_combo.currentText())
+        
+        # Save settings immediately
+        print(f"PREVIEW DEBUG: Saving settings: left={left_contents}, right={right_contents}")
+        self.settings.set_setting("left_panel_contents", left_contents)
+        self.settings.set_setting("right_panel_contents", right_contents)
+        
+        # Update the preview if it exists
+        if hasattr(self, 'task_preview'):
+            print("PREVIEW DEBUG: Calling task_preview.update_preview()")
+            self.task_preview.update_preview()
+        else:
+            print("PREVIEW DEBUG: Warning: task_preview doesn't exist!")

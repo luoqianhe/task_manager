@@ -77,11 +77,17 @@ class TaskPillPreviewWidget(QWidget):
                 if hex_field:
                     hex_field.textChanged.connect(self.update_preview)
             
-            # Panel content changes
+            # Panel content changes - ensure immediate update when changed
             for panel in ['top_left', 'bottom_left', 'top_right', 'bottom_right']:
                 combo = getattr(self.settings_widget, f'{panel}_combo', None)
                 if combo:
-                    combo.currentTextChanged.connect(self.update_preview)
+                    # Disconnect any existing connection first to avoid duplicates
+                    try:
+                        combo.currentTextChanged.disconnect(self.update_preview)
+                    except:
+                        pass
+                    # Connect with immediate update
+                    combo.currentTextChanged.connect(self.immediate_update_preview)
                     
             # Left panel settings
             if hasattr(self.settings_widget, 'left_panel_size_spin'):
@@ -179,6 +185,8 @@ class TaskPillPreviewWidget(QWidget):
     
     def update_preview(self):
         """Update the preview based on current settings"""
+        print("TaskPillPreviewWidget.update_preview called")
+        
         # First apply the current settings to the delegate
         self.apply_current_settings()
         
@@ -186,7 +194,43 @@ class TaskPillPreviewWidget(QWidget):
         self.create_sample_items()
         
         # Force repaint
+        print("Forcing viewport update")
         self.sample_tree.viewport().update()
+    
+    def immediate_update_preview(self):
+        """Immediately update the preview with current settings"""
+        # Apply current settings directly to settings manager
+        from ui.app_settings import SettingsManager
+        settings = SettingsManager()
+        
+        # Store combo box values
+        left_contents = []
+        right_contents = []
+        
+        # Left panel contents
+        top_left = getattr(self.settings_widget, 'top_left_combo', None)
+        if top_left and top_left.currentText() != "None":
+            left_contents.append(top_left.currentText())
+        
+        bottom_left = getattr(self.settings_widget, 'bottom_left_combo', None)
+        if bottom_left and bottom_left.currentText() != "None":
+            left_contents.append(bottom_left.currentText())
+        
+        # Right panel contents
+        top_right = getattr(self.settings_widget, 'top_right_combo', None)
+        if top_right and top_right.currentText() != "None":
+            right_contents.append(top_right.currentText())
+        
+        bottom_right = getattr(self.settings_widget, 'bottom_right_combo', None)
+        if bottom_right and bottom_right.currentText() != "None":
+            right_contents.append(bottom_right.currentText())
+        
+        # Apply settings immediately
+        settings.set_setting("left_panel_contents", left_contents)
+        settings.set_setting("right_panel_contents", right_contents)
+        
+        # Update the preview
+        self.update_preview()
     
     def simulate_hover(self):
         """Simulate hover events to show the toggle button"""
@@ -213,7 +257,7 @@ class TaskPillPreviewWidget(QWidget):
             
             # Force repaint to show the button
             self.sample_tree.viewport().update()
-    
+
     def apply_current_settings(self):
         """Apply the current settings to the delegate"""
         # We'll need the settings manager
@@ -253,27 +297,26 @@ class TaskPillPreviewWidget(QWidget):
                 color_value = hex_field.text()
                 settings.set_setting(f"{color_type}_color", color_value)
         
-        # Panel contents
+        # Panel contents - get them from the settings widget, not directly
         left_contents = []
         right_contents = []
         
-        # Left panel contents
-        top_left = getattr(self.settings_widget, 'top_left_combo', None)
-        if top_left and top_left.currentText() != "None":
-            left_contents.append(top_left.currentText())
+        # Only try to access these attributes on the parent widget, not self
+        if hasattr(self.settings_widget, 'top_left_combo'):
+            if self.settings_widget.top_left_combo.currentText() != "None":
+                left_contents.append(self.settings_widget.top_left_combo.currentText())
         
-        bottom_left = getattr(self.settings_widget, 'bottom_left_combo', None)
-        if bottom_left and bottom_left.currentText() != "None":
-            left_contents.append(bottom_left.currentText())
+        if hasattr(self.settings_widget, 'bottom_left_combo'):
+            if self.settings_widget.bottom_left_combo.currentText() != "None":
+                left_contents.append(self.settings_widget.bottom_left_combo.currentText())
         
-        # Right panel contents
-        top_right = getattr(self.settings_widget, 'top_right_combo', None)
-        if top_right and top_right.currentText() != "None":
-            right_contents.append(top_right.currentText())
+        if hasattr(self.settings_widget, 'top_right_combo'):
+            if self.settings_widget.top_right_combo.currentText() != "None":
+                right_contents.append(self.settings_widget.top_right_combo.currentText())
         
-        bottom_right = getattr(self.settings_widget, 'bottom_right_combo', None)
-        if bottom_right and bottom_right.currentText() != "None":
-            right_contents.append(bottom_right.currentText())
+        if hasattr(self.settings_widget, 'bottom_right_combo'):
+            if self.settings_widget.bottom_right_combo.currentText() != "None":
+                right_contents.append(self.settings_widget.bottom_right_combo.currentText())
         
         settings.set_setting("left_panel_contents", left_contents)
         settings.set_setting("right_panel_contents", right_contents)
@@ -285,7 +328,7 @@ class TaskPillPreviewWidget(QWidget):
             
         if hasattr(self.settings_widget, 'left_panel_bold_check'):
             panel_bold = self.settings_widget.left_panel_bold_check.isChecked()
-            settings.set_setting("left_panel_bold", panel_bold)
+            settings.set_setting("left_panel_bold", panel_bold)    
 
 class SampleTaskTreeWidget(QTreeWidget):
     """Specialized tree widget for the sample task preview"""
