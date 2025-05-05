@@ -12,6 +12,13 @@ import threading
 import sys
 import json
 
+# Import debug utilities
+from utils.debug_logger import get_debug_logger
+from utils.debug_decorator import debug_method
+
+# Get the debug logger
+debug = get_debug_logger()
+
 # Import the Bee To-Do Manager
 from beeai import Bee
 
@@ -33,18 +40,24 @@ class Worker(QRunnable):
     def run(self):
         try:
             # Run async function in a new event loop
+            debug.debug(f"Starting worker with function: {self.fn.__name__}")
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             result = loop.run_until_complete(self.fn(*self.args, **self.kwargs))
             loop.close()
+            debug.debug(f"Worker completed successfully, emitting result")
             self.signals.finished.emit(result)
         except Exception as e:
-            print(f"Worker error: {e}")
+            debug.error(f"Worker error: {e}")
+            import traceback
+            error_tb = traceback.format_exc()
+            debug.error(f"Traceback: {error_tb}")
             self.signals.error.emit(str(e))
             
 class BeeToDoWidget(QWidget):
     """Widget for the Bee To Dos tab"""
     
+    @debug_method
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
@@ -53,10 +66,12 @@ class BeeToDoWidget(QWidget):
         self.api_key = None
         self.todos = []
         self.thread_pool = QThreadPool()
+        debug.debug(f"ThreadPool maxThreadCount: {self.thread_pool.maxThreadCount()}")
         
         # Set up the basic UI structure
         self.setup_ui()
     
+    @debug_method
     def setup_ui(self):
         """Set up the initial UI"""
         layout = QVBoxLayout(self)
@@ -71,10 +86,14 @@ class BeeToDoWidget(QWidget):
         self.content_layout.addWidget(self.empty_label)
         
         layout.addWidget(self.content_area)
+        debug.debug("Basic UI setup complete")
     
+    @debug_method
     def initialize_with_api_key(self, api_key):
         """Initialize with the provided API key"""
+        debug.debug(f"Initializing with API key: {api_key[:4]}{'*' * (len(api_key) - 4)}")
         if api_key == self.api_key and self.bee_manager:
+            debug.debug("Already initialized with this key, skipping")
             # Already initialized with this key
             return
             
@@ -94,37 +113,51 @@ class BeeToDoWidget(QWidget):
         # Load To Dos
         self.load_todos()
     
+    @debug_method
     def clear_content_area(self):
         """Clear the content area to prepare for new content"""
+        debug.debug("Clearing content area")
         # Hide all widgets except empty label
         for i in range(self.content_layout.count()):
             widget = self.content_layout.itemAt(i).widget()
             if widget and widget != self.empty_label:
                 widget.setVisible(False)
+                debug.debug(f"Hidden widget: {widget.__class__.__name__}")
     
+    @debug_method
     def create_bee_manager(self):
         """Create the Bee manager for API access"""
         try:
+            debug.debug("Creating Bee manager with API key")
             # Create Bee manager with the API key
             self.bee_manager = BeeToDoManager(self.api_key)
-            print("Bee manager created successfully")
+            debug.debug("Bee manager created successfully")
         except Exception as e:
-            print(f"Error creating Bee manager: {e}")
+            debug.error(f"Error creating Bee manager: {e}")
+            import traceback
+            error_tb = traceback.format_exc()
+            debug.error(f"Traceback: {error_tb}")
             self.empty_label.setText(f"Error initializing Bee: {str(e)}")
             self.bee_manager = None
         
+    @debug_method
     def initialize_ui(self):
         """Initialize the UI with API key"""
+        debug.debug("Initializing UI components")
         if not hasattr(self, 'todos_group'):
+            debug.debug("Creating new UI components")
             # Create UI components if they don't exist yet
             self.create_todos_ui()
         else:
+            debug.debug("Showing existing UI components")
             # Show existing UI components
             self.todos_group.setVisible(True)
             self.actions_group.setVisible(True)
     
+    @debug_method
     def create_todos_ui(self):
         """Create the UI components for To-Dos"""
+        debug.debug("Creating To-Dos UI components")
         # To-Do Items group
         self.todos_group = QGroupBox("To-Do Items")
         todos_layout = QVBoxLayout()
@@ -186,10 +219,14 @@ class BeeToDoWidget(QWidget):
         # Initially hide the UI until we have to-dos loaded
         self.todos_group.setVisible(False)
         self.actions_group.setVisible(False)
+        debug.debug("To-Dos UI components created and hidden")
     
+    @debug_method
     def load_todos(self):
         """Load To Dos from the Bee API"""
+        debug.debug("Loading To-Dos from Bee API")
         if not self.bee_manager:
+            debug.error("Error: Bee manager not initialized")
             self.empty_label.setText("Error: Bee manager not initialized")
             return
         
@@ -207,18 +244,21 @@ class BeeToDoWidget(QWidget):
             self.progress_bar.setValue(0)
         
         # Create worker to fetch todos in background
+        debug.debug("Creating worker to fetch todos in background")
         worker = Worker(self.bee_manager.get_all_todos)
         worker.signals.finished.connect(self.on_todos_loaded)
         worker.signals.error.connect(self.on_load_error)
         worker.signals.progress.connect(self.update_progress)
         
         # Execute the worker
+        debug.debug("Starting worker to fetch todos")
         self.thread_pool.start(worker)
     
+    @debug_method
     def on_todos_loaded(self, todos):
         """Handle loaded to-dos"""
         self.todos = todos
-        print(f"Loaded {len(todos)} to-dos")
+        debug.debug(f"Loaded {len(todos)} to-dos")
         
         # Hide loading indicator
         self.empty_label.setVisible(False)
@@ -238,9 +278,10 @@ class BeeToDoWidget(QWidget):
         if hasattr(self, 'status_label'):
             self.status_label.setText(f"{len(todos)} items total")
     
+    @debug_method
     def on_load_error(self, error_msg):
         """Handle error when loading to-dos"""
-        print(f"Error loading to-dos: {error_msg}")
+        debug.error(f"Error loading to-dos: {error_msg}")
         
         # Show error message
         self.empty_label.setText(f"Error loading To-Dos: {error_msg}")
@@ -254,14 +295,19 @@ class BeeToDoWidget(QWidget):
             self.todos_group.setVisible(False)
             self.actions_group.setVisible(False)
     
+    @debug_method
     def update_progress(self, value):
         """Update progress bar"""
+        debug.debug(f"Updating progress bar: {value}")
         if hasattr(self, 'progress_bar'):
             self.progress_bar.setValue(value)
     
+    @debug_method
     def populate_todos_list(self):
         """Populate the to-dos list widget"""
+        debug.debug("Populating to-dos list")
         if not hasattr(self, 'todos_list'):
+            debug.error("todos_list not found, cannot populate")
             return
             
         # Clear existing items
@@ -279,9 +325,15 @@ class BeeToDoWidget(QWidget):
             # Add to list
             self.todos_list.addItem(item)
             self.todos_list.setItemWidget(item, item_widget)
+        
+        debug.debug(f"Added {len(self.todos)} items to list")
     
+    @debug_method
     def create_todo_item_widget(self, todo):
         """Create a widget for a to-do item with checkbox"""
+        todo_id = todo.get('id', 'unknown')
+        debug.debug(f"Creating widget for to-do: {todo_id}")
+        
         widget = QWidget()
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(5, 2, 5, 2)
@@ -301,6 +353,7 @@ class BeeToDoWidget(QWidget):
         
         # Apply styling based on completion state
         if todo.get('completed', False):
+            debug.debug(f"To-do {todo_id} is completed, applying completed style")
             # Style for completed to-dos
             text_label.setStyleSheet("color: gray;")
             # Use strikethrough font
@@ -312,6 +365,7 @@ class BeeToDoWidget(QWidget):
         
         # Add due date if available
         if todo.get('due_date'):
+            debug.debug(f"To-do {todo_id} has due date: {todo.get('due_date')}")
             date_label = QLabel(todo.get('due_date'))
             date_label.setStyleSheet("color: gray; font-style: italic;")
             layout.addWidget(date_label)
@@ -324,12 +378,16 @@ class BeeToDoWidget(QWidget):
         
         return widget
     
+    @debug_method
     def toggle_select_all(self, state):
         """Toggle selection of all to-dos"""
+        debug.debug(f"Toggle select all: {state}")
         if not hasattr(self, 'todos_list'):
+            debug.error("todos_list not found, cannot toggle selection")
             return
             
         is_checked = state == Qt.CheckState.Checked
+        debug.debug(f"Setting all checkboxes to: {is_checked}")
         
         # Update all checkboxes
         for i in range(self.todos_list.count()):
@@ -338,11 +396,14 @@ class BeeToDoWidget(QWidget):
             if hasattr(item_widget, 'checkbox'):
                 item_widget.checkbox.setChecked(is_checked)
     
+    @debug_method
     def get_selected_todos(self):
         """Get list of selected to-dos"""
+        debug.debug("Getting selected to-dos")
         selected_todos = []
         
         if not hasattr(self, 'todos_list'):
+            debug.error("todos_list not found, cannot get selected items")
             return selected_todos
             
         for i in range(self.todos_list.count()):
@@ -352,33 +413,61 @@ class BeeToDoWidget(QWidget):
             if hasattr(item_widget, 'checkbox') and item_widget.checkbox.isChecked():
                 # Find todo data by ID
                 todo_id = item_widget.property("todo_id")
+                debug.debug(f"Selected to-do: {todo_id}")
                 todo = next((t for t in self.todos if t.get('id') == todo_id), None)
                 
                 if todo:
                     selected_todos.append(todo)
         
+        debug.debug(f"Found {len(selected_todos)} selected to-dos")
         return selected_todos
     
+    @debug_method
     def batch_edit(self):
         """Show batch edit dialog for selected to-dos"""
+        debug.debug("Opening batch edit dialog")
         selected_todos = self.get_selected_todos()
         
         if not selected_todos:
+            debug.debug("No to-dos selected, showing information message")
             QMessageBox.information(self, "No Selection", "Please select one or more To-Do items first.")
             return
         
-        # We'll implement the batch edit dialog later
-        QMessageBox.information(self, "Batch Edit", f"Selected {len(selected_todos)} To-Do items for batch editing.\nThis feature is coming soon!")
+        # Create batch edit dialog
+        debug.debug(f"Creating batch edit dialog for {len(selected_todos)} to-dos")
+        dialog = BatchEditDialog(self, len(selected_todos))
+        
+        # Load categories and priorities
+        dialog.load_categories(self.get_categories())
+        dialog.load_priorities(self.get_priorities())
+        
+        if dialog.exec():
+            debug.debug("Batch edit dialog accepted")
+            # Get batch edit options
+            import_location = dialog.get_import_location()
+            priority = dialog.get_priority()
+            category = dialog.get_category()
+            
+            debug.debug(f"Batch edit options: location={import_location}, priority={priority}, category={category}")
+            
+            # Process imports
+            self.import_selected_todos(selected_todos, import_location, priority, category)
+        else:
+            debug.debug("Batch edit dialog canceled")
     
+    @debug_method
     def delete_selected(self):
         """Delete selected to-dos"""
+        debug.debug("Delete selected to-dos requested")
         selected_todos = self.get_selected_todos()
         
         if not selected_todos:
+            debug.debug("No to-dos selected, showing information message")
             QMessageBox.information(self, "No Selection", "Please select one or more To-Do items first.")
             return
         
         # Confirm deletion
+        debug.debug(f"Confirming deletion of {len(selected_todos)} to-dos")
         reply = QMessageBox.question(
             self,
             "Confirm Deletion",
@@ -388,8 +477,10 @@ class BeeToDoWidget(QWidget):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
+            debug.debug("User confirmed deletion")
             # Get the IDs of selected to-dos
             todo_ids = [todo.get('id') for todo in selected_todos]
+            debug.debug(f"To-do IDs to delete: {todo_ids}")
             
             # Show progress dialog
             progress_dialog = QMessageBox(self)
@@ -399,30 +490,39 @@ class BeeToDoWidget(QWidget):
             progress_dialog.show()
             
             # Create worker to delete todos in background
+            debug.debug("Creating worker to delete to-dos in background")
             worker = Worker(self.bee_manager.delete_multiple_todos, todo_ids)
             worker.signals.finished.connect(lambda results: self.on_delete_completed(results, progress_dialog))
             worker.signals.error.connect(lambda error: self.on_delete_error(error, progress_dialog))
             
             # Execute the worker
+            debug.debug("Starting worker to delete to-dos")
             self.thread_pool.start(worker)
+        else:
+            debug.debug("User canceled deletion")
 
+    @debug_method
     def on_delete_completed(self, results, progress_dialog):
         """Handle completion of to-do deletion"""
+        debug.debug(f"Deletion completed, results: {results}")
         # Close progress dialog
         progress_dialog.close()
         
         # Count successes and failures
         successes = sum(1 for _, success in results if success)
         failures = len(results) - successes
+        debug.debug(f"Deletion results: {successes} successes, {failures} failures")
         
         # Show result message
         if failures == 0:
+            debug.debug("All deletions successful")
             QMessageBox.information(
                 self,
                 "Deletion Complete",
                 f"Successfully deleted {successes} to-do items."
             )
         else:
+            debug.warning(f"Some deletions failed: {failures} failures")
             QMessageBox.warning(
                 self,
                 "Deletion Partially Complete",
@@ -431,10 +531,13 @@ class BeeToDoWidget(QWidget):
             )
         
         # Refresh to-dos list
+        debug.debug("Refreshing to-dos list after deletion")
         self.load_todos()
 
+    @debug_method
     def on_delete_error(self, error, progress_dialog):
         """Handle error during to-do deletion"""
+        debug.error(f"Deletion error: {error}")
         # Close progress dialog
         progress_dialog.close()
         
@@ -445,8 +548,10 @@ class BeeToDoWidget(QWidget):
             f"An error occurred while deleting to-do items: {error}"
         )
 
+    @debug_method
     def get_categories(self):
         """Get list of categories from database"""
+        debug.debug("Getting categories from database")
         categories = []
         try:
             # Get database manager
@@ -456,13 +561,19 @@ class BeeToDoWidget(QWidget):
             # Query categories
             results = db_manager.execute_query("SELECT name FROM categories ORDER BY name")
             categories = [row[0] for row in results]
+            debug.debug(f"Found {len(categories)} categories")
         except Exception as e:
-            print(f"Error getting categories: {e}")
+            debug.error(f"Error getting categories: {e}")
+            import traceback
+            error_tb = traceback.format_exc()
+            debug.error(f"Traceback: {error_tb}")
         
         return categories
 
+    @debug_method
     def get_priorities(self):
         """Get list of priorities from database"""
+        debug.debug("Getting priorities from database")
         priorities = []
         try:
             # Get database manager
@@ -472,40 +583,26 @@ class BeeToDoWidget(QWidget):
             # Query priorities
             results = db_manager.execute_query("SELECT name FROM priorities ORDER BY display_order")
             priorities = [row[0] for row in results]
+            debug.debug(f"Found {len(priorities)} priorities")
         except Exception as e:
-            print(f"Error getting priorities: {e}")
+            debug.error(f"Error getting priorities: {e}")
+            import traceback
+            error_tb = traceback.format_exc()
+            debug.error(f"Traceback: {error_tb}")
             # Default priorities if query fails
             priorities = ["High", "Medium", "Low", "Unprioritized"]
+            debug.debug("Using default priorities due to error")
         
         return priorities
 
-    def batch_edit(self):
-        """Show batch edit dialog for selected to-dos"""
-        selected_todos = self.get_selected_todos()
-        
-        if not selected_todos:
-            QMessageBox.information(self, "No Selection", "Please select one or more To-Do items first.")
-            return
-        
-        # Create batch edit dialog
-        dialog = BatchEditDialog(self, len(selected_todos))
-        
-        # Load categories and priorities
-        dialog.load_categories(self.get_categories())
-        dialog.load_priorities(self.get_priorities())
-        
-        if dialog.exec():
-            # Get batch edit options
-            import_location = dialog.get_import_location()
-            priority = dialog.get_priority()
-            category = dialog.get_category()
-            
-            # Process imports
-            self.import_selected_todos(selected_todos, import_location, priority, category)
-
+    @debug_method
     def import_selected_todos(self, todos, destination, priority=None, category=None):
         """Import selected to-dos to the app"""
+        debug.debug(f"Importing {len(todos)} to-dos to destination: {destination}")
+        debug.debug(f"Import options: priority={priority}, category={category}")
+        
         if not todos:
+            debug.warning("No to-dos to import")
             return
         
         # Show progress dialog
@@ -519,6 +616,8 @@ class BeeToDoWidget(QWidget):
             # Format todos for import
             formatted_todos = []
             for todo in todos:
+                todo_id = todo.get('id', 'unknown')
+                debug.debug(f"Formatting to-do {todo_id} for import")
                 # Create task data structure matching app's format
                 task_data = {
                     'title': todo.get('text', 'Untitled To-Do'),
@@ -538,27 +637,36 @@ class BeeToDoWidget(QWidget):
             
             # Get the appropriate task tree
             if destination == "Backlog":
+                debug.debug("Using backlog task tree")
                 current_tree = self.main_window.tabs.backlog_tab.task_tree
             else:
+                debug.debug("Using current tasks tree")
                 current_tree = self.main_window.tabs.current_tasks_tab.task_tree
             
             # Add all tasks to the tree
             for task_data in formatted_todos:
                 try:
+                    debug.debug(f"Adding task: {task_data['title']}")
                     # Add the task
                     task_id = current_tree.add_new_task(task_data)
                     if task_id:
                         tasks_added += 1
+                        debug.debug(f"Task added with ID: {task_id}")
                 except Exception as e:
-                    print(f"Error adding task: {e}")
+                    debug.error(f"Error adding task: {e}")
+                    import traceback
+                    error_tb = traceback.format_exc()
+                    debug.error(f"Traceback: {error_tb}")
             
             # Close progress dialog
             progress_dialog.close()
             
             # Reload all tabs to reflect changes
+            debug.debug("Reloading all tabs to reflect changes")
             self.main_window.tabs.reload_all()
             
             # Show success message
+            debug.debug(f"Import completed, {tasks_added} tasks added")
             QMessageBox.information(
                 self, 
                 "Import Complete", 
@@ -566,6 +674,11 @@ class BeeToDoWidget(QWidget):
             )
             
         except Exception as e:
+            debug.error(f"Error during import: {e}")
+            import traceback
+            error_tb = traceback.format_exc()
+            debug.error(f"Traceback: {error_tb}")
+            
             # Close progress dialog
             progress_dialog.close()
             
@@ -578,86 +691,114 @@ class BeeToDoWidget(QWidget):
             
 class BeeToDoManager:
     def __init__(self, api_key):
+        debug.debug("Initializing BeeToDoManager")
         self.api_key = api_key
         self.bee = Bee(api_key)
+        debug.debug("Bee SDK instance created")
 
+    @debug_method
     async def delete_todo(self, todo_id):
         """Delete a to-do item"""
+        debug.debug(f"Deleting to-do: {todo_id}")
         try:
             await self.bee.delete_todo("me", todo_id)
+            debug.debug(f"Successfully deleted to-do: {todo_id}")
             return True
         except Exception as e:
-            print(f"Error deleting todo: {e}")
+            debug.error(f"Error deleting to-do {todo_id}: {e}")
+            import traceback
+            error_tb = traceback.format_exc()
+            debug.error(f"Traceback: {error_tb}")
             return False
 
+    @debug_method
     async def delete_multiple_todos(self, todo_ids):
         """Delete multiple to-do items"""
+        debug.debug(f"Deleting multiple to-dos: {todo_ids}")
         results = []
         for todo_id in todo_ids:
             try:
                 # Delete the todo
-                success = await self.bee.delete_todo("me", todo_id)
+                debug.debug(f"Deleting to-do {todo_id}")
+                await self.bee.delete_todo("me", todo_id)
                 results.append((todo_id, True))
+                debug.debug(f"Successfully deleted to-do {todo_id}")
             except Exception as e:
-                print(f"Error deleting todo {todo_id}: {e}")
+                debug.error(f"Error deleting to-do {todo_id}: {e}")
+                import traceback
+                error_tb = traceback.format_exc()
+                debug.error(f"Traceback: {error_tb}")
                 results.append((todo_id, False))
         
+        debug.debug(f"Deletion complete, results: {results}")
         return results
 
+    @debug_method
     async def get_all_todos(self):
         """Fetch all to-do items from the Bee API using SDK with pagination"""
+        debug.debug("Fetching to-dos using SDK with pagination")
         try:
             all_todos = []
             page = 1
             has_more = True
             
-            print("Fetching todos using SDK with pagination...")
+            debug.debug("Starting pagination process")
             
             while has_more:
-                print(f"Fetching page {page}...")
+                debug.debug(f"Fetching page {page}...")
                 
                 # Try to use SDK with page parameter
                 try:
                     # The SDK might support the page parameter
+                    debug.debug("Attempting to use SDK with page parameter")
                     todos_response = await self.bee.get_todos("me", page=page)
                 except TypeError:
                     # If page parameter doesn't work, we'll need to use the default call
+                    debug.debug("Page parameter not supported, using default call")
                     todos_response = await self.bee.get_todos("me")
                 
                 # Get the current page of todos
                 current_todos = todos_response.get("todos", [])
                 
                 if not current_todos:
-                    print(f"No todos on page {page}")
+                    debug.debug(f"No to-dos on page {page}")
                     break
                 
-                print(f"Fetched {len(current_todos)} todos on page {page}")
+                debug.debug(f"Fetched {len(current_todos)} to-dos on page {page}")
                 all_todos.extend(current_todos)
                 
                 # If we got exactly 10 items, there might be more pages
                 has_more = len(current_todos) == 10
+                debug.debug(f"Has more pages: {has_more}")
                 
                 # Move to next page
                 page += 1
             
-            print(f"Total todos fetched: {len(all_todos)}")
+            debug.debug(f"Total to-dos fetched: {len(all_todos)}")
             return all_todos
             
         except Exception as e:
-            print(f"Error fetching todos: {e}")
+            debug.error(f"Error fetching to-dos: {e}")
+            import traceback
+            error_tb = traceback.format_exc()
+            debug.error(f"Traceback: {error_tb}")
             raise
 
 class BatchEditDialog(QDialog):
     """Dialog for batch editing to-do items"""
     
+    @debug_method
     def __init__(self, parent=None, selected_count=0):
         super().__init__(parent)
         self.selected_count = selected_count
         self.setWindowTitle("Batch Edit Selected Items")
         self.setMinimumWidth(400)
+        debug.debug(f"Initializing BatchEditDialog with {selected_count} selected items")
         self.setup_ui()
         
+    @debug_method
     def setup_ui(self):
+        debug.debug("Setting up batch edit dialog UI")
         layout = QVBoxLayout(self)
         
         # Header with count of selected items
@@ -727,33 +868,50 @@ class BatchEditDialog(QDialog):
         button_layout.addWidget(apply_btn)
         
         layout.addLayout(button_layout)
+        debug.debug("Batch edit dialog UI setup complete")
     
+    @debug_method
     def get_import_location(self):
         """Get selected import location"""
-        return "Backlog" if self.backlog_radio.isChecked() else "Current Tasks"
+        location = "Backlog" if self.backlog_radio.isChecked() else "Current Tasks"
+        debug.debug(f"Import location: {location}")
+        return location
     
+    @debug_method
     def get_priority(self):
         """Get selected priority if checked"""
         if self.apply_priority_check.isChecked():
-            return self.priority_combo.currentText()
+            priority = self.priority_combo.currentText()
+            debug.debug(f"Selected priority: {priority}")
+            return priority
+        debug.debug("No priority selected")
         return None
     
+    @debug_method
     def get_category(self):
         """Get selected category if checked"""
         if self.apply_category_check.isChecked():
             category = self.category_combo.currentText()
-            return None if category == "None" else category
+            result = None if category == "None" else category
+            debug.debug(f"Selected category: {result}")
+            return result
+        debug.debug("No category selected")
         return None
     
+    @debug_method
     def load_categories(self, categories):
         """Load categories into the combo box"""
+        debug.debug(f"Loading {len(categories)} categories")
         self.category_combo.clear()
         self.category_combo.addItem("None")
         for category in categories:
             self.category_combo.addItem(category)
+        debug.debug("Categories loaded in combo box")
     
+    @debug_method
     def load_priorities(self, priorities):
         """Load priorities into the combo box"""
+        debug.debug(f"Loading {len(priorities)} priorities")
         self.priority_combo.clear()
         for priority in priorities:
             self.priority_combo.addItem(priority)
@@ -761,3 +919,5 @@ class BatchEditDialog(QDialog):
         index = self.priority_combo.findText("Medium")
         if index >= 0:
             self.priority_combo.setCurrentIndex(index)
+            debug.debug("Set default priority to Medium")
+        debug.debug("Priorities loaded in combo box")

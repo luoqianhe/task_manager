@@ -11,6 +11,13 @@ from PyQt6.QtGui import QKeySequence, QShortcut, QIcon
 from PyQt6.QtCore import Qt, QDate, QTimer
 from datetime import datetime, date
 
+# Import the debug logger and decorator
+from utils.debug_logger import get_debug_logger
+from utils.debug_decorator import debug_method
+
+# Get debug logger instance
+debug = get_debug_logger()
+
 class AddTaskDialog(QDialog):
     @staticmethod
     def get_connection():
@@ -18,7 +25,9 @@ class AddTaskDialog(QDialog):
         from database.database_manager import get_db_manager
         return get_db_manager().get_connection()
     
+    @debug_method
     def __init__(self, parent=None):
+        debug.debug("Initializing AddTaskDialog")
         super().__init__(parent)
         self.setWindowTitle("Add New Task")
         self.setMinimumWidth(500)
@@ -26,16 +35,19 @@ class AddTaskDialog(QDialog):
         self.setup_ui()
         self.load_statuses()
         self.data = None  # Store the data here
+        debug.debug("AddTaskDialog initialization complete")
     
+    @debug_method
     def load_priorities(self):
         """Load priorities including 'Unprioritized' option"""
+        debug.debug("Loading priorities")
         self.priority_combo.clear()  # Clear existing items
         
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id, name FROM priorities ORDER BY display_order")
             priorities = cursor.fetchall()
-            print("ADD DIALOG PRIORITIES:", priorities)
+            debug.debug(f"Loaded {len(priorities)} priorities from database")
             
             # Add all priorities to the combo box
             for pri_id, name in priorities:
@@ -44,25 +56,33 @@ class AddTaskDialog(QDialog):
             # Find and select the "Unprioritized" option
             unprioritized_index = self.priority_combo.findText("Unprioritized")
             if unprioritized_index >= 0:
+                debug.debug("Setting default priority to 'Unprioritized'")
                 self.priority_combo.setCurrentIndex(unprioritized_index)
             else:
                 # If "Unprioritized" not found, select first item
+                debug.debug("'Unprioritized' not found, selecting first item instead")
                 self.priority_combo.setCurrentIndex(0)
 
+    @debug_method
     def accept(self):
+        debug.debug("Accept button clicked - collecting task data")
         # Store the data before closing
         due_date = None
         if self.due_date_edit.date() != QDate(2000, 1, 1):  # Default empty date
             due_date = self.due_date_edit.date().toString("yyyy-MM-dd")
+            debug.debug(f"Due date set: {due_date}")
         
         # Get the selected priority directly from the combo box
         selected_priority = self.priority_combo.currentText()
+        debug.debug(f"Selected priority: {selected_priority}")
         
         # Get links from the links widget
         links = self.links_widget.get_links()
+        debug.debug(f"Links collected: {len(links)} links")
         
         # Get files from the files widget
         files = self.files_widget.get_files()
+        debug.debug(f"Files collected: {len(files)} files")
         
         self.data = {
             'title': self.title_input.text(),
@@ -75,12 +95,15 @@ class AddTaskDialog(QDialog):
             'category': self.category_combo.currentText() if self.category_combo.currentIndex() > 0 else None,
             'parent_id': self.parent_combo.currentData()
         }
+        debug.debug(f"Task data collected: {self.data['title']}")
         super().accept()
 
     def get_data(self):
         return self.data
     
+    @debug_method
     def setup_ui(self):
+        debug.debug("Setting up AddTaskDialog UI")
         layout = QVBoxLayout(self)
         
         form_layout = QFormLayout()
@@ -209,13 +232,17 @@ class AddTaskDialog(QDialog):
         self.setTabOrder(self.category_combo, self.due_date_edit)
         self.setTabOrder(self.due_date_edit, save_btn)
         self.setTabOrder(save_btn, cancel_btn)
+        debug.debug("AddTaskDialog UI setup complete")
     
+    @debug_method
     def add_link(self):
         """Add a new link to the list"""
+        debug.debug("Adding new link")
         link_dialog = LinkDialog(self)
         if link_dialog.exec():
             url = link_dialog.url_input.text().strip()
             label = link_dialog.label_input.text().strip()
+            debug.debug(f"Link added: URL={url}, Label={label}")
             
             # Create a new item for the links list
             display_text = f"{label or url}"
@@ -223,135 +250,76 @@ class AddTaskDialog(QDialog):
             item.setData(Qt.ItemDataRole.UserRole, {"url": url, "label": label})
             self.links_list.addItem(item)
 
+    @debug_method
     def edit_link(self):
         """Edit the selected link"""
+        debug.debug("Editing selected link")
         selected_items = self.links_list.selectedItems()
         if not selected_items:
+            debug.debug("No link selected for editing")
             return
             
         item = selected_items[0]
         link_data = item.data(Qt.ItemDataRole.UserRole)
+        debug.debug(f"Editing link: URL={link_data['url']}, Label={link_data['label']}")
         
         link_dialog = LinkDialog(self, link_data["url"], link_data["label"])
         if link_dialog.exec():
             url = link_dialog.url_input.text().strip()
             label = link_dialog.label_input.text().strip()
+            debug.debug(f"Link updated: URL={url}, Label={label}")
             
             # Update the item
             display_text = f"{label or url}"
             item.setText(display_text)
             item.setData(Qt.ItemDataRole.UserRole, {"url": url, "label": label})
 
+    @debug_method
     def remove_link(self):
         """Remove the selected link"""
+        debug.debug("Removing selected link")
         selected_items = self.links_list.selectedItems()
         if not selected_items:
+            debug.debug("No link selected for removal")
             return
             
         row = self.links_list.row(selected_items[0])
         self.links_list.takeItem(row)
+        debug.debug(f"Link removed from row {row}")
         
         # Update button state
         self.update_link_buttons()
 
+    @debug_method
     def update_link_buttons(self):
         """Enable/disable edit and remove buttons based on selection"""
+        debug.debug("Updating link buttons state")
         has_selection = len(self.links_list.selectedItems()) > 0
         self.edit_link_btn.setEnabled(has_selection)
         self.remove_link_btn.setEnabled(has_selection)
+        debug.debug(f"Link buttons enabled: {has_selection}")
 
-        layout = QVBoxLayout(self)
-        
-        form_layout = QFormLayout()
-        form_layout.setSpacing(10)
-        
-        # Title
-        self.title_input = QLineEdit()
-        self.title_input.setFixedHeight(30)
-        form_layout.addRow("Title:", self.title_input)
-        
-        # Description
-        self.description_input = QTextEdit()
-        self.description_input.setMinimumHeight(80)
-        form_layout.addRow("Description:", self.description_input)
-        
-        # Links
-        self.links_widget = LinkListWidget(self)
-        form_layout.addRow("Links:", self.links_widget)
-        
-        # Files - NEW SECTION
-        self.files_widget = FileListWidget(self)
-        form_layout.addRow("Files:", self.files_widget)
-        
-        # Status
-        self.status_combo = QComboBox()
-        self.status_combo.setFixedHeight(30)
-        form_layout.addRow("Status:", self.status_combo)
-        
-        # Priority
-        self.priority_combo = QComboBox()
-        self.priority_combo.setFixedHeight(30)
-        self.load_priorities()
-        form_layout.addRow("Priority:", self.priority_combo)
-        
-        # Due Date
-        self.due_date_edit = QDateEdit()
-        self.due_date_edit.setFixedHeight(30)
-        self.due_date_edit.setCalendarPopup(True)
-        self.due_date_edit.setDate(QDate(2000, 1, 1))  # Default empty date
-        self.due_date_edit.setSpecialValueText("No Due Date")
-        form_layout.addRow("Due Date:", self.due_date_edit)
-        
-        # Category
-        self.category_combo = QComboBox()
-        self.category_combo.setFixedHeight(30)
-        self.load_categories()
-        form_layout.addRow("Category:", self.category_combo)
-        
-        # Parent Task
-        self.parent_combo = QComboBox()
-        self.parent_combo.setFixedHeight(30)
-        self.load_possible_parents()
-        form_layout.addRow("Parent Task:", self.parent_combo)
-        
-        layout.addLayout(form_layout)
-        
-        # Buttons
-        button_layout = QHBoxLayout()
-        save_btn = QPushButton("Save")
-        save_btn.setFixedHeight(30)
-        save_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFixedHeight(30)
-        cancel_btn.clicked.connect(self.reject)
-        button_layout.addWidget(save_btn)
-        button_layout.addWidget(cancel_btn)
-        layout.addLayout(button_layout)
-        
-        # Set tab order
-        self.setTabOrder(self.title_input, self.description_input)
-        self.setTabOrder(self.description_input, self.status_combo)
-        self.setTabOrder(self.status_combo, self.priority_combo)
-        self.setTabOrder(self.priority_combo, self.due_date_edit)
-        self.setTabOrder(self.due_date_edit, self.category_combo)
-        self.setTabOrder(self.category_combo, self.parent_combo)
-        self.setTabOrder(self.parent_combo, save_btn)
-        self.setTabOrder(save_btn, cancel_btn)
-    
+    @debug_method
     def load_categories(self):
+        debug.debug("Loading categories")
         self.category_combo.addItem("None", None)
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id, name FROM categories ORDER BY name")
+            categories = cursor.fetchall()
+            debug.debug(f"Loaded {len(categories)} categories from database")
             for cat_id, name in cursor.fetchall():
                 self.category_combo.addItem(name, cat_id)
     
+    @debug_method
     def load_statuses(self):
         """Load statuses from the database"""
+        debug.debug("Loading statuses")
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM statuses ORDER BY display_order")
             statuses = cursor.fetchall()
+            debug.debug(f"Loaded {len(statuses)} statuses from database")
             
             for status in statuses:
                 self.status_combo.addItem(status[0])
@@ -359,9 +327,12 @@ class AddTaskDialog(QDialog):
             # Default to "Not Started" if it exists
             not_started_index = self.status_combo.findText("Not Started")
             if not_started_index >= 0:
+                debug.debug("Setting default status to 'Not Started'")
                 self.status_combo.setCurrentIndex(not_started_index)
     
+    @debug_method
     def load_possible_parents(self):
+        debug.debug("Loading possible parent tasks")
         self.parent_combo.addItem("None", None)
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -372,7 +343,9 @@ class AddTaskDialog(QDialog):
                 WHERE t.status != 'Completed'
                 ORDER BY t.priority, t.title
             """)
-            for task_id, title, priority in cursor.fetchall():
+            tasks = cursor.fetchall()
+            debug.debug(f"Loaded {len(tasks)} possible parent tasks")
+            for task_id, title, priority in tasks:
                 # Format as [Priority]: Task Title
                 display_text = f"[{priority}]: {title}"
                 self.parent_combo.addItem(display_text, task_id)
@@ -384,7 +357,9 @@ class EditTaskDialog(QDialog):
         from database.database_manager import get_db_manager
         return get_db_manager().get_connection()
     
+    @debug_method
     def __init__(self, task_data, parent=None):
+        debug.debug(f"Initializing EditTaskDialog for task: {task_data['title']}")
         super().__init__(parent)
         self.task_data = task_data
         self.setWindowTitle("Edit Task")
@@ -392,8 +367,11 @@ class EditTaskDialog(QDialog):
         self.setMinimumHeight(500)
         self.setup_ui()
         self.load_statuses()
+        debug.debug("EditTaskDialog initialization complete")
 
+    @debug_method
     def setup_ui(self):
+        debug.debug("Setting up EditTaskDialog UI")
         layout = QVBoxLayout(self)
         
         form_layout = QFormLayout()
@@ -459,10 +437,13 @@ class EditTaskDialog(QDialog):
             try:
                 due_date = QDate.fromString(self.task_data['due_date'], "yyyy-MM-dd")
                 self.due_date_edit.setDate(due_date)
+                debug.debug(f"Set due date: {self.task_data['due_date']}")
             except ValueError:
                 self.due_date_edit.setDate(QDate(2000, 1, 1))  # Default empty date
+                debug.error(f"Invalid due date format: {self.task_data['due_date']}")
         else:
             self.due_date_edit.setDate(QDate(2000, 1, 1))  # Default empty date
+            debug.debug("No due date set")
             
         self.due_date_edit.setSpecialValueText("No Due Date")
         right_column.addRow("Due Date:", self.due_date_edit)
@@ -535,19 +516,23 @@ class EditTaskDialog(QDialog):
         self.setTabOrder(self.priority_combo, self.category_combo)
         self.setTabOrder(self.category_combo, self.due_date_edit)
         self.setTabOrder(self.due_date_edit, save_btn)
-        self.setTabOrder(save_btn, cancel_btn)        
+        self.setTabOrder(save_btn, cancel_btn)
+        debug.debug("EditTaskDialog UI setup complete")
 
     def get_data(self):
         return self.data
 
+    @debug_method
     def load_priorities(self):
         """Load priorities for editing a task"""
+        debug.debug("Loading priorities")
         self.priority_combo.clear()
         
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id, name FROM priorities ORDER BY display_order")
             priorities = cursor.fetchall()
+            debug.debug(f"Loaded {len(priorities)} priorities from database")
             
             # Add all priorities to the combo box
             for pri_id, name in priorities:
@@ -555,6 +540,7 @@ class EditTaskDialog(QDialog):
                 
                 # If this is the current priority of the task, select it
                 if name == self.task_data['priority']:
+                    debug.debug(f"Setting current priority: {name}")
                     self.priority_combo.setCurrentIndex(self.priority_combo.count() - 1)
         
         # If no matching priority was found (or priority is None),
@@ -562,14 +548,18 @@ class EditTaskDialog(QDialog):
         if self.task_data['priority'] is None or self.priority_combo.currentText() != self.task_data['priority']:
             unprioritized_index = self.priority_combo.findText("Unprioritized")
             if unprioritized_index >= 0:
+                debug.debug("Setting default priority to 'Unprioritized'")
                 self.priority_combo.setCurrentIndex(unprioritized_index)        
 
+    @debug_method
     def load_statuses(self):
         """Load statuses from the database"""
+        debug.debug("Loading statuses")
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM statuses ORDER BY display_order")
             statuses = cursor.fetchall()
+            debug.debug(f"Loaded {len(statuses)} statuses from database")
             
             for status in statuses:
                 self.status_combo.addItem(status[0])
@@ -578,25 +568,32 @@ class EditTaskDialog(QDialog):
             current_status = self.task_data.get('status', 'Not Started')
             index = self.status_combo.findText(current_status)
             if index >= 0:
+                debug.debug(f"Setting current status: {current_status}")
                 self.status_combo.setCurrentIndex(index)
 
+    @debug_method
     def load_links(self):
         """Load existing links for the task"""
+        debug.debug(f"Loading links for task: {self.task_data['id']}")
         try:
             # Get links from the task_data (passed in during initialization)
             links = self.task_data.get('links', [])
+            debug.debug(f"Found {len(links)} links to load")
             self.links_widget.set_links(links)
         except Exception as e:
-            print(f"Error loading links: {e}")
+            debug.error(f"Error loading links: {e}")
             import traceback
             traceback.print_exc()
 
+    @debug_method
     def add_link(self):
         """Add a new link to the list"""
+        debug.debug("Adding new link")
         link_dialog = LinkDialog(self)
         if link_dialog.exec():
             url = link_dialog.url_input.text().strip()
             label = link_dialog.label_input.text().strip()
+            debug.debug(f"Link added: URL={url}, Label={label}")
             
             # Create a new item for the links list
             display_text = f"{label or url}"
@@ -604,19 +601,24 @@ class EditTaskDialog(QDialog):
             item.setData(Qt.ItemDataRole.UserRole, {"url": url, "label": label, "id": None})
             self.links_list.addItem(item)
 
+    @debug_method
     def edit_link(self):
         """Edit the selected link"""
+        debug.debug("Editing selected link")
         selected_items = self.links_list.selectedItems()
         if not selected_items:
+            debug.debug("No link selected for editing")
             return
             
         item = selected_items[0]
         link_data = item.data(Qt.ItemDataRole.UserRole)
+        debug.debug(f"Editing link: URL={link_data['url']}, Label={link_data['label']}")
         
         link_dialog = LinkDialog(self, link_data["url"], link_data["label"])
         if link_dialog.exec():
             url = link_dialog.url_input.text().strip()
             label = link_dialog.label_input.text().strip()
+            debug.debug(f"Link updated: URL={url}, Label={label}")
             
             # Update the item
             display_text = f"{label or url}"
@@ -629,38 +631,51 @@ class EditTaskDialog(QDialog):
                 "id": link_data.get("id")
             })
 
+    @debug_method
     def remove_link(self):
         """Remove the selected link"""
+        debug.debug("Removing selected link")
         selected_items = self.links_list.selectedItems()
         if not selected_items:
+            debug.debug("No link selected for removal")
             return
             
         row = self.links_list.row(selected_items[0])
         self.links_list.takeItem(row)
+        debug.debug(f"Link removed from row {row}")
         
         # Update button state
         self.update_link_buttons()
 
+    @debug_method
     def update_link_buttons(self):
         """Enable/disable edit and remove buttons based on selection"""
+        debug.debug("Updating link buttons state")
         has_selection = len(self.links_list.selectedItems()) > 0
         self.edit_link_btn.setEnabled(has_selection)
         self.remove_link_btn.setEnabled(has_selection)
+        debug.debug(f"Link buttons enabled: {has_selection}")
         
+    @debug_method
     def accept(self):
+        debug.debug("Accept button clicked - collecting task data")
         # Collect data to be saved
         due_date = None
         if self.due_date_edit.date() != QDate(2000, 1, 1):  # Default empty date
             due_date = self.due_date_edit.date().toString("yyyy-MM-dd")
+            debug.debug(f"Due date set: {due_date}")
 
         # Get selected priority directly from combo box
         selected_priority = self.priority_combo.currentText()
+        debug.debug(f"Selected priority: {selected_priority}")
                 
         # Get links from the widget
         links = self.links_widget.get_links()
+        debug.debug(f"Links collected: {len(links)} links")
 
         # Get files from the widget
         files = self.files_widget.get_files()
+        debug.debug(f"Files collected: {len(files)} files")
 
         self.data = {
         'id': self.task_data['id'],
@@ -674,19 +689,27 @@ class EditTaskDialog(QDialog):
         'category': self.category_combo.currentText() if self.category_combo.currentIndex() > 0 else None,
         'parent_id': self.parent_combo.currentData()
         }
+        debug.debug(f"Task data collected: {self.data['title']}")
         super().accept()
 
+    @debug_method
     def load_categories(self):
+        debug.debug("Loading categories")
         self.category_combo.addItem("None", None)
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id, name FROM categories ORDER BY name")
+            categories = cursor.fetchall()
+            debug.debug(f"Loaded {len(categories)} categories from database")
             for cat_id, name in cursor.fetchall():
                 self.category_combo.addItem(name, cat_id)
                 if name == self.task_data['category']:
+                    debug.debug(f"Setting current category: {name}")
                     self.category_combo.setCurrentIndex(self.category_combo.count() - 1)
     
+    @debug_method
     def load_possible_parents(self):
+        debug.debug(f"Loading possible parent tasks for task {self.task_data['id']}")
         self.parent_combo.addItem("None", None)
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -699,22 +722,26 @@ class EditTaskDialog(QDialog):
                 ORDER BY t.priority, t.title
             """, (self.task_data['id'], self.task_data['id']))
             
+            tasks = cursor.fetchall()
+            debug.debug(f"Loaded {len(tasks)} possible parent tasks")
+            
             current_parent = self.task_data.get('parent_id')
-            for task_id, title, priority in cursor.fetchall():
+            for task_id, title, priority in tasks:
                 # Format as [Priority]: Task Title
                 display_text = f"[{priority}]: {title}"
                 self.parent_combo.addItem(display_text, task_id)
-                if task_id == current_parent:
-                    self.parent_combo.setCurrentIndex(self.parent_combo.count() - 1)
-    
+                
+    @debug_method
     def load_files(self):
         """Load existing files for the task"""
+        debug.debug(f"Loading files for task: {self.task_data['id']}")
         try:
             # Get files from the task_data (passed in during initialization)
             files = self.task_data.get('files', [])
+            debug.debug(f"Found {len(files)} files to load")
             self.files_widget.set_files(files)
         except Exception as e:
-            print(f"Error loading files: {e}")
+            debug.error(f"Error loading files: {e}")
             import traceback
             traceback.print_exc()
             
@@ -725,7 +752,9 @@ class EditStatusDialog(QDialog):
         from database.database_manager import get_db_manager
         return get_db_manager().get_connection()
    
+    @debug_method
     def __init__(self, status_id, parent=None):
+        debug.debug(f"Initializing EditStatusDialog for status ID: {status_id}")
         super().__init__(parent)
         self.status_id = status_id
         self.setWindowTitle("Edit Status")
@@ -753,18 +782,25 @@ class EditStatusDialog(QDialog):
         
         self.setLayout(layout)
         self.load_data()
+        debug.debug("EditStatusDialog initialization complete")
     
+    @debug_method
     def load_data(self):
+        debug.debug(f"Loading data for status ID: {self.status_id}")
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM statuses WHERE id = ?", (self.status_id,))
             name = cursor.fetchone()[0]
+            debug.debug(f"Loaded status name: {name}")
             self.name_input.setText(name)
     
+    @debug_method
     def save_changes(self):
+        debug.debug("Saving status changes")
         new_name = self.name_input.text().strip()
         
         if not new_name:
+            debug.debug("Status name is empty, showing warning")
             QMessageBox.warning(self, "Error", "Status name is required.")
             return
             
@@ -774,6 +810,7 @@ class EditStatusDialog(QDialog):
             # Get the old name
             cursor.execute("SELECT name FROM statuses WHERE id = ?", (self.status_id,))
             old_name = cursor.fetchone()[0]
+            debug.debug(f"Current status name: {old_name}")
             
             # Check for duplicate name - case insensitive
             cursor.execute("""
@@ -782,11 +819,13 @@ class EditStatusDialog(QDialog):
             """, (new_name, self.status_id))
             existing = cursor.fetchone()
             if existing:
+                debug.debug(f"Duplicate status name found: {existing[0]}")
                 QMessageBox.warning(self, "Error", 
                                    "A status with this name already exists.")
                 return
             
             # Update the status name
+            debug.debug(f"Updating status name to: {new_name}")
             cursor.execute("""
                 UPDATE statuses 
                 SET name = ?
@@ -794,6 +833,7 @@ class EditStatusDialog(QDialog):
                 (new_name, self.status_id))
             
             # Update all tasks that use the old status name
+            debug.debug(f"Updating tasks with old status name: {old_name}")
             cursor.execute("""
                 UPDATE tasks 
                 SET status = ?
@@ -801,6 +841,7 @@ class EditStatusDialog(QDialog):
                 (new_name, old_name))
                 
             conn.commit()
+            debug.debug("Status changes saved successfully")
         
         self.accept()
 
@@ -808,12 +849,17 @@ class EditStatusDialog(QDialog):
 class LinkListWidget(QWidget):
     """Widget for managing multiple links for a task"""
     
+    @debug_method
     def __init__(self, parent=None):
+        debug.debug("Initializing LinkListWidget")
         super().__init__(parent)
         self.links = []  # List of (id, url, label) tuples, id can be None for new links
         self.setup_ui()
+        debug.debug("LinkListWidget initialization complete")
     
+    @debug_method
     def setup_ui(self):
+        debug.debug("Setting up LinkListWidget UI")
         # Main layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -838,13 +884,17 @@ class LinkListWidget(QWidget):
         add_link_button.setIcon(QIcon.fromTheme("list-add"))
         add_link_button.clicked.connect(self.add_link)
         layout.addWidget(add_link_button)
+        debug.debug("LinkListWidget UI setup complete")
     
+    @debug_method
     def add_link(self):
         """Open dialog to add a new link"""
+        debug.debug("Adding new link")
         dialog = LinkDialog(self)
         if dialog.exec():
             url = dialog.url_input.text().strip()
             label = dialog.label_input.text().strip()
+            debug.debug(f"New link added: URL={url}, Label={label}")
             
             # Add to internal list (None for id means it's a new link)
             self.links.append((None, url, label))
@@ -852,14 +902,17 @@ class LinkListWidget(QWidget):
             # Update UI
             self.refresh_links()
     
+    @debug_method
     def edit_link(self, index):
         """Edit a link at the specified index"""
+        debug.debug(f"Editing link at index {index}")
         link_id, url, label = self.links[index]
         
         dialog = LinkDialog(self, url, label)
         if dialog.exec():
             new_url = dialog.url_input.text().strip()
             new_label = dialog.label_input.text().strip()
+            debug.debug(f"Link updated: URL={new_url}, Label={new_label}")
             
             # Update in internal list
             self.links[index] = (link_id, new_url, new_label)
@@ -867,8 +920,10 @@ class LinkListWidget(QWidget):
             # Update UI
             self.refresh_links()
     
+    @debug_method
     def remove_link(self, index):
         """Remove a link at the specified index"""
+        debug.debug(f"Removing link at index {index}")
         # Ask for confirmation
         confirm = QMessageBox.question(
             self, "Remove Link", 
@@ -877,23 +932,30 @@ class LinkListWidget(QWidget):
         )
         
         if confirm == QMessageBox.StandardButton.Yes:
+            debug.debug("Link removal confirmed")
             # Remove from internal list
             self.links.pop(index)
             
             # Update UI
             self.refresh_links()
     
+    @debug_method
     def set_links(self, links):
         """Set the list of links (id, url, label) tuples"""
+        debug.debug(f"Setting {len(links)} links")
         self.links = list(links)  # Create a copy
         self.refresh_links()
     
+    @debug_method
     def get_links(self):
         """Get the current list of links"""
+        debug.debug(f"Getting {len(self.links)} links")
         return list(self.links)  # Return a copy
     
+    @debug_method
     def refresh_links(self):
         """Refresh the links display"""
+        debug.debug("Refreshing links display")
         # Clear existing widgets
         while self.links_layout.count():
             item = self.links_layout.takeAt(0)
@@ -932,17 +994,23 @@ class LinkListWidget(QWidget):
         
         # Add a stretch at the end
         self.links_layout.addStretch()
+        debug.debug(f"Refreshed display with {len(self.links)} links")
 
 class LinkDialog(QDialog):
     """Dialog for adding or editing a link"""
     
+    @debug_method
     def __init__(self, parent=None, url="", label=""):
+        debug.debug(f"Initializing LinkDialog: URL={url}, Label={label}")
         super().__init__(parent)
         self.setWindowTitle("Link Details")
         self.setMinimumWidth(400)
         self.setup_ui(url, label)
+        debug.debug("LinkDialog initialization complete")
     
+    @debug_method
     def setup_ui(self, url, label):
+        debug.debug("Setting up LinkDialog UI")
         layout = QVBoxLayout(self)
         
         form_layout = QFormLayout()
@@ -971,17 +1039,22 @@ class LinkDialog(QDialog):
         button_layout.addWidget(save_btn)
         
         layout.addLayout(button_layout)
+        debug.debug("LinkDialog UI setup complete")
     
+    @debug_method
     def validate_and_accept(self):
         """Validate URL and accept dialog"""
+        debug.debug("Validating URL")
         url = self.url_input.text().strip()
         
         if not url:
+            debug.debug("URL is empty, showing warning")
             QMessageBox.warning(self, "Validation Error", "URL cannot be empty.")
             return
         
         # Basic URL validation
         if not (url.startswith("http://") or url.startswith("https://") or url.startswith("ftp://")):
+            debug.debug(f"URL missing protocol: {url}")
             # Ask user if they want to prepend https://
             reply = QMessageBox.question(
                 self, "Add Protocol",
@@ -990,21 +1063,29 @@ class LinkDialog(QDialog):
             )
             
             if reply == QMessageBox.StandardButton.Yes:
+                debug.debug(f"Adding https:// to URL: {url}")
                 self.url_input.setText(f"https://{url}")
             else:
+                debug.debug("User declined to add protocol, returning without accepting")
                 return
         
+        debug.debug("URL validation passed, accepting dialog")
         self.accept()
         
 class FileListWidget(QWidget):
     """Widget for managing multiple file attachments for a task"""
     
+    @debug_method
     def __init__(self, parent=None):
+        debug.debug("Initializing FileListWidget")
         super().__init__(parent)
         self.files = []  # List of (id, file_path, file_name) tuples, id can be None for new files
         self.setup_ui()
+        debug.debug("FileListWidget initialization complete")
     
+    @debug_method
     def setup_ui(self):
+        debug.debug("Setting up FileListWidget UI")
         # Main layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1029,9 +1110,12 @@ class FileListWidget(QWidget):
         add_file_button.setIcon(QIcon.fromTheme("list-add"))
         add_file_button.clicked.connect(self.add_file)
         layout.addWidget(add_file_button)
+        debug.debug("FileListWidget UI setup complete")
     
+    @debug_method
     def add_file(self):
         """Open dialog to select a new file"""
+        debug.debug("Opening file selection dialog")
         from PyQt6.QtWidgets import QFileDialog
         
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1039,42 +1123,51 @@ class FileListWidget(QWidget):
         )
         
         if file_path:
+            debug.debug(f"File selected: {file_path}")
             # Extract filename for display
             from pathlib import Path
             file_name = Path(file_path).name
             
             # Add to internal list (None for id means it's a new file)
             self.files.append((None, file_path, file_name))
+            debug.debug(f"Added file: {file_name}")
             
             # Update UI
             self.refresh_files()
     
+    @debug_method
     def edit_file(self, index):
         """Edit a file path at the specified index"""
+        debug.debug(f"Editing file at index {index}")
         file_id, old_path, old_name = self.files[index]
         
         from PyQt6.QtWidgets import QFileDialog
         
         # Start dialog in the directory of the current file if possible
         start_dir = str(Path(old_path).parent) if old_path else ""
+        debug.debug(f"Opening file dialog at: {start_dir}")
         
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Update File", start_dir, "All Files (*.*)"
         )
         
         if file_path:
+            debug.debug(f"New file selected: {file_path}")
             # Extract filename for display
             from pathlib import Path
             file_name = Path(file_path).name
             
             # Update in internal list
             self.files[index] = (file_id, file_path, file_name)
+            debug.debug(f"Updated file to: {file_name}")
             
             # Update UI
             self.refresh_files()
     
+    @debug_method
     def remove_file(self, index):
         """Remove a file at the specified index"""
+        debug.debug(f"Removing file at index {index}")
         # Ask for confirmation
         from PyQt6.QtWidgets import QMessageBox
         
@@ -1085,23 +1178,30 @@ class FileListWidget(QWidget):
         )
         
         if confirm == QMessageBox.StandardButton.Yes:
+            debug.debug("File removal confirmed")
             # Remove from internal list
             self.files.pop(index)
             
             # Update UI
             self.refresh_files()
     
+    @debug_method
     def set_files(self, files):
         """Set the list of files (id, file_path, file_name) tuples"""
+        debug.debug(f"Setting {len(files)} files")
         self.files = list(files)  # Create a copy
         self.refresh_files()
     
+    @debug_method
     def get_files(self):
         """Get the current list of files"""
+        debug.debug(f"Getting {len(self.files)} files")
         return list(self.files)  # Return a copy
     
+    @debug_method
     def refresh_files(self):
         """Refresh the files display"""
+        debug.debug("Refreshing files display")
         # Clear existing widgets
         while self.files_layout.count():
             item = self.files_layout.takeAt(0)
@@ -1146,36 +1246,27 @@ class FileListWidget(QWidget):
         
         # Add a stretch at the end
         self.files_layout.addStretch()
+        debug.debug(f"Refreshed display with {len(self.files)} files")
     
+    @debug_method
     def open_file(self, file_path):
         """Open a file with the default application"""
+        debug.debug(f"Attempting to open file: {file_path}")
         if not file_path:
+            debug.debug("No file path provided")
             return
             
         try:
             import os
             import platform
             
-            # Open file with default application based on platform
-            system = platform.system()
-            
-            if system == 'Windows':
-                os.startfile(file_path)
-            elif system == 'Darwin':  # macOS
-                import subprocess
-                subprocess.call(('open', file_path))
-            else:  # Linux and others
-                import subprocess
-                subprocess.call(('xdg-open', file_path))
-                
-        except Exception as e:
-            # Handle file not found or other errors
-            from PyQt6.QtWidgets import QMessageBox
-            
             # Check if file exists
-            from pathlib import Path
-            if not Path(file_path).exists():
-                # File doesn't exist, offer to update or remove
+            if not os.path.exists(file_path):
+                debug.debug(f"File does not exist: {file_path}")
+                # Handle file not found
+                from PyQt6.QtWidgets import QMessageBox
+                
+                debug.debug("Showing file not found dialog")
                 reply = QMessageBox.question(
                     self,
                     "File Not Found",
@@ -1185,17 +1276,40 @@ class FileListWidget(QWidget):
                 )
                 
                 if reply == QMessageBox.StandardButton.Yes:
+                    debug.debug("User chose to update file path")
                     # Find the index of this file in the list
                     for i, (_, path, _) in enumerate(self.files):
                         if path == file_path:
                             self.edit_file(i)
                             break
                 elif reply == QMessageBox.StandardButton.Discard:
+                    debug.debug("User chose to remove file")
                     # Remove the file
                     for i, (_, path, _) in enumerate(self.files):
                         if path == file_path:
                             self.remove_file(i)
                             break
-            else:
-                # Some other error occurred
-                QMessageBox.warning(self, "Error", f"Could not open file: {str(e)}")
+                return
+            
+            # Open file with default application based on platform
+            system = platform.system()
+            debug.debug(f"Opening file on platform: {system}")
+            
+            if system == 'Windows':
+                os.startfile(file_path)
+                debug.debug("File opened with Windows startfile")
+            elif system == 'Darwin':  # macOS
+                import subprocess
+                subprocess.call(('open', file_path))
+                debug.debug("File opened with macOS 'open' command")
+            else:  # Linux and others
+                import subprocess
+                subprocess.call(('xdg-open', file_path))
+                debug.debug("File opened with Linux 'xdg-open' command")
+                
+        except Exception as e:
+            debug.error(f"Error opening file: {e}")
+            
+            # Handle other errors if we have an item reference
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Error", f"Could not open file: {str(e)}")

@@ -9,11 +9,21 @@ from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtCore import Qt, QSignalBlocker
 import platform
 
+# Import debug utilities
+from utils.debug_logger import get_debug_logger
+from utils.debug_decorator import debug_method
+
+# Import UI components
 from ui.task_pill_preview import TaskPillPreviewWidget
 from ui.task_pill_delegate import TaskPillDelegate
 
+# Get debug logger instance
+debug = get_debug_logger()
+
 class CombinedDisplaySettingsWidget(QWidget):
+    @debug_method
     def __init__(self, main_window):
+        debug.debug("Initializing CombinedDisplaySettingsWidget")
         super().__init__()
         self.main_window = main_window
         self.settings = main_window.settings
@@ -24,9 +34,12 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         self.setup_ui()
         self.load_current_settings()
+        debug.debug("CombinedDisplaySettingsWidget initialized")
     
+    @debug_method
     def setup_ui(self):
         """Set up the main layout and components"""
+        debug.debug("Setting up main UI for CombinedDisplaySettingsWidget")
         # Create a main layout for the entire widget
         main_layout = QVBoxLayout(self)
         
@@ -34,6 +47,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         self._setup_header_section(main_layout)
         
         # Add scroll area for settings
+        debug.debug("Creating scroll area for settings")
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
@@ -44,9 +58,13 @@ class CombinedDisplaySettingsWidget(QWidget):
         content_layout.setSpacing(15)
         
         # Add all settings sections
+        debug.debug("Setting up font settings section")
         self._setup_font_settings(content_layout)
+        debug.debug("Setting up color settings section")
         self._setup_color_settings(content_layout)
+        debug.debug("Setting up panel layout section")
         self._setup_panel_layout(content_layout)
+        debug.debug("Setting up preview section")
         self._setup_preview_section(content_layout)
         
         # Set the content widget for the scroll area
@@ -57,13 +75,17 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         # Add bottom buttons
         self._setup_bottom_buttons(main_layout)
+        debug.debug("UI setup completed")
 
+    @debug_method
     def _setup_font_settings(self, parent_layout):
         """Set up the font settings section as three panels side by side with equal width"""
+        debug.debug("Creating font settings section with three panels")
         # Create horizontal layout for the three panels
         font_settings_layout = QHBoxLayout()
         
         # ===== PANEL 1: Font Family and Sizes =====
+        debug.debug("Creating font basics panel")
         font_basics_panel = QGroupBox("Font Basics")
         font_basics_layout = QVBoxLayout(font_basics_panel)
         
@@ -110,6 +132,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         font_basics_layout.addStretch()
         
         # ===== PANEL 2: Font Weight =====
+        debug.debug("Creating font weight panel")
         font_weight_panel = QGroupBox("Font Weight")
         font_weight_layout = QVBoxLayout(font_weight_panel)
         
@@ -135,6 +158,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         font_weight_layout.addStretch()
         
         # ===== PANEL 3: Style Options =====
+        debug.debug("Creating style options panel")
         style_options_panel = QGroupBox("Style Options")
         style_options_layout = QVBoxLayout(style_options_panel)
         
@@ -168,9 +192,12 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         # Add the horizontal layout to the parent layout
         parent_layout.addLayout(font_settings_layout)
+        debug.debug("Font settings section setup complete")
 
+    @debug_method
     def _populate_font_combo(self):
         """Populate the font family combo box with available fonts"""
+        debug.debug("Populating font family combo box")
         cross_platform_fonts = [
             "Arial", "Helvetica", "Times New Roman", "Times",
             "Courier New", "Courier", "Verdana", "Georgia",
@@ -179,6 +206,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         # Add system fonts based on platform
         system = platform.system()
+        debug.debug(f"Current platform: {system}")
         if system == "Windows":
             windows_fonts = ["Segoe UI", "Calibri", "Cambria", "Consolas"]
             for font in windows_fonts:
@@ -191,16 +219,22 @@ class CombinedDisplaySettingsWidget(QWidget):
                     cross_platform_fonts.append(font)
         
         # Add fonts to combo box
+        debug.debug(f"Adding {len(cross_platform_fonts)} fonts to combo box")
         self.font_family_combo.addItems(cross_platform_fonts)
         
         # Set default font based on platform
         default_font = "Segoe UI" if system == "Windows" else "San Francisco" if system == "Darwin" else "Arial"
         index = self.font_family_combo.findText(default_font)
         if index >= 0:
+            debug.debug(f"Setting default font to: {default_font}")
             self.font_family_combo.setCurrentIndex(index)
+        else:
+            debug.warning(f"Default font {default_font} not found in font list")
 
+    @debug_method
     def _setup_style_options(self):
         """Set up style options section"""
+        debug.debug("Setting up style options section")
         style_options_layout = QVBoxLayout()
         style_options_label = QLabel("Style Options:")
         style_options_layout.addWidget(style_options_label)
@@ -223,8 +257,10 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         return style_options_layout
 
+    @debug_method
     def _setup_font_weight(self):
         """Set up font weight section"""
+        debug.debug("Setting up font weight section")
         font_weight_layout = QVBoxLayout()
         font_weight_label = QLabel("Font Weight:")
         font_weight_layout.addWidget(font_weight_label)
@@ -247,8 +283,11 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         return font_weight_layout
 
+    @debug_method
     def _setup_color_settings(self, parent_layout):
         """Set up the color settings section"""
+        debug.debug("Setting up color settings section")
+        
         # Create all color buttons and hex fields first
         self.title_color_btn = QPushButton()
         self.title_color_hex = QLineEdit("#333333")
@@ -275,6 +314,7 @@ class CombinedDisplaySettingsWidget(QWidget):
             hex_field.setFixedWidth(80)
         
         # Connect signals
+        debug.debug("Connecting color buttons and hex fields signals")
         self.title_color_btn.clicked.connect(lambda: self.pick_color("title"))
         self.title_color_hex.textChanged.connect(lambda: self.update_color_from_hex("title"))
         self.desc_color_btn.clicked.connect(lambda: self.pick_color("description"))
@@ -338,9 +378,12 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         colors_group.setLayout(colors_layout)
         parent_layout.addWidget(colors_group)
-
+        debug.debug("Color settings section setup complete")
+        
+    @debug_method
     def _create_color_picker_compact(self, label_text, color_type, default_color):
         """Helper method to create a compact color picker column"""
+        debug.debug(f"Creating compact color picker for {color_type} with default {default_color}")
         color_layout = QVBoxLayout()
         label = QLabel(label_text)
         
@@ -381,10 +424,13 @@ class CombinedDisplaySettingsWidget(QWidget):
         color_layout.addWidget(label)
         color_layout.addLayout(picker_layout)
         
+        debug.debug(f"Compact color picker created for {color_type}")
         return color_layout
     
+    @debug_method
     def _create_color_picker(self, label_text, color_type, default_color):
         """Helper method to create a consistent color picker row"""
+        debug.debug(f"Creating standard color picker for {color_type} with default {default_color}")
         color_layout = QHBoxLayout()
         label = QLabel(label_text)
         label.setMinimumWidth(100)
@@ -423,10 +469,13 @@ class CombinedDisplaySettingsWidget(QWidget):
         color_layout.addWidget(color_hex)
         color_layout.addStretch()
         
+        debug.debug(f"Standard color picker created for {color_type}")
         return color_layout
 
+    @debug_method
     def _setup_panel_layout(self, parent_layout):
         """Set up the panel layout section"""
+        debug.debug("Setting up panel layout section")
         panel_layout_group = QGroupBox("Task Pill Layout")
         panel_layout = QHBoxLayout()
         
@@ -441,15 +490,16 @@ class CombinedDisplaySettingsWidget(QWidget):
             "None", "Category", "Status", "Priority", "Due Date",
             "Link", "Progress", "Completion Date", "Tag", "Files"
         ]
+        debug.debug(f"Adding {len(panel_options)} options to panel layout combo boxes")
         for combo in [self.top_left_combo, self.bottom_left_combo, 
                     self.top_right_combo, self.bottom_right_combo]:
             combo.addItems(panel_options)
         
         # Connect combo box signals to update preview directly
-        self.top_left_combo.currentIndexChanged.connect(self.force_preview_update)
-        self.bottom_left_combo.currentIndexChanged.connect(self.force_preview_update)
-        self.top_right_combo.currentIndexChanged.connect(self.force_preview_update)
-        self.bottom_right_combo.currentIndexChanged.connect(self.force_preview_update)
+        self.top_left_combo.currentTextChanged.connect(self.force_preview_update)
+        self.bottom_left_combo.currentTextChanged.connect(self.force_preview_update)
+        self.top_right_combo.currentTextChanged.connect(self.force_preview_update)
+        self.bottom_right_combo.currentTextChanged.connect(self.force_preview_update)
             
         # Left Panel Configuration
         left_panel_layout = QVBoxLayout()
@@ -503,9 +553,12 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         panel_layout_group.setLayout(panel_layout)
         parent_layout.addWidget(panel_layout_group)
+        debug.debug("Panel layout section setup complete")
 
+    @debug_method
     def _populate_panel_dropdowns(self):
         """Populate the panel dropdowns with content options"""
+        debug.debug("Populating panel dropdowns")
         options = [
             "None", "Category", "Status", "Priority", "Due Date",
             "Link", "Progress", "Completion Date", "Tag", "Files"
@@ -516,9 +569,12 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.bottom_left_combo.addItems(options)
         self.top_right_combo.addItems(options)
         self.bottom_right_combo.addItems(options)
+        debug.debug(f"Added {len(options)} options to each dropdown")
 
+    @debug_method
     def force_preview_update(self):
         """Force a direct update of the preview when panel dropdowns change"""
+        debug.debug("Forcing preview update due to panel dropdown change")
         # Get current settings
         left_contents = []
         right_contents = []
@@ -537,27 +593,42 @@ class CombinedDisplaySettingsWidget(QWidget):
         if self.bottom_right_combo.currentText() != "None":
             right_contents.append(self.bottom_right_combo.currentText())
         
+        # Use special values if the lists are empty
+        left_final = ["__NONE__"] if len(left_contents) == 0 else left_contents
+        right_final = ["__NONE__"] if len(right_contents) == 0 else right_contents
+        
+        debug.debug(f"Left panel contents: {left_final}")
+        debug.debug(f"Right panel contents: {right_final}")
+        
         # Save settings directly
-        self.settings.set_setting("left_panel_contents", left_contents)
-        self.settings.set_setting("right_panel_contents", right_contents)
+        self.settings.set_setting("left_panel_contents", left_final)
+        self.settings.set_setting("right_panel_contents", right_final)
+        
+        # Force settings to save to disk
+        self.settings.save_settings(self.settings.settings)
         
         # Directly modify the delegate if it exists
         if hasattr(self.task_preview, 'sample_tree') and self.task_preview.sample_tree:
             delegate = self.task_preview.sample_tree.itemDelegate()
             if delegate:
-                delegate.left_panel_contents = left_contents
+                debug.debug("Updating delegate panel contents directly")
+                delegate.left_panel_contents = left_contents  # Note: use actual empty list, not placeholder
                 delegate.right_panel_contents = right_contents
         
         # Force a complete recreation of the sample items
         if hasattr(self.task_preview, 'create_sample_items'):
+            debug.debug("Recreating sample items")
             self.task_preview.create_sample_items()
             
         # Force a viewport repaint
         if hasattr(self.task_preview, 'sample_tree') and self.task_preview.sample_tree:
+            debug.debug("Forcing viewport update")
             self.task_preview.sample_tree.viewport().update()
-
+    
+    @debug_method
     def _setup_preview_section(self, parent_layout):
         """Set up the preview section with a single group box"""
+        debug.debug("Setting up preview section")
         preview_group = QGroupBox("Preview")
         preview_layout = QVBoxLayout(preview_group)
         
@@ -567,6 +638,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         preview_layout.addWidget(instruction_label)
         
         # Create and add task pill preview widget WITHOUT its own group box
+        debug.debug("Creating TaskPillPreviewWidget")
         self.task_preview = TaskPillPreviewWidget(self, use_group_box=False)
         preview_layout.addWidget(self.task_preview)
         
@@ -575,9 +647,12 @@ class CombinedDisplaySettingsWidget(QWidget):
         preview_layout.setSpacing(5)
         
         parent_layout.addWidget(preview_group)
+        debug.debug("Preview section setup complete")
     
+    @debug_method
     def pick_color(self, color_type):
         """Open color picker dialog for the specified color type"""
+        debug.debug(f"Opening color picker for {color_type}")
         color_btn = None
         color_hex = None
         
@@ -599,11 +674,16 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         if color.isValid():
             hex_color = color.name()
+            debug.debug(f"Selected color for {color_type}: {hex_color}")
             color_btn.setStyleSheet(f"background-color: {hex_color}; border: 1px solid #666666;")
             color_hex.setText(hex_color)
+        else:
+            debug.debug(f"Color selection cancelled for {color_type}")
     
+    @debug_method
     def _setup_header_section(self, parent_layout):
         """Set up the header section with top buttons"""
+        debug.debug("Setting up header section")
         # Add top buttons for Save and Cancel (left-aligned)
         top_button_layout = QHBoxLayout()
         
@@ -630,9 +710,12 @@ class CombinedDisplaySettingsWidget(QWidget):
         top_button_layout.addStretch()  # Push buttons to the left by placing stretch AFTER the buttons
         
         parent_layout.addLayout(top_button_layout)
+        debug.debug("Header section setup complete")
 
+    @debug_method
     def _setup_bottom_buttons(self, parent_layout):
         """Set up the bottom button section (left-aligned)"""
+        debug.debug("Setting up bottom buttons")
         bottom_button_layout = QHBoxLayout()
         
         save_btn_bottom = QPushButton("Save Settings")
@@ -658,9 +741,12 @@ class CombinedDisplaySettingsWidget(QWidget):
         bottom_button_layout.addStretch()  # Push buttons to the left by placing stretch AFTER the buttons
         
         parent_layout.addLayout(bottom_button_layout)
+        debug.debug("Bottom buttons setup complete")
     
+    @debug_method
     def update_color_from_hex(self, color_type):
         """Update color button when hex value changes"""
+        debug.debug(f"Updating color from hex value for {color_type}")
         color_btn = None
         color_hex = None
         
@@ -678,15 +764,22 @@ class CombinedDisplaySettingsWidget(QWidget):
             color_hex = self.left_panel_color_hex
         
         hex_value = color_hex.text()
+        debug.debug(f"New hex value: {hex_value}")
+        
         if hex_value.startswith("#") and len(hex_value) == 7:
             try:
                 QColor(hex_value)  # Test if valid color
                 color_btn.setStyleSheet(f"background-color: {hex_value}; border: 1px solid #666666;")
-            except:
-                pass
+                debug.debug(f"Valid color, button updated for {color_type}")
+            except Exception as e:
+                debug.error(f"Invalid color format for {color_type}: {e}")
+        else:
+            debug.warning(f"Invalid hex format for {color_type}: {hex_value}")
     
+    @debug_method
     def save_settings(self):
         """Save all display settings to the settings manager and apply changes immediately"""
+        debug.debug("Saving all display settings")
         # Save font family and size
         self.settings.set_setting("font_family", self.font_family_combo.currentText())
         self.settings.set_setting("font_size", self.font_size_spin.value())
@@ -727,6 +820,8 @@ class CombinedDisplaySettingsWidget(QWidget):
         if self.bottom_right_combo.currentText() != "None":
             right_contents.append(self.bottom_right_combo.currentText())
         
+        debug.debug(f"Saving panel contents - Left: {left_contents}, Right: {right_contents}")
+        
         # Always save with 2 sections for consistency
         self.settings.set_setting("left_panel_sections", 2)
         self.settings.set_setting("right_panel_sections", 2)
@@ -737,37 +832,51 @@ class CombinedDisplaySettingsWidget(QWidget):
         # Save panel widths (though they're fixed, we still save them for consistency)
         self.settings.set_setting("left_panel_width", self.left_panel_width)
         self.settings.set_setting("right_panel_width", self.right_panel_width)
-        
+
+        # Explicitly save settings to disk
+        self.settings.save_settings(self.settings.settings)
+        debug.debug("Settings saved to disk")
+    
         # Notify the user
         QMessageBox.information(self, "Settings Saved", 
                             "Display settings have been saved. Changes will be applied immediately.")
+        debug.debug("User notified about successful settings save")
         
         # Update the preview
         if hasattr(self, 'task_preview'):
+            debug.debug("Updating preview after save")
             self.task_preview.update_preview()
         
         # APPLY CHANGES IMMEDIATELY
+        debug.debug("Applying changes to all tabs")
         self.apply_changes_to_all_tabs()
    
+    @debug_method
     def save_and_return(self):
-            """Save settings and return to task view"""
-            # First save all settings
-            self.save_settings()
-            
-            # Then return to task view
-            self.main_window.show_task_view()
+        """Save settings and return to task view"""
+        debug.debug("Saving settings and returning to task view")
+        # First save all settings
+        self.save_settings()
+        
+        # Then return to task view
+        debug.debug("Returning to task view")
+        self.main_window.show_task_view()
 
+    @debug_method
     def cancel_and_return(self):
         """Cancel changes and return to task view"""
+        debug.debug("Canceling changes and returning to task view")
         # Restore original settings
         self.load_current_settings()
         
         # Return to task view without saving
+        debug.debug("Returning to task view without saving")
         self.main_window.show_task_view()
-        # Close the settings window     
     
+    @debug_method
     def load_current_settings(self):
         """Load current settings from settings manager"""
+        debug.debug("Loading current settings from settings manager")
         # Block signals during loading to prevent multiple preview updates
         with QSignalBlocker(self.font_family_combo), \
              QSignalBlocker(self.font_size_spin), \
@@ -781,22 +890,33 @@ class CombinedDisplaySettingsWidget(QWidget):
             
             # Font settings
             font_family = self.settings.get_setting("font_family", "")
+            debug.debug(f"Loaded font family: {font_family}")
             if font_family:
                 index = self.font_family_combo.findText(font_family)
                 if index >= 0:
                     self.font_family_combo.setCurrentIndex(index)
+                else:
+                    debug.warning(f"Font family {font_family} not found in combo box")
             
             font_size = self.settings.get_setting("font_size", 0)
+            debug.debug(f"Loaded font size: {font_size}")
             if font_size:
                 self.font_size_spin.setValue(int(font_size))
             
             # Style options
-            self.bold_titles_check.setChecked(self.settings.get_setting("bold_titles", True))
-            self.italic_desc_check.setChecked(self.settings.get_setting("italic_descriptions", False))
-            self.compact_view_check.setChecked(self.settings.get_setting("compact_view_default", False))
+            bold_titles = self.settings.get_setting("bold_titles", True)
+            italic_descriptions = self.settings.get_setting("italic_descriptions", False)
+            compact_view_default = self.settings.get_setting("compact_view_default", False)
+            debug.debug(f"Loaded style options - Bold titles: {bold_titles}, Italic desc: {italic_descriptions}, Compact view: {compact_view_default}")
+            
+            self.bold_titles_check.setChecked(bold_titles)
+            self.italic_desc_check.setChecked(italic_descriptions)
+            self.compact_view_check.setChecked(compact_view_default)
             
             # Font weight
             weight = self.settings.get_setting("font_weight", 0)  # 0=Regular, 1=Medium, 2=Bold
+            debug.debug(f"Loaded font weight: {weight}")
+            
             if weight == 0:
                 self.regular_radio.setChecked(True)
             elif weight == 1:
@@ -808,6 +928,7 @@ class CombinedDisplaySettingsWidget(QWidget):
             title_color = self.settings.get_setting("title_color", "#333333")
             desc_color = self.settings.get_setting("description_color", "#666666")
             due_color = self.settings.get_setting("due_date_color", "#888888")
+            debug.debug(f"Loaded text colors - Title: {title_color}, Desc: {desc_color}, Due: {due_color}")
             
             self.title_color_hex.setText(title_color)
             self.desc_color_hex.setText(desc_color)
@@ -819,55 +940,94 @@ class CombinedDisplaySettingsWidget(QWidget):
             
             # Left panel settings
             left_panel_color = self.settings.get_setting("left_panel_color", "#FFFFFF")
+            left_panel_size = self.settings.get_setting("left_panel_size", 8)
+            left_panel_bold = self.settings.get_setting("left_panel_bold", False)
+            debug.debug(f"Loaded left panel settings - Color: {left_panel_color}, Size: {left_panel_size}, Bold: {left_panel_bold}")
+            
             self.left_panel_color_hex.setText(left_panel_color)
             self.left_panel_color_btn.setStyleSheet(f"background-color: {left_panel_color}; border: 1px solid #666666;")
 
-            left_panel_size = self.settings.get_setting("left_panel_size", 8)
             if left_panel_size:
                 self.left_panel_size_spin.setValue(int(left_panel_size))
 
-            self.left_panel_bold_check.setChecked(self.settings.get_setting("left_panel_bold", False))
+            self.left_panel_bold_check.setChecked(left_panel_bold)
             
             # Panel layout settings
             left_contents = self.settings.get_setting("left_panel_contents", ["Category", "Status"])
+            debug.debug(f"Loaded left panel contents: {left_contents}")
             
-            # Set top left content
+            # Handle the special "__NONE__" value
+            if left_contents == ["__NONE__"]:
+                debug.debug("Using empty list for left panel contents")
+                left_contents = []
+                
+            # Set top left content - index 0 = "None" if not present
+            self.top_left_combo.setCurrentIndex(0)  # Default to "None"
             if len(left_contents) > 0:
-                self.top_left_combo.setCurrentText(left_contents[0])
+                idx = self.top_left_combo.findText(left_contents[0])
+                if idx >= 0:
+                    debug.debug(f"Setting top left combo to: {left_contents[0]}")
+                    self.top_left_combo.setCurrentIndex(idx)
             
-            # Set bottom left content
+            # Set bottom left content - index 0 = "None" if not present  
+            self.bottom_left_combo.setCurrentIndex(0)  # Default to "None"
             if len(left_contents) > 1:
-                self.bottom_left_combo.setCurrentText(left_contents[1])
+                idx = self.bottom_left_combo.findText(left_contents[1])
+                if idx >= 0:
+                    debug.debug(f"Setting bottom left combo to: {left_contents[1]}")
+                    self.bottom_left_combo.setCurrentIndex(idx)
             
             # Right section content settings
             right_contents = self.settings.get_setting("right_panel_contents", ["Link", "Due Date"])
+            debug.debug(f"Loaded right panel contents: {right_contents}")
             
-            # Set top right content
+            # Handle the special "__NONE__" value
+            if right_contents == ["__NONE__"]:
+                debug.debug("Using empty list for right panel contents")
+                right_contents = []
+            
+            # Set top right content - index 0 = "None" if not present
+            self.top_right_combo.setCurrentIndex(0)  # Default to "None"
             if len(right_contents) > 0:
-                self.top_right_combo.setCurrentText(right_contents[0])
+                idx = self.top_right_combo.findText(right_contents[0])
+                if idx >= 0:
+                    debug.debug(f"Setting top right combo to: {right_contents[0]}")
+                    self.top_right_combo.setCurrentIndex(idx)
             
-            # Set bottom right content
+            # Set bottom right content - index 0 = "None" if not present
+            self.bottom_right_combo.setCurrentIndex(0)  # Default to "None"
             if len(right_contents) > 1:
-                self.bottom_right_combo.setCurrentText(right_contents[1])
+                idx = self.bottom_right_combo.findText(right_contents[1])
+                if idx >= 0:
+                    debug.debug(f"Setting bottom right combo to: {right_contents[1]}")
+                    self.bottom_right_combo.setCurrentIndex(idx)
+                    
+            # After loading settings, update the preview
+            if hasattr(self, 'task_preview'):
+                debug.debug("Updating preview after loading settings")
+                self.task_preview.update_preview()
+        
+        debug.debug("Current settings loaded successfully")
                 
-        # After loading settings, update the preview
-        if hasattr(self, 'task_preview'):
-            self.task_preview.update_preview()
-            
+    @debug_method
     def apply_changes_to_all_tabs(self):
         """Apply display settings changes to all task trees immediately"""
+        debug.debug("Applying display settings to all task trees")
         # Find the main window
         main_window = self.main_window
         
         # Get the tab widget from the main window
         if hasattr(main_window, 'tabs'):
             tabs = main_window.tabs
+            debug.debug(f"Found tabs widget with {tabs.count()} tabs")
             
             # Apply changes to each tab's task tree
+            updated_tabs = 0
             for i in range(tabs.count()):
                 tab = tabs.widget(i)
                 if hasattr(tab, 'task_tree'):
                     task_tree = tab.task_tree
+                    debug.debug(f"Updating task tree for tab {i}")
                     
                     # Create a new delegate with the updated settings
                     new_delegate = TaskPillDelegate(task_tree)
@@ -877,12 +1037,14 @@ class CombinedDisplaySettingsWidget(QWidget):
                     
                     # Force a viewport update to redraw with new settings
                     task_tree.viewport().update()
-                    
-            print("Display settings changes applied to all tabs")
+                    updated_tabs += 1
+            
+            debug.debug(f"Applied changes to {updated_tabs} task trees")
     
+    @debug_method
     def update_preview_now(self):
         """Immediately update settings and refresh the preview"""
-        print("PREVIEW DEBUG: update_preview_now called!")
+        debug.debug("Immediately updating preview")
         # Get current combo box values
         left_contents = []
         right_contents = []
@@ -901,14 +1063,16 @@ class CombinedDisplaySettingsWidget(QWidget):
         if self.bottom_right_combo.currentText() != "None":
             right_contents.append(self.bottom_right_combo.currentText())
         
+        debug.debug(f"Current panel contents - Left: {left_contents}, Right: {right_contents}")
+        
         # Save settings immediately
-        print(f"PREVIEW DEBUG: Saving settings: left={left_contents}, right={right_contents}")
+        debug.debug("Saving panel contents to settings")
         self.settings.set_setting("left_panel_contents", left_contents)
         self.settings.set_setting("right_panel_contents", right_contents)
         
         # Update the preview if it exists
         if hasattr(self, 'task_preview'):
-            print("PREVIEW DEBUG: Calling task_preview.update_preview()")
+            debug.debug("Updating preview")
             self.task_preview.update_preview()
         else:
-            print("PREVIEW DEBUG: Warning: task_preview doesn't exist!")
+            debug.warning("No task_preview found, cannot update preview")

@@ -9,56 +9,97 @@ import shutil
 import sqlite3
 import sys
 
+# Import the debug logger
+from utils.debug_logger import get_debug_logger
+debug = get_debug_logger()
+
 class SettingsManager:
     def __init__(self):
+        debug.debug("Initializing SettingsManager")
         # Define the settings file location in the user's home directory
         self.settings_dir = Path.home() / ".task_organizer"
         self.settings_file = self.settings_dir / "settings.json"
+        debug.debug(f"Settings file: {self.settings_file}")
         
         # Default settings
         self.default_settings = {
             "database_path": str(Path.home() / "Documents" / "TaskOrganizer" / "task_manager.db"),
             "theme": "light",
             "auto_backup": False,
-            "backup_interval_days": 7
+            "backup_interval_days": 7,
+            "left_panel_contents": [],
+            "right_panel_contents": [],
+            "left_panel_width": 100,
+            "right_panel_width": 100,
+            "left_panel_sections": 2,
+            "right_panel_sections": 2
         }
+        debug.debug(f"Default settings: {self.default_settings}")
         
         # Ensure settings directory exists
+        debug.debug(f"Ensuring settings directory exists: {self.settings_dir}")
         self.settings_dir.mkdir(parents=True, exist_ok=True)
         
         # Load or create settings
+        debug.debug("Loading settings")
         self.settings = self.load_settings()
     
     def load_settings(self):
         """Load settings from the JSON file or create default settings if the file doesn't exist."""
+        debug.debug(f"Loading settings from {self.settings_file}")
         if self.settings_file.exists():
             try:
                 with open(self.settings_file, 'r') as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError):
+                    settings = json.load(f)
+                    debug.debug(f"Settings loaded successfully: {settings}")
+                    return settings
+            except json.JSONDecodeError as e:
+                debug.error(f"Error loading settings file (JSON decode error): {e}")
+                # Additional details for debugging
+                import traceback
+                traceback.print_exc()
                 # If settings file is corrupted, use defaults
+                debug.debug("Using default settings due to JSON decode error")
+                return self.default_settings
+            except IOError as e:
+                debug.error(f"Error loading settings file (IO error): {e}")
+                # Additional details for debugging
+                import traceback
+                traceback.print_exc()
+                # If settings file can't be read, use defaults
+                debug.debug("Using default settings due to IO error")
                 return self.default_settings
         else:
             # Create new settings file with defaults
+            debug.debug("Settings file doesn't exist, creating with defaults")
             self.save_settings(self.default_settings)
             return self.default_settings
     
     def save_settings(self, settings):
         """Save settings to the JSON file."""
+        debug.debug(f"Saving settings to {self.settings_file}")
         try:
             with open(self.settings_file, 'w') as f:
                 json.dump(settings, f, indent=4)
+            
+            debug.debug(f"Settings values: left_panel_contents={settings.get('left_panel_contents', [])}, right_panel_contents={settings.get('right_panel_contents', [])}")
+            debug.debug(f"Settings saved to {self.settings_file}")
             return True
-        except IOError:
+        except IOError as e:
+            debug.error(f"Error saving settings: {e}")
             return False
     
     def get_setting(self, key, default=None):
         """Get a setting value by key."""
-        return self.settings.get(key, default)
+        value = self.settings.get(key, default)
+        debug.debug(f"Getting setting: {key} = {value}")
+        return value
     
     def set_setting(self, key, value):
         """Set a setting value and save to file."""
+        debug.debug(f"Setting setting: {key} = {value}")
         self.settings[key] = value
+        debug.debug(f"Settings after update: {self.settings}")
         return self.save_settings(self.settings)
     
     def prompt_for_database_location(self, parent_widget=None):
@@ -66,17 +107,20 @@ class SettingsManager:
         Prompt the user to choose a database location if not already set.
         Returns the database path.
         """
+        debug.debug("Prompting for database location")
         # Check if this is first run (no database path set or default still being used)
         db_path = Path(self.get_setting("database_path"))
         default_db_path = Path(self.default_settings["database_path"])
         
         if db_path == default_db_path and not db_path.exists():
+            debug.debug("First run detected, prompting for location")
             # First run, prompt for location
             msg = "Choose where to store your tasks database. Choose a location that's backed up regularly."
             QMessageBox.information(parent_widget, "Database Location", msg)
             
             # Get directory from user
             suggested_dir = db_path.parent
+            debug.debug(f"Suggesting directory: {suggested_dir}")
             db_dir = QFileDialog.getExistingDirectory(
                 parent_widget, 
                 "Select Database Directory", 
@@ -84,32 +128,40 @@ class SettingsManager:
             )
             
             if db_dir:  # User selected a directory
+                debug.debug(f"User selected directory: {db_dir}")
                 # Create full path including filename
                 new_db_path = Path(db_dir) / "task_manager.db"
                 
                 # Save the new path
+                debug.debug(f"Saving new database path: {new_db_path}")
                 self.set_setting("database_path", str(new_db_path))
                 
                 # Create directory if it doesn't exist
+                debug.debug(f"Ensuring parent directory exists: {new_db_path.parent}")
                 new_db_path.parent.mkdir(parents=True, exist_ok=True)
                 
                 return str(new_db_path)
             else:  # User cancelled, use default
+                debug.debug("User cancelled, using default path")
                 # Create directory if it doesn't exist
+                debug.debug(f"Ensuring parent directory exists: {db_path.parent}")
                 db_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Return the current path
+        debug.debug(f"Using database path: {db_path}")
         return str(db_path)
 
 
 class AppSettingsWidget(QWidget):
     def __init__(self, main_window):
+        debug.debug("Initializing AppSettingsWidget")
         super().__init__()
         self.main_window = main_window
         self.settings = main_window.settings
         self.setup_ui()
     
     def setup_ui(self):
+        debug.debug("Setting up AppSettingsWidget UI")
         layout = QVBoxLayout(self)
         
         # Create a horizontal layout for the two main panels
@@ -121,6 +173,7 @@ class AppSettingsWidget(QWidget):
         
         # Current database location
         current_db = self.settings.get_setting("database_path")
+        debug.debug(f"Current database path: {current_db}")
         db_location = QLabel(f"Current location: {current_db}")
         db_layout.addRow(db_location)
         
@@ -162,6 +215,7 @@ class AppSettingsWidget(QWidget):
         
         # Bee API Settings group with reduced width
         if hasattr(self.main_window, 'settings'):
+            debug.debug("Setting up Bee API settings group")
             bee_container = QHBoxLayout()
             
             bee_api_group = QGroupBox("Bee API Settings")
@@ -170,6 +224,7 @@ class AppSettingsWidget(QWidget):
             # Get API key and label from settings
             api_key = self.settings.get_setting("bee_api_key", "")
             api_key_label = self.settings.get_setting("bee_api_key_label", "")
+            debug.debug(f"API key configured: {bool(api_key)}, Label: {api_key_label}")
             
             if api_key:
                 # Display API key label or a default message
@@ -221,42 +276,56 @@ class AppSettingsWidget(QWidget):
         button_layout.addStretch()  # This pushes buttons to the left
         
         layout.addLayout(button_layout)
+        debug.debug("AppSettingsWidget UI setup complete")
     
     def save_settings(self):
+        debug.debug("Saving settings")
         QMessageBox.information(self, "Settings Saved", "Your settings have been saved.")
     
     def change_database_location(self):
+        debug.debug("Changing database location")
         current_path = Path(self.settings.get_setting("database_path"))
+        debug.debug(f"Current database path: {current_path}")
+        
         db_dir = QFileDialog.getExistingDirectory(
             self, "Select Database Directory", str(current_path.parent))
         
         if db_dir:
+            debug.debug(f"User selected directory: {db_dir}")
             new_path = Path(db_dir) / current_path.name
+            debug.debug(f"New database path: {new_path}")
             
             # Ask if user wants to copy existing database
             if current_path.exists():
+                debug.debug("Existing database found, asking about copying")
                 reply = QMessageBox.question(self, 'Move Database', 
                                             'Do you want to copy the existing database to the new location?',
                                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
                 if reply == QMessageBox.StandardButton.Yes:
                     try:
                         # Create directory if it doesn't exist
+                        debug.debug(f"Creating directory: {new_path.parent}")
                         new_path.parent.mkdir(parents=True, exist_ok=True)
                         # Copy database
+                        debug.debug(f"Copying database from {current_path} to {new_path}")
                         shutil.copy2(current_path, new_path)
                     except Exception as e:
+                        debug.error(f"Failed to copy database: {e}")
                         QMessageBox.critical(self, "Error", f"Failed to copy database: {str(e)}")
                         return
             
             # Save the new database location
+            debug.debug(f"Saving new database path: {new_path}")
             self.settings.set_setting("database_path", str(new_path))
             
             # Update UI
+            debug.debug("Database location updated, showing notification")
             QMessageBox.information(self, "Database Location Changed", 
                                    "Database location has been changed. The application will need to be restarted.")       
     
     def delete_bee_api_key(self):
         """Delete the stored Bee API key"""
+        debug.debug("Deleting Bee API key")
         from PyQt6.QtWidgets import QMessageBox
         
         # Confirm deletion
@@ -269,30 +338,42 @@ class AppSettingsWidget(QWidget):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
+            debug.debug("User confirmed deletion of Bee API key")
             # Delete key from settings
             self.settings.set_setting("bee_api_key", "")
             self.settings.set_setting("bee_api_key_label", "")
             
             # Refresh the UI
+            debug.debug("Refreshing UI after key deletion")
             self.setup_ui()
             
             QMessageBox.information(self, "API Key Deleted", "Your Bee API key has been deleted.")
+        else:
+            debug.debug("User cancelled Bee API key deletion")
 
     def add_bee_api_key(self):
         """Add a new Bee API key"""
+        debug.debug("Adding Bee API key")
         from ui.bee_api_dialog import BeeApiKeyDialog
         
         dialog = BeeApiKeyDialog(self)
         if dialog.exec():
+            debug.debug("Bee API key dialog accepted")
             # Get key and label
             api_key = dialog.get_api_key()
             key_label = dialog.get_key_label()
             
             if api_key:
+                debug.debug(f"Saving Bee API key (label: {key_label})")
                 # Save to settings
                 self.settings.set_setting("bee_api_key", api_key)
                 if key_label:
                     self.settings.set_setting("bee_api_key_label", key_label)
                 
                 # Refresh the UI
+                debug.debug("Refreshing UI after adding API key")
                 self.setup_ui()
+            else:
+                debug.debug("No API key provided")
+        else:
+            debug.debug("Bee API key dialog cancelled")

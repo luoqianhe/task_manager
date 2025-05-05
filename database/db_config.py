@@ -12,6 +12,10 @@ import sqlite3
 # Add parent directory to path to find the ui package
 sys.path.append(str(Path(__file__).parent.parent))
 
+# Import the debug logger first
+from utils.debug_logger import get_debug_logger
+debug = get_debug_logger()
+
 class DatabaseConfig:
     # Singleton instance
     _instance = None
@@ -21,6 +25,7 @@ class DatabaseConfig:
     
     def __new__(cls):
         if cls._instance is None:
+            debug.debug("Creating new DatabaseConfig instance")
             cls._instance = super(DatabaseConfig, cls).__new__(cls)
             cls._instance._initialized = False
         return cls._instance
@@ -30,29 +35,32 @@ class DatabaseConfig:
         if self._initialized:
             return
             
+        debug.debug("Initializing DatabaseConfig")
         self._initialized = True
         self._load_path_from_settings()
     
     def _load_path_from_settings(self):
         """Load the database path from settings"""
         try:
+            debug.debug("Loading database path from settings")
             # Import the settings manager
             from ui.app_settings import SettingsManager
             settings = SettingsManager()
             
             # Get path from settings
             self._db_path = Path(settings.get_setting("database_path"))
-            print(f"Loaded database path from settings: {self._db_path}")
+            debug.debug(f"Loaded database path from settings: {self._db_path}")
         except Exception as e:
             # Fallback to default if settings can't be loaded
             self._db_path = Path.home() / "Documents" / "TaskOrganizer" / "task_manager.db"
-            print(f"Error loading path from settings: {e}")
-            print(f"Using default path: {self._db_path}")
+            debug.error(f"Error loading path from settings: {e}")
+            debug.debug(f"Using default path: {self._db_path}")
     
     @property
     def path(self):
         """Get the current database path"""
         if self._db_path is None:
+            debug.debug("Database path not set, loading from settings")
             self._load_path_from_settings()
         return self._db_path
     
@@ -64,23 +72,24 @@ class DatabaseConfig:
         
         # Update the stored path
         old_path = self._db_path
-        self._db_path = new_path
-        
-        print(f"Database path changed from {old_path} to {new_path}")
-        
+        if(old_path != new_path):
+            debug.debug(f"Changing database path from {old_path} to {new_path}")
+            self._db_path = new_path
+
         # Update settings if possible
         try:
+            debug.debug("Updating database path in settings")
             from ui.app_settings import SettingsManager
             settings = SettingsManager()
             settings.set_setting("database_path", str(new_path))
         except Exception as e:
-            print(f"Error updating path in settings: {e}")
+            debug.error(f"Error updating path in settings: {e}")
     
     def ensure_directory_exists(self):
         """Create the database directory if it doesn't exist"""
         directory = self.path.parent
         if not directory.exists():
-            print(f"Creating database directory: {directory}")
+            debug.debug(f"Creating database directory: {directory}")
             directory.mkdir(parents=True, exist_ok=True)
     
     def connection(self):
@@ -88,6 +97,7 @@ class DatabaseConfig:
         # Ensure directory exists
         self.ensure_directory_exists()
         
+        debug.debug(f"Creating new connection to {self.path}")
         # Create connection
         conn = sqlite3.connect(self.path)
         
@@ -99,15 +109,17 @@ class DatabaseConfig:
     
     def database_exists(self):
         """Check if the database file exists"""
-        return self.path.exists()
+        exists = self.path.exists()
+        debug.debug(f"Checking if database exists at {self.path}: {exists}")
+        return exists
     
     def create_database(self):
         """Create a new database with all required tables"""
         if self.database_exists():
-            print(f"Database already exists at {self.path}")
+            debug.debug(f"Database already exists at {self.path}")
             return True
             
-        print(f"Creating new database at {self.path}")
+        debug.debug(f"Creating new database at {self.path}")
         self.ensure_directory_exists()
         
         try:
@@ -122,16 +134,16 @@ class DatabaseConfig:
             conn.commit()
             conn.close()
             
-            print("Database created successfully")
+            debug.debug("Database created successfully")
             return True
         except Exception as e:
-            print(f"Error creating database: {e}")
+            debug.error(f"Error creating database: {e}")
             return False
 
     def _create_tables(self, cursor):
         """Create all database tables"""
         # Create categories table
-        print("Creating categories table...")
+        debug.debug("Creating categories table")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS categories (
                 id INTEGER PRIMARY KEY,
@@ -155,10 +167,10 @@ class DatabaseConfig:
                 INSERT INTO categories (name, color)
                 VALUES (?, ?)
             """, default_categories)
-            print("Inserted default categories")
+            debug.debug("Inserted default categories")
         
         # Create priorities table
-        print("Creating priorities table...")
+        debug.debug("Creating priorities table")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS priorities (
                 id INTEGER PRIMARY KEY,
@@ -182,10 +194,10 @@ class DatabaseConfig:
                 INSERT INTO priorities (name, color, display_order)
                 VALUES (?, ?, ?)
             """, default_priorities)
-            print("Inserted default priorities")
+            debug.debug("Inserted default priorities")
         
         # Create statuses table
-        print("Creating statuses table...")
+        debug.debug("Creating statuses table")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS statuses (
                 id INTEGER PRIMARY KEY,
@@ -210,10 +222,10 @@ class DatabaseConfig:
                 INSERT INTO statuses (name, color, display_order)
                 VALUES (?, ?, ?)
             """, default_statuses)
-            print("Inserted default statuses")
+            debug.debug("Inserted default statuses")
         
         # Create tasks table
-        print("Creating tasks table...")
+        debug.debug("Creating tasks table")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY,
@@ -236,7 +248,7 @@ class DatabaseConfig:
         """)
         
         # Create links table for multiple links per task
-        print("Creating links table...")
+        debug.debug("Creating links table")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS links (
                 id INTEGER PRIMARY KEY,
@@ -253,8 +265,8 @@ class DatabaseConfig:
             CREATE INDEX IF NOT EXISTS idx_links_task_id ON links (task_id)
         """)
         
-            # Create files table for file attachments
-        print("Creating files table...")
+        # Create files table for file attachments
+        debug.debug("Creating files table")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS files (
                 id INTEGER PRIMARY KEY,
@@ -270,7 +282,7 @@ class DatabaseConfig:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_files_task_id ON files (task_id)
         """)
-        print("All tables created successfully")
+        debug.debug("All tables created successfully")
     
 # Create a global instance to be imported by other modules
 db_config = DatabaseConfig()
@@ -278,19 +290,25 @@ db_config = DatabaseConfig()
 # Simple wrapper functions for easy access
 def get_db_path():
     """Get the database path"""
+    debug.debug("get_db_path called")
     return db_config.path
 
 def set_db_path(path):
     """Set the database path"""
+    debug.debug(f"set_db_path called with path: {path}")
     db_config.set_path(path)
     return db_config.path
 
 def get_db_connection():
     """Get a database connection"""
+    debug.debug("get_db_connection called")
     return db_config.connection()
 
 def ensure_db_exists():
     """Ensure the database exists and is initialized"""
+    debug.debug("ensure_db_exists called")
     if not db_config.database_exists():
+        debug.debug("Database does not exist, creating it")
         return db_config.create_database()
+    debug.debug("Database exists")
     return True

@@ -1,5 +1,34 @@
-# src/main.py - updated with proper database initialization
+# src/main.py - updated with debugging
+from utils.debug_logger import get_debug_logger
+from utils.debug_init import init_debugger
+import argparse
 
+# Create argument parser
+parser = argparse.ArgumentParser(description='Task Organizer')
+parser.add_argument('--debug', action='store_true', help='Enable debugging')
+parser.add_argument('--debug-file', action='store_true', help='Log to file')
+parser.add_argument('--debug-console', action='store_true', help='Log to console')
+parser.add_argument('--debug-file-path', type=str, help='Path to log file')
+args = parser.parse_args()
+
+# Set arguments
+args.debug = True  # Enable debugging
+args.debug_file = True  # Enable file logging
+args.debug_console = False  # Keep console logging if desired
+
+# Initialize debugger with file logging enabled
+debug = init_debugger(args)
+
+# Import the debugging utilities first
+from utils.debug_logger import get_debug_logger
+from utils.debug_decorator import debug_method
+from utils.debug_init import init_debugger
+
+# Initialize the debugger early
+debug = init_debugger()
+debug.debug("Starting Task Organizer application")
+
+# Existing imports
 from PyQt6.QtWidgets import (QMainWindow, QApplication, QWidget, QVBoxLayout, 
                            QHBoxLayout, QPushButton, QStackedWidget, QFileDialog, 
                            QMessageBox, QLabel, QTabWidget)
@@ -24,70 +53,92 @@ from database.db_config import db_config, ensure_db_exists
 
 # Global function for database connection used by all classes
 def get_global_connection():
+    debug.debug("Getting global database connection")
     return get_memory_db_manager().get_connection()
 
 class MainWindow(QMainWindow):
     
+    @debug_method
     def __init__(self):
+        debug.debug("Initializing MainWindow")
         super().__init__()
-        # self.setWindowTitle("Task Organizer")
         self.setGeometry(100, 100, 900, 600)
         
         # Initialize settings manager
+        debug.debug("Creating SettingsManager")
         self.settings = SettingsManager()
         
         # Set default display settings if not already set
         if not self.settings.get_setting("right_panel_contents"):
+            debug.debug("Setting default right_panel_contents")
             self.settings.set_setting("right_panel_contents", ["Link", "Due Date"])
         if not self.settings.get_setting("left_panel_contents"):
+            debug.debug("Setting default left_panel_contents")
             self.settings.set_setting("left_panel_contents", ["Category", "Status"])
         
         # Get database path from settings
+        debug.debug("Getting database path from settings")
         self.db_path = self.settings.prompt_for_database_location(self)
+        debug.debug(f"Database path: {self.db_path}")
         
         # Create stacked widget to hold both views
+        debug.debug("Creating stacked widget")
         self.stacked_widget = QStackedWidget()
         self.setCentralWidget(self.stacked_widget)
         
         # Initialize views
+        debug.debug("Initializing task view")
         self.init_task_view()
-        self.init_settings_view()  # This line should be here
+        debug.debug("Initializing settings view")
+        self.init_settings_view()
         
         # Add widgets to the stack
+        debug.debug("Adding widgets to stack")
         self.stacked_widget.addWidget(self.task_widget)
         self.stacked_widget.addWidget(self.settings_widget)
         
         # Show task view by default
+        debug.debug("Showing task view")
         self.show_task_view()
-    
+        
+        debug.debug(f"MainWindow initialization complete. Settings: left_panel_contents={self.settings.get_setting('left_panel_contents')}, right_panel_contents={self.settings.get_setting('right_panel_contents')}")
+
+    @debug_method
     def init_settings_view(self):
-        print('Calling init_settings_view')
+        debug.debug('Creating settings view')
         self.settings_widget = QWidget()
         layout = QVBoxLayout(self.settings_widget)
         
         # Create tab widget for different settings sections
+        debug.debug('Creating settings tabs')
         self.settings_tabs = QTabWidget()
         
         # Create Combined Settings Manager tab
+        debug.debug('Creating Combined Settings tab')
         self.combined_settings = CombinedSettingsManager()
         self.settings_tabs.addTab(self.combined_settings, "Task Attributes")
         
         # Create Combined Display Settings tab
         try:
+            debug.debug('Creating Display Settings tab')
             from ui.combined_display_settings import CombinedDisplaySettingsWidget
             self.display_settings = CombinedDisplaySettingsWidget(self)
             self.settings_tabs.addTab(self.display_settings, "Display Settings")
         except Exception as e:
-            print(f"ERROR creating display settings widget: {e}")
+            debug.error(f"Error creating display settings widget: {e}")
         
         # Create App Settings tab (Bee API key management is still here)
+        debug.debug('Creating App Settings tab')
         self.app_settings = AppSettingsWidget(self)
         self.settings_tabs.addTab(self.app_settings, "App Settings")
         
         # Add tabs to layout
         layout.addWidget(self.settings_tabs)
+        debug.debug('Settings view initialized')
       
+    @debug_method
     def setup_shortcuts(self):
+        debug.debug("Setting up keyboard shortcuts")
         # New Task
         new_shortcut = QShortcut(QKeySequence.StandardKey.New, self)
         new_shortcut.activated.connect(self.show_add_dialog)
@@ -116,17 +167,26 @@ class MainWindow(QMainWindow):
         
         tab3_shortcut = QShortcut(QKeySequence("Ctrl+3"), self)
         tab3_shortcut.activated.connect(lambda: self.tabs.setCurrentIndex(2))
-        
+        debug.debug("Shortcuts setup complete")
+    
+    @debug_method
     def edit_selected_task(self):
+        debug.debug("Edit selected task invoked")
         if self.stacked_widget.currentIndex() == 0:  # Only when in task view
             current_tree = self.tabs.get_current_tree()
             if current_tree:
                 selected_items = current_tree.selectedItems()
                 if selected_items:
+                    debug.debug(f"Editing task: {selected_items[0].text(0)}")
                     current_tree.edit_task(selected_items[0])
+                else:
+                    debug.debug("No task selected to edit")
+            else:
+                debug.debug("No current tree available")
     
+    @debug_method
     def init_task_view(self):
-        print("DEBUG: MainWindow.init_task_view called")
+        debug.debug("Initializing task view")
         self.task_widget = QWidget()
         layout = QVBoxLayout(self.task_widget)
         
@@ -136,6 +196,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(header_layout)
         
         # Create and add tabbed widget
+        debug.debug("Creating task tab widget")
         self.tabs = TaskTabWidget(self)
         layout.addWidget(self.tabs)
         
@@ -188,27 +249,38 @@ class MainWindow(QMainWindow):
         self.tabs.setTabToolTip(0, "Current Tasks (Ctrl+1)")
         self.tabs.setTabToolTip(1, "Backlog (Ctrl+2)")
         self.tabs.setTabToolTip(2, "Completed Tasks (Ctrl+3)")
-    
-        # Debug priority headers
-        self.tabs.current_tasks_tab.task_tree.debug_priority_headers()
         
+        # Debug priority headers
+        debug.debug("Debugging priority headers")
+        self.tabs.current_tasks_tab.task_tree.debug_priority_headers()
+        debug.debug("Task view initialization complete")
+    
+    @debug_method
     def show_task_view(self):
+        debug.debug("Showing task view")
         self.stacked_widget.setCurrentIndex(0)
         # Refresh all tabs when returning from settings
+        debug.debug("Reloading all tabs")
         self.tabs.reload_all()
     
+    @debug_method
     def show_settings(self):
+        debug.debug("Showing settings view")
         self.stacked_widget.setCurrentIndex(1)
     
-    def show_add_dialog(self):
+    @debug_method
+    def show_add_dialog(self, checked=False):
+        debug.debug("Opening Add Task dialog")
         from ui.task_dialogs import AddTaskDialog
         from PyQt6.QtWidgets import QMessageBox
         from datetime import datetime
         
         # Get the current tab index
         current_tab_index = self.tabs.currentIndex()
+        debug.debug(f"Current tab index: {current_tab_index}")
         
         if current_tab_index == 2:  # Completed tab
+            debug.debug("Creating task in Completed tab")
             # Ask for confirmation when creating a completed task
             reply = QMessageBox.question(
                 self,
@@ -218,6 +290,7 @@ class MainWindow(QMainWindow):
             )
             
             if reply == QMessageBox.StandardButton.No:
+                debug.debug("User canceled creating completed task")
                 return  # User canceled, exit the function
             
             # User confirmed, proceed with creating a completed task
@@ -232,8 +305,10 @@ class MainWindow(QMainWindow):
             # Set current date/time as completion time
             # We'll store this in the data when task is created
             completion_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            debug.debug(f"Setting completion time: {completion_time}")
             
             if dialog.exec():
+                debug.debug("Completed task dialog accepted")
                 data = dialog.get_data()
                 
                 # Add the completion timestamp
@@ -242,12 +317,14 @@ class MainWindow(QMainWindow):
                 # Get the current tree and add the task
                 current_tree = self.tabs.get_current_tree()
                 if current_tree:
-                    current_tree.add_new_task(data)
+                    task_id = current_tree.add_new_task(data)
+                    debug.debug(f"Added completed task with ID: {task_id}")
                     
                     # Refresh all tabs
                     self.tabs.reload_all()
                     
         elif current_tab_index == 1:  # Backlog tab
+            debug.debug("Creating task in Backlog tab")
             # Creating a task in the Backlog tab
             dialog = AddTaskDialog(self)
             
@@ -260,6 +337,7 @@ class MainWindow(QMainWindow):
                 dialog.priority_combo.setCurrentIndex(unprioritized_index)
             
             if dialog.exec():
+                debug.debug("Backlog task dialog accepted")
                 # Ensure status is Backlog (in case user changed it)
                 data = dialog.get_data()
                 data['status'] = "Backlog"
@@ -267,12 +345,14 @@ class MainWindow(QMainWindow):
                 # Get the current tree and add the task
                 current_tree = self.tabs.get_current_tree()
                 if current_tree:
-                    current_tree.add_new_task(data)
+                    task_id = current_tree.add_new_task(data)
+                    debug.debug(f"Added backlog task with ID: {task_id}")
                     
                     # Refresh all tabs
                     self.tabs.reload_all()
                 
         else:  # Current Tasks tab (or any other future tab)
+            debug.debug("Creating task in Current Tasks tab")
             # Standard task creation process
             dialog = AddTaskDialog(self)
             
@@ -282,19 +362,24 @@ class MainWindow(QMainWindow):
                 dialog.priority_combo.setCurrentIndex(unprioritized_index)
             
             if dialog.exec():
+                debug.debug("Current task dialog accepted")
                 # Get the current tree and add the task
                 current_tree = self.tabs.get_current_tree()
                 if current_tree:
-                    current_tree.add_new_task(dialog.get_data())
+                    task_id = current_tree.add_new_task(dialog.get_data())
+                    debug.debug(f"Added current task with ID: {task_id}")
                     
                     # Refresh all tabs
                     self.tabs.reload_all()
     
+    @debug_method
     def export_to_csv(self):
+        debug.debug("Opening export to CSV dialog")
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Save CSV", "", "CSV Files (*.csv)")
         
         if file_path:
+            debug.debug(f"Exporting to CSV file: {file_path}")
             try:
                 with open(file_path, 'w', newline='') as file:
                     writer = csv.writer(file)
@@ -307,6 +392,7 @@ class MainWindow(QMainWindow):
                     memory_db = get_memory_db_manager()
                     
                     # Query all tasks with their parent titles
+                    debug.debug("Querying tasks for export")
                     tasks = memory_db.execute_query("""
                         SELECT t.title, t.description, t.link, t.status, t.priority, 
                                t.due_date, c.name, p.title as parent_title, t.completed_at
@@ -317,25 +403,35 @@ class MainWindow(QMainWindow):
                     """)
                     
                     # Write all tasks to CSV
+                    debug.debug(f"Writing {len(tasks)} tasks to CSV")
                     for task in tasks:
                         writer.writerow(task)
                 
+                debug.debug("Export completed successfully")
                 QMessageBox.information(self, "Success", "Export completed successfully!")
             except Exception as e:
+                debug.error(f"Error exporting data: {e}")
                 QMessageBox.critical(self, "Error", f"Error exporting data: {str(e)}")
+        else:
+            debug.debug("Export canceled by user")
 
+    @debug_method
     def import_from_csv(self):
+        debug.debug("Opening import from CSV dialog")
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Open CSV", "", "CSV Files (*.csv)")
         
         if file_path:
+            debug.debug(f"Importing from CSV file: {file_path}")
             try:
                 # First pass: create all items
                 items_by_title = {}
                 
                 with open(file_path, 'r', newline='') as file:
                     reader = csv.DictReader(file)
+                    row_count = 0
                     for row in reader:
+                        row_count += 1
                         data = {
                             'title': row['Title'],
                             'description': row.get('Description', ''),
@@ -352,8 +448,10 @@ class MainWindow(QMainWindow):
                             'data': data,
                             'parent_title': row.get('Parent', '')
                         }
+                    debug.debug(f"Read {row_count} rows from CSV")
                 
                 # Second pass: set parent relationships
+                debug.debug("Processing parent relationships")
                 memory_db = get_memory_db_manager()
                 conn = memory_db.get_connection()
                 cursor = conn.cursor()
@@ -367,26 +465,39 @@ class MainWindow(QMainWindow):
                         result = cursor.fetchone()
                         if result:
                             item_info['data']['parent_id'] = result[0]
+                            debug.debug(f"Set parent ID {result[0]} for task '{title}'")
                 
                 # Add all items to database
                 current_tree = self.tabs.get_current_tree()
                 if current_tree:
-                    for item_info in items_by_title.values():
-                        current_tree.add_new_task(item_info['data'])
+                    debug.debug("Adding tasks to database")
+                    added_count = 0
+                    for title, item_info in items_by_title.items():
+                        task_id = current_tree.add_new_task(item_info['data'])
+                        if task_id:
+                            added_count += 1
+                    
+                    debug.debug(f"Added {added_count} tasks from CSV")
                     
                     # Refresh all tabs
                     self.tabs.reload_all()
                 
+                debug.debug("Import completed successfully")
                 QMessageBox.information(self, "Success", "Import completed successfully!")
             except Exception as e:
+                debug.error(f"Error importing data: {e}")
                 QMessageBox.critical(self, "Error", f"Error importing data: {str(e)}")
+        else:
+            debug.debug("Import canceled by user")
 
+    @debug_method
     def save_template(self):
-        """Save a template CSV file for data import."""
+        debug.debug("Saving template CSV")
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Save Template CSV", "", "CSV Files (*.csv)")
         
         if file_path:
+            debug.debug(f"Creating template CSV file: {file_path}")
             try:
                 with open(file_path, 'w', newline='') as file:
                     writer = csv.writer(file)
@@ -419,64 +530,88 @@ class MainWindow(QMainWindow):
                         'Title of parent task or blank for top-level',
                         'Format: YYYY-MM-DD HH:MM:SS (auto-filled when status becomes Completed)'
                     ])
-                    
+                
+                debug.debug("Template CSV created successfully")
                 QMessageBox.information(self, "Success", "Template CSV created successfully!")
             except Exception as e:
+                debug.error(f"Error creating template: {e}")
                 QMessageBox.critical(self, "Error", f"Error creating template: {str(e)}")
+        else:
+            debug.debug("Template creation canceled by user")
 
+    @debug_method
     def closeEvent(self, event):
         """Handle application shutdown"""
+        debug.debug("Application closing - handling closeEvent")
         try:
             # Save the in-memory database back to file
+            debug.debug("Saving in-memory database to file")
             from database.memory_db_manager import get_memory_db_manager
             db_manager = get_memory_db_manager()
             db_manager.save_to_file()
-            print("Database saved successfully before exit")
+            debug.debug("Database saved successfully before exit")
+            
+            # Explicitly save settings before exit
+            debug.debug("Saving application settings")
+            self.settings.save_settings(self.settings.settings)
+            debug.debug(f"Settings saved successfully. Config: left_panel_contents={self.settings.get_setting('left_panel_contents')}, right_panel_contents={self.settings.get_setting('right_panel_contents')}")
+
         except Exception as e:
-            print(f"Error saving database on exit: {e}")
+            debug.error(f"Error saving data on exit: {e}")
             reply = QMessageBox.question(
                 self, "Database Save Error",
                 f"Failed to save database: {e}\n\nDo you still want to exit?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.No:
+                debug.debug("User canceled application exit")
                 event.ignore()
                 return
         
         # Accept the close event
+        debug.debug("Application shutdown complete")
         event.accept()
 
+    @debug_method
     def on_settings_tab_changed(self, index):
-        """Handle settings tab changes"""
+        debug.debug(f"Settings tab changed to index {index}")
         # If switching to Bee To Dos tab
         if index == 3:  # Adjust index as needed based on tab position
+            debug.debug("Switched to Bee To Dos settings tab")
             # Check if we have an API key
             api_key = self.settings.get_setting("bee_api_key", "")
             if not api_key:
+                debug.debug("No Bee API key found, showing API key dialog")
                 # No API key, show dialog
                 from ui.bee_api_dialog import BeeApiKeyDialog
                 dialog = BeeApiKeyDialog(self)
                 
                 if dialog.exec():
+                    debug.debug("User provided API key")
                     # User provided an API key
                     api_key = dialog.get_api_key()
                     key_label = dialog.get_key_label()
                     
                     if api_key:
+                        debug.debug("Saving API key to settings")
                         # Save to settings
                         self.settings.set_setting("bee_api_key", api_key)
                         if key_label:
                             self.settings.set_setting("bee_api_key_label", key_label)
                         
                         # Initialize Bee To Dos with new key
+                        debug.debug("Initializing Bee To Dos with new API key")
                         self.bee_todos.initialize_with_api_key(api_key)
                     else:
+                        debug.debug("No API key provided, switching back to previous tab")
                         # No API key provided, switch back to previous tab
                         self.settings_tabs.setCurrentIndex(self.previous_tab_index)
                 else:
+                    debug.debug("User canceled API key dialog, switching back to previous tab")
                     # User cancelled, switch back to previous tab
                     self.settings_tabs.setCurrentIndex(self.previous_tab_index)
             else:
+                debug.debug("Using existing Bee API key")
                 # API key exists, make sure Bee To Dos widget is initialized
                 self.bee_todos.initialize_with_api_key(api_key)
         
@@ -485,6 +620,7 @@ class MainWindow(QMainWindow):
 
 def apply_connection_method():
     """Apply the global connection method to all classes that need it"""
+    debug.debug("Applying global connection method to classes")
     # Import all needed classes
     from ui.task_tree import TaskTreeWidget
     from ui.task_tabs import TabTaskTreeWidget, TaskTabWidget  
@@ -496,56 +632,69 @@ def apply_connection_method():
     for cls in [TaskTreeWidget, TabTaskTreeWidget, TaskTabWidget, CombinedSettingsManager, 
                SettingPillItem, EditItemDialog, AddTaskDialog, EditTaskDialog, TaskPillDelegate]:
         setattr(cls, 'get_connection', staticmethod(get_global_connection))
+    debug.debug("Global connection method applied to classes")
 
 
 def main():
+    debug.debug("Starting main() function")
     app = QApplication(sys.argv)
     
     # Initialize settings manager first
+    debug.debug("Initializing SettingsManager")
     settings = SettingsManager()
     
+    debug.debug(f"Initial settings: left_panel_contents={settings.get_setting('left_panel_contents')}, right_panel_contents={settings.get_setting('right_panel_contents')}")
+    
     # Get database path from settings
+    debug.debug("Getting database path from settings")
     db_path = settings.prompt_for_database_location()
+    debug.debug(f"Database path: {db_path}")
     
     # Set the database path in the central configuration
+    debug.debug("Setting database path in central configuration")
     db_config.set_path(db_path)
     
-    # Print initialization information
-    print(f"Initializing application with database path: {db_path}")
-    
     # Initialize the memory database first - IMPORTANT!
+    debug.debug("Initializing memory database")
     memory_db_manager = get_memory_db_manager()
     
     # Ensure directory exists
+    debug.debug("Ensuring database directory exists")
     db_config.ensure_directory_exists()
     
     # Create database if it doesn't exist
     if not db_config.database_exists():
-        print("Database doesn't exist. Creating a new one...")
+        debug.debug("Database doesn't exist. Creating a new one...")
         db_config.create_database()
     
     # Load the database into memory
-    print(f"Loading database into memory from {db_path}")
+    debug.debug(f"Loading database into memory from {db_path}")
     memory_db_manager.load_from_file(db_path)
     
     # Test connection before proceeding
     try:
+        debug.debug("Testing database connection")
         test_result = memory_db_manager.execute_query("SELECT 1")
-        print(f"Database connection test successful: {test_result}")
+        debug.debug(f"Database connection test successful: {test_result}")
     except Exception as e:
-        print(f"ERROR: Database connection test failed: {e}")
+        debug.error(f"Database connection test failed: {e}")
         QMessageBox.critical(None, "Database Error", 
                            f"Failed to initialize database: {str(e)}\n\nThe application will now exit.")
         sys.exit(1)
     
     # Apply the global connection method to all classes
+    debug.debug("Applying global connection method")
     apply_connection_method()
     
     # Create main window
+    debug.debug("Creating MainWindow")
     window = MainWindow()
     
     # Show the window and start the application
+    debug.debug("Showing main window and starting application")
     window.show()
+    
+    debug.debug("Entering Qt event loop")
     sys.exit(app.exec())
          
 if __name__ == "__main__":
