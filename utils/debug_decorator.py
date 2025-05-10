@@ -12,8 +12,8 @@ def debug_method(func):
         logger = get_debug_logger()
         
         # Force debug logger to be enabled, eliminate filtering
-        logger._enabled = True
-        logger._debug_all = True
+        logger._enabled = False
+        logger._debug_all = False
         
         # More accurate class name detection
         class_name = args[0].__class__.__name__ if args and hasattr(args[0], '__class__') else None

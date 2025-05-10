@@ -26,7 +26,7 @@ def init_debugger(args=None):
             args = parser.parse_args()
         except SystemExit:
             # In case of argument parsing errors, still return a configured logger
-            logger.configure(enabled=True, log_to_console=True, log_to_file=False)
+            logger.configure(enabled=False, log_to_console=False, log_to_file=False)
             return logger
     
     # Configure based on arguments
@@ -52,9 +52,41 @@ def init_debugger(args=None):
         if hasattr(args, 'debug_method') and args.debug_method:
             for method_name in args.debug_method:
                 logger.add_method_filter(method_name)
+                
+        # Set logger's internal state directly for consistency
+        logger._enabled = True
+        logger._log_to_file = log_to_file
+        logger._log_to_console = log_to_console
+        logger._debug_all = args.debug_all if hasattr(args, 'debug_all') else False
+        
+        # Log initialization
+        logger.debug("Debug logger initialized with enabled=True")
+        logger.debug(f"Log to file: {log_to_file}, Log to console: {log_to_console}")
     else:
         # Default configuration when --debug is not specified
         logger.configure(enabled=False)
+        logger._enabled = False
+        logger._log_to_file = False
+        logger._log_to_console = False
+        logger._debug_all = False
+    
+    return logger
+
+# Helper function to configure debugger from settings
+def configure_from_settings(settings_manager):
+    """Initialize the debugger based on application settings"""
+    debug_enabled = settings_manager.get_setting("debug_enabled", False)
+    
+    # Create arguments object
+    args = argparse.Namespace()
+    args.debug = debug_enabled
+    args.debug_file = debug_enabled
+    args.debug_console = debug_enabled
+    args.debug_all = True  # Debug all classes/methods by default
+    args.debug_file_path = None  # Use default path
+    
+    # Initialize the debugger
+    logger = init_debugger(args)
     
     return logger
 

@@ -101,7 +101,7 @@ class BeeApiKeyDialog(QDialog):
         return label
 
     @debug_method
-    def handle_save(self):
+    def handle_save(self, checked=False):
         """Handle the Save button click"""
         debug.debug("Save button clicked")
         api_key = self.get_api_key()

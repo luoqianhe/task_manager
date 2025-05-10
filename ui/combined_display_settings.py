@@ -572,7 +572,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         debug.debug(f"Added {len(options)} options to each dropdown")
 
     @debug_method
-    def force_preview_update(self):
+    def force_preview_update(self, check = False):
         """Force a direct update of the preview when panel dropdowns change"""
         debug.debug("Forcing preview update due to panel dropdown change")
         # Get current settings
@@ -813,19 +813,25 @@ class CombinedDisplaySettingsWidget(QWidget):
             left_contents.append(self.top_left_combo.currentText())
         if self.bottom_left_combo.currentText() != "None":
             left_contents.append(self.bottom_left_combo.currentText())
-        
+
         right_contents = []
         if self.top_right_combo.currentText() != "None":
             right_contents.append(self.top_right_combo.currentText())
         if self.bottom_right_combo.currentText() != "None":
             right_contents.append(self.bottom_right_combo.currentText())
-        
+
+        # Convert empty lists to special placeholder
+        if len(left_contents) == 0:
+            left_contents = ["__NONE__"]
+        if len(right_contents) == 0:
+            right_contents = ["__NONE__"]
+
         debug.debug(f"Saving panel contents - Left: {left_contents}, Right: {right_contents}")
-        
+
         # Always save with 2 sections for consistency
         self.settings.set_setting("left_panel_sections", 2)
         self.settings.set_setting("right_panel_sections", 2)
-        
+
         self.settings.set_setting("left_panel_contents", left_contents)
         self.settings.set_setting("right_panel_contents", right_contents)
         
@@ -852,7 +858,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.apply_changes_to_all_tabs()
    
     @debug_method
-    def save_and_return(self):
+    def save_and_return(self, check = False):
         """Save settings and return to task view"""
         debug.debug("Saving settings and returning to task view")
         # First save all settings
@@ -863,7 +869,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.main_window.show_task_view()
 
     @debug_method
-    def cancel_and_return(self):
+    def cancel_and_return(self, check = False):
         """Cancel changes and return to task view"""
         debug.debug("Canceling changes and returning to task view")
         # Restore original settings

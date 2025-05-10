@@ -44,59 +44,64 @@ class DebugLogger:
         self._log_to_console = log_to_console
         self._debug_all = debug_all
         
-        # Set up log file path
-        if log_file_path:
-            self._log_file_path = Path(log_file_path)
+        # Set up log file path ONLY if logging is enabled and log_to_file is True
+        if enabled and log_to_file:
+            if log_file_path:
+                self._log_file_path = Path(log_file_path)
+            else:
+                # Default log file in user's home directory
+                log_dir = Path.home() / ".task_organizer" / "logs"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                self._log_file_path = log_dir / f"debug_{timestamp}.log"
         else:
-            # Default log file in user's home directory
-            log_dir = Path.home() / ".task_organizer" / "logs"
-            log_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            self._log_file_path = log_dir / f"debug_{timestamp}.log"
+            # If logging is disabled or log_to_file is False, don't set a log path
+            self._log_file_path = None
         
         # Configure logger
         self._logger = logging.getLogger('TaskOrganizerDebug')
         self._logger.setLevel(debug_level)
         self._logger.handlers = []  # Clear any existing handlers
         
-        # Create a formatter that matches the requested format: [log time]: [Class.method]: message
-        formatter = logging.Formatter('%(asctime)s: %(message)s')
-        
-        # Add console handler if requested
-        if self._log_to_console:
-            console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setFormatter(formatter)
-            self._logger.addHandler(console_handler)
-        
-        # Add file handler if requested
-        if self._log_to_file:
-            # NEW: Make sure parent directory exists
-            self._log_file_path.parent.mkdir(parents=True, exist_ok=True)
+        # Only proceed with handler setup if debugging is enabled
+        if enabled:
+            # Create a formatter that matches the requested format
+            formatter = logging.Formatter('%(asctime)s: %(message)s')
             
-            file_handler = logging.FileHandler(self._log_file_path)
-            file_handler.setFormatter(formatter)
-            # NEW: Set to immediately flush after each log
-            file_handler.setLevel(debug_level)
-            self._logger.addHandler(file_handler)
-        
-        # NEW: Disable propagation to prevent duplicate logs
-        self._logger.propagate = False
-        
-        # NEW: Report where logs will go
-        print(f"Debug logging enabled: console={self._log_to_console}, file={self._log_to_file}")
-        if self._log_to_file:
-            print(f"Debug log file: {self._log_file_path}")
+            # Add console handler if requested
+            if self._log_to_console:
+                console_handler = logging.StreamHandler(sys.stdout)
+                console_handler.setFormatter(formatter)
+                self._logger.addHandler(console_handler)
             
-        # Log configuration details
-        self.log("Debug logger configured")
-        self.log(f"Log to file: {self._log_to_file}, Path: {self._log_file_path}")
-        self.log(f"Log to console: {self._log_to_console}")
-        self.log(f"Debug all: {self._debug_all}")
+            # Add file handler if requested AND we have a log path
+            if self._log_to_file and self._log_file_path:
+                # Make sure parent directory exists
+                self._log_file_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                file_handler = logging.FileHandler(self._log_file_path)
+                file_handler.setFormatter(formatter)
+                file_handler.setLevel(debug_level)
+                self._logger.addHandler(file_handler)
+            
+            # Report where logs will go
+            print(f"Debug logging enabled: console={self._log_to_console}, file={self._log_to_file}")
+            if self._log_to_file and self._log_file_path:
+                print(f"Debug log file: {self._log_file_path}")
+                
+            # Log configuration details
+            self.log("Debug logger configured")
+            self.log(f"Log to file: {self._log_to_file}, Path: {self._log_file_path}")
+            self.log(f"Log to console: {self._log_to_console}")
+            self.log(f"Debug all: {self._debug_all}")
+            
+            # Force flush all handlers
+            for handler in self._logger.handlers:
+                handler.flush()
         
-        # NEW: Force flush all handlers
-        for handler in self._logger.handlers:
-            handler.flush()     
-        
+        # Disable propagation to prevent duplicate logs
+        self._logger.propagate = False 
+   
     def add_class_filter(self, class_name):
         """Add a class name to filter debug messages."""
         if class_name not in self._class_filters:

@@ -1,6 +1,8 @@
 # src/main.py - updated with debugging
 from utils.debug_logger import get_debug_logger
 from utils.debug_init import init_debugger
+from utils.debug_decorator import debug_method
+from ui.app_settings import SettingsManager
 import argparse
 
 # Create argument parser
@@ -11,21 +13,21 @@ parser.add_argument('--debug-console', action='store_true', help='Log to console
 parser.add_argument('--debug-file-path', type=str, help='Path to log file')
 args = parser.parse_args()
 
-# Set arguments
-args.debug = True  # Enable debugging
-args.debug_file = True  # Enable file logging
-args.debug_console = False  # Keep console logging if desired
+# Initialize settings manager first
+settings = SettingsManager()
 
-# Initialize debugger with file logging enabled
+# Set arguments based on saved settings
+debug_enabled = settings.get_setting("debug_enabled", False)
+args.debug = debug_enabled
+args.debug_file = debug_enabled  # Enable file logging if debug is enabled
+args.debug_console = debug_enabled  # Enable console logging if debug is enabled
+
+# Initialize debugger with settings from config
 debug = init_debugger(args)
+debug._enabled = debug_enabled
+debug._log_to_file = debug_enabled
+debug._log_to_console = debug_enabled
 
-# Import the debugging utilities first
-from utils.debug_logger import get_debug_logger
-from utils.debug_decorator import debug_method
-from utils.debug_init import init_debugger
-
-# Initialize the debugger early
-debug = init_debugger()
 debug.debug("Starting Task Organizer application")
 
 # Existing imports
@@ -256,7 +258,7 @@ class MainWindow(QMainWindow):
         debug.debug("Task view initialization complete")
     
     @debug_method
-    def show_task_view(self):
+    def show_task_view(self, checked=False):
         debug.debug("Showing task view")
         self.stacked_widget.setCurrentIndex(0)
         # Refresh all tabs when returning from settings
@@ -264,7 +266,7 @@ class MainWindow(QMainWindow):
         self.tabs.reload_all()
     
     @debug_method
-    def show_settings(self):
+    def show_settings(self, checked=False):
         debug.debug("Showing settings view")
         self.stacked_widget.setCurrentIndex(1)
     
@@ -571,7 +573,7 @@ class MainWindow(QMainWindow):
         # Accept the close event
         debug.debug("Application shutdown complete")
         event.accept()
-
+        
     @debug_method
     def on_settings_tab_changed(self, index):
         debug.debug(f"Settings tab changed to index {index}")

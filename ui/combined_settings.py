@@ -193,7 +193,7 @@ class SettingPillItem(QWidget):
             event.ignore()
     
     @debug_method
-    def change_color(self):
+    def change_color(self, checked=None):
         debug.debug(f"Opening color dialog for {self.item_type}: {self.name}")
         color = QColorDialog.getColor()
         if color.isValid():
@@ -215,6 +215,8 @@ class SettingPillItem(QWidget):
             table_name = "statuses"
         elif self.item_type == "priority":
             table_name = "priorities"
+        elif self.item_type == "category":
+            table_name = "categories"
         else:
             table_name = f"{self.item_type}s"  # categories
         
@@ -227,7 +229,7 @@ class SettingPillItem(QWidget):
             debug.debug(f"Color updated in database for {self.item_type} ID {self.item_id}")
     
     @debug_method
-    def edit_item(self):
+    def edit_item(self, check = False):
         debug.debug(f"Edit button clicked for {self.item_type}: {self.name}")
         # Find the CombinedSettingsManager instance
         parent = self
@@ -241,7 +243,7 @@ class SettingPillItem(QWidget):
             debug.error("Could not find parent CombinedSettingsManager")
 
     @debug_method
-    def delete_item(self):
+    def delete_item(self, check = False):
         # Don't allow deletion of Completed status
         if self.item_type == "status" and self.name == "Completed":
             debug.debug("Attempted to delete Completed status - operation not allowed")
@@ -496,7 +498,7 @@ class CombinedSettingsManager(QWidget):
             self.name_input.setPlaceholderText("Status Name")
     
     @debug_method
-    def save_settings(self):
+    def save_settings(self, checked=None):
         """Save settings and notify the user"""
         debug.debug("Saving settings")
         # You can add any additional saving logic here if needed
@@ -792,7 +794,7 @@ class CombinedSettingsManager(QWidget):
             self.load_statuses()
     
     @debug_method
-    def add_item(self):
+    def add_item(self, check = False):
         """Add a new item of the current type"""
         current_type = self.setting_type_combo.currentText().lower()
         debug.debug(f"Adding new item for setting type: {current_type}")
@@ -961,7 +963,7 @@ class EditItemDialog(QDialog):
             debug.error(f"Error loading data: {e}")
     
     @debug_method
-    def save_changes(self):
+    def save_changes(self, checked=False):
         debug.debug("Saving changes")
         new_name = self.name_input.text().strip()
         

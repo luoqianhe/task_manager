@@ -64,7 +64,7 @@ class AddTaskDialog(QDialog):
                 self.priority_combo.setCurrentIndex(0)
 
     @debug_method
-    def accept(self):
+    def accept(self, checked=None):
         debug.debug("Accept button clicked - collecting task data")
         # Store the data before closing
         due_date = None
@@ -657,7 +657,7 @@ class EditTaskDialog(QDialog):
         debug.debug(f"Link buttons enabled: {has_selection}")
         
     @debug_method
-    def accept(self):
+    def accept(self, checked=None):
         debug.debug("Accept button clicked - collecting task data")
         # Collect data to be saved
         due_date = None

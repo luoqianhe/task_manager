@@ -403,7 +403,7 @@ class EditCategoryDialog(QDialog):
             debug.error(f"Error loading category data: {e}")
     
     @debug_method
-    def save_changes(self):
+    def save_changes(self, checked = False):
         new_name = self.name_input.text().strip()
         debug.debug(f"Saving category with new name: '{new_name}'")
         

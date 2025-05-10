@@ -423,7 +423,7 @@ class BeeToDoWidget(QWidget):
         return selected_todos
     
     @debug_method
-    def batch_edit(self):
+    def batch_edit(self, check = False):
         """Show batch edit dialog for selected to-dos"""
         debug.debug("Opening batch edit dialog")
         selected_todos = self.get_selected_todos()
@@ -456,7 +456,7 @@ class BeeToDoWidget(QWidget):
             debug.debug("Batch edit dialog canceled")
     
     @debug_method
-    def delete_selected(self):
+    def delete_selected(self, checked=False):
         """Delete selected to-dos"""
         debug.debug("Delete selected to-dos requested")
         selected_todos = self.get_selected_todos()

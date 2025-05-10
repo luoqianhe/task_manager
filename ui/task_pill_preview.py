@@ -244,7 +244,7 @@ class TaskPillPreviewWidget(QWidget):
         debug.debug("Sample items created successfully")
     
     @debug_method
-    def update_preview(self):
+    def update_preview(self, check = False):
         """Update the preview based on current settings"""
         debug.debug("Updating preview based on current settings")
         start_time = time.time()
@@ -265,7 +265,7 @@ class TaskPillPreviewWidget(QWidget):
         debug.debug(f"Preview update completed in {end_time - start_time:.3f} seconds")
     
     @debug_method
-    def immediate_update_preview(self):
+    def immediate_update_preview(self, check = False):
         """Immediately update the preview with current settings"""
         debug.debug("Immediately updating preview")
         start_time = time.time()

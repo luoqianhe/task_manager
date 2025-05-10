@@ -32,7 +32,8 @@ class SettingsManager:
             "left_panel_width": 100,
             "right_panel_width": 100,
             "left_panel_sections": 2,
-            "right_panel_sections": 2
+            "right_panel_sections": 2,
+            "debug_enabled": False  # Added debug_enabled setting with default value
         }
         debug.debug(f"Default settings: {self.default_settings}")
         
@@ -213,7 +214,29 @@ class AppSettingsWidget(QWidget):
         # Add the panels layout to the main layout
         layout.addLayout(panels_layout)
         
-        # Bee API Settings group with reduced width
+        # Debug Settings group - NEW
+        debug_group = QGroupBox("Debug Settings")
+        debug_layout = QVBoxLayout()
+        
+        # Get debug enabled setting
+        debug_enabled = self.settings.get_setting("debug_enabled", False)
+        debug.debug(f"Debug enabled from settings: {debug_enabled}")
+        
+        # Debug checkbox
+        self.debug_checkbox = QCheckBox("Enable Debug Logging")
+        self.debug_checkbox.setChecked(debug_enabled)
+        self.debug_checkbox.toggled.connect(self.toggle_debug_logging)
+        debug_layout.addWidget(self.debug_checkbox)
+        
+        # Add description
+        debug_description = QLabel("Enabling debug logging will create detailed log files in the application's data directory. This can be useful for troubleshooting problems.")
+        debug_description.setWordWrap(True)
+        debug_layout.addWidget(debug_description)
+        
+        debug_group.setLayout(debug_layout)
+        layout.addWidget(debug_group)
+        
+        # Bee API Settings group
         if hasattr(self.main_window, 'settings'):
             debug.debug("Setting up Bee API settings group")
             bee_container = QHBoxLayout()
@@ -250,9 +273,16 @@ class AppSettingsWidget(QWidget):
             
             bee_api_group.setLayout(bee_api_layout)
             
+            # Add the Bee API group to a container with less additional space to make it 2x width
+            # Remove the stretch that was making it half-width
+            bee_container.addWidget(bee_api_group)
+            layout.addLayout(bee_container)
+            
+            bee_api_group.setLayout(bee_api_layout)
+            
             # Add the Bee API group to a container with additional space to make it half-width
             bee_container.addWidget(bee_api_group)
-            bee_container.addStretch()  # This makes the group take only half the width
+            # bee_container.addStretch()  # This makes the group take only half the width
             layout.addLayout(bee_container)
         
         # Add stretch to push Done button to bottom
@@ -273,14 +303,42 @@ class AppSettingsWidget(QWidget):
         cancel_button.clicked.connect(self.main_window.show_task_view)  # Go back without saving
         button_layout.addWidget(cancel_button)
         
-        button_layout.addStretch()  # This pushes buttons to the left
+        button_layout.addStretch()  # This pushes buttons to the left by placing stretch AFTER the buttons
         
         layout.addLayout(button_layout)
         debug.debug("AppSettingsWidget UI setup complete")
     
     def save_settings(self):
         debug.debug("Saving settings")
+        
+        # Get current debug checkbox state and save it
+        debug_enabled = self.debug_checkbox.isChecked()
+        self.settings.set_setting("debug_enabled", debug_enabled)
+        debug.debug(f"Saved debug_enabled setting: {debug_enabled}")
+        
         QMessageBox.information(self, "Settings Saved", "Your settings have been saved.")
+    
+    def toggle_debug_logging(self, enabled):
+        """Handle toggling debug logging"""
+        debug.debug(f"Debug logging toggled: {enabled}")
+        
+        # Configure the debug logger
+        from utils.debug_init import init_debugger
+        from argparse import Namespace
+        
+        # Create arguments object
+        args = Namespace()
+        args.debug = enabled
+        args.debug_file = enabled  # Enable file logging when debug is enabled
+        args.debug_console = enabled  # Enable console logging when debug is enabled
+        args.debug_all = True  # Debug all classes/methods
+        
+        # Initialize the debugger with our args
+        init_debugger(args)
+        
+        # Save the setting (will be saved permanently when clicking Save)
+        self.settings.settings["debug_enabled"] = enabled
+        debug.debug(f"Updated debug_enabled in settings: {enabled}")
     
     def change_database_location(self):
         debug.debug("Changing database location")

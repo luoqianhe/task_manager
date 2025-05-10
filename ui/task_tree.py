@@ -19,6 +19,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from database.memory_db_manager import get_memory_db_manager
 
 # Import the debug logger
+from utils.debug_decorator import debug_method
 from utils.debug_logger import get_debug_logger
 debug = get_debug_logger()
 
@@ -541,8 +542,15 @@ class TaskTreeWidget(QTreeWidget):
         
         return item
 
+    @debug_method
     def change_status(self, item, new_status):
         debug.debug(f"Changing status to: {new_status}")
+        
+        # If this instance has the change_status_with_timestamp method, use it instead
+        if hasattr(self, 'change_status_with_timestamp'):
+            debug.debug(f"Delegating to change_status_with_timestamp: {new_status}")
+            return self.change_status_with_timestamp(item, new_status)
+            
         try:
             # Import database manager
             from database.database_manager import get_db_manager
@@ -610,7 +618,7 @@ class TaskTreeWidget(QTreeWidget):
         except Exception as e:
             debug.error(f"Error changing task status: {e}")
             QMessageBox.critical(self, "Error", f"Failed to change task status: {str(e)}")
-
+            
     def change_priority(self, item, new_priority):
         debug.debug(f"Changing priority to: {new_priority}")
         try:
@@ -948,7 +956,10 @@ class TaskTreeWidget(QTreeWidget):
             
             # Reload the entire tree to ensure correct display
             debug.debug("Reloading tree...")
-            self.load_tasks_tree()
+            if hasattr(self, 'filter_type'):
+                self.load_tasks_tab()  # Use the filtered loading method
+            else:
+                self.load_tasks_tree()  # Use the standard loading method
             
             # Try to scroll to the task to make it visible
             self._scroll_to_task(task_id)
@@ -2432,7 +2443,7 @@ class TaskTreeWidget(QTreeWidget):
             self.scheduleDelayedItemsLayout()
             debug.debug("Forcing viewport update")
             self.viewport().update()   
-    
+
     def _handle_drop_on_header(self, item, header):
         """Handle dropping a task onto a priority header"""
         debug.debug(f"Handling drop of task onto priority header")
@@ -2449,6 +2460,10 @@ class TaskTreeWidget(QTreeWidget):
                 return
                 
             debug.debug(f"Moving task to priority: {priority}")
+            
+            # Get the current task status to preserve it
+            task_data = item.data(0, Qt.ItemDataRole.UserRole)
+            current_status = task_data.get('status', 'Not Started')
             
             # Remove the item from its current parent
             old_parent = item.parent()
@@ -2471,7 +2486,7 @@ class TaskTreeWidget(QTreeWidget):
             item_data['priority'] = priority
             item.setData(0, Qt.ItemDataRole.UserRole, item_data)
             
-            # Update database records
+            # Update database records - ensure status is preserved
             debug.debug(f"Updating database for task {item.task_id}")
             db_manager.execute_update(
                 "UPDATE tasks SET priority = ?, parent_id = NULL WHERE id = ?",
@@ -2494,7 +2509,7 @@ class TaskTreeWidget(QTreeWidget):
             traceback.print_exc()
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Error", f"Failed to update task: {str(e)}")
-
+                
     def _handle_drop_on_task(self, event, item, target_task):
         """Handle dropping a task onto another task or empty area"""
         debug.debug(f"Handling drop of task onto another task")
@@ -2558,11 +2573,21 @@ class TaskTreeWidget(QTreeWidget):
                 from PyQt6.QtCore import QTimer
                 QTimer.singleShot(100, parent.reload_all)
             else:
-                # Just refresh this tree
+                # Just refresh this tree using the proper load method
                 debug.debug("Tab parent not found, refreshing current tree only")
-                self.load_tasks_tree()
+                if hasattr(self, 'load_tasks_tab'):
+                    # Use the specialized method with proper filtering if available
+                    debug.debug("Using load_tasks_tab with filtering")
+                    self.load_tasks_tab()
+                else:
+                    # Fall back to the base method which doesn't filter
+                    print('DEBUG: Using load_tasks_tree without filtering, ', hasattr(self, 'load_tasks_tab'))
+                    debug.debug("Using load_tasks_tree without filtering")
+                    self.load_tasks_tree()
         except Exception as e:
             debug.error(f"Error reloading tabs: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _update_children_hierarchy(self, parent_item):
         """Update all children's hierarchy in the database"""
@@ -2684,8 +2709,8 @@ class TaskTreeWidget(QTreeWidget):
     
     def _find_parent_and_add_child(self, parent_item, parent_id, new_item):
         """Helper method to recursively find a parent item and add a child to it"""
-        # Check if this is the parent
-        if parent_item.task_id == parent_id:
+        # Check if this is the parent and has the task_id attribute
+        if hasattr(parent_item, 'task_id') and parent_item.task_id == parent_id:
             debug.debug(f"Found parent item, adding child")
             parent_item.addChild(new_item)
             return True
