@@ -435,22 +435,6 @@ class SampleTaskTreeWidget(QTreeWidget):
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
         
-        self.setStyleSheet("""
-            QTreeWidget {
-                background-color: #f5f5f5;
-                border: none;
-                outline: none;
-            }
-            QTreeWidget::item {
-                border: none;
-                background-color: transparent;
-            }
-            QTreeWidget::item:selected {
-                border: none;
-                background-color: transparent;
-            }
-        """)
-        
         # Set alternating row colors to false to prevent default styling
         debug.debug("Setting alternatingRowColors to False")
         self.setAlternatingRowColors(False)

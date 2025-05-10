@@ -58,21 +58,6 @@ class TaskTreeWidget(QTreeWidget):
         
         # Set a clean style
         debug.debug("Setting widget stylesheet")
-        self.setStyleSheet("""
-            QTreeWidget {
-                background-color: #f5f5f5;
-                border: none;
-                outline: none;
-            }
-            QTreeWidget::item {
-                border: none;
-                background-color: transparent;
-            }
-            QTreeWidget::item:selected {
-                border: none;
-                background-color: transparent;
-            }
-        """)
         
         # Set alternating row colors to false to prevent default styling
         self.setAlternatingRowColors(False)

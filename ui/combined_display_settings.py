@@ -689,20 +689,10 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         save_btn_top = QPushButton("Save Settings")
         save_btn_top.setFixedSize(100, 30)
-        save_btn_top.setStyleSheet("""
-            background-color: #4CAF50;
-            color: white;
-            font-weight: bold;
-        """)
         save_btn_top.clicked.connect(self.save_and_return)
         
         cancel_btn_top = QPushButton("Cancel")
         cancel_btn_top.setFixedSize(100, 30)
-        cancel_btn_top.setStyleSheet("""
-            background-color: #4CAF50;
-            color: white;
-            font-weight: bold;
-        """)
         cancel_btn_top.clicked.connect(self.cancel_and_return)
         
         top_button_layout.addWidget(save_btn_top)
@@ -720,20 +710,10 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         save_btn_bottom = QPushButton("Save Settings")
         save_btn_bottom.setFixedSize(100, 30)
-        save_btn_bottom.setStyleSheet("""
-            background-color: #4CAF50;
-            color: white;
-            font-weight: bold;
-        """)
         save_btn_bottom.clicked.connect(self.save_and_return)
         
         cancel_btn_bottom = QPushButton("Cancel")
         cancel_btn_bottom.setFixedSize(100, 30)
-        cancel_btn_bottom.setStyleSheet("""
-            background-color: #4CAF50;
-            color: white;
-            font-weight: bold;
-        """)
         cancel_btn_bottom.clicked.connect(self.cancel_and_return)
         
         bottom_button_layout.addWidget(save_btn_bottom)

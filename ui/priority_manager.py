@@ -32,31 +32,53 @@ class PriorityItem(QWidget):
         layout = QHBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
         
-        # Priority level indicator
+        # Calculate text color based on background brightness
+        # This ensures text is visible regardless of background color
+        bg_color = QColor(color)
+        brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
+        text_color = "black" if brightness > 128 else "white"
+        
+        # Priority level indicator with contrast text
         level_label = QLabel(f"Level {display_order}:")
-        level_label.setStyleSheet("font-weight: bold; min-width: 60px;")
+        level_label.setStyleSheet(f"font-weight: bold; min-width: 60px; color: {text_color};")
         layout.addWidget(level_label)
         
-        # Priority name
+        # Priority name with contrast text
         name_label = QLabel(name)
-        name_label.setStyleSheet("font-weight: bold;")
+        name_label.setStyleSheet(f"font-weight: bold; color: {text_color};")
         layout.addWidget(name_label)
         
         layout.addStretch()
         
-        # Move up button
+        # Move up button - set moveButton property
         self.up_btn = QPushButton("↑")
         self.up_btn.setFixedWidth(30)
         self.up_btn.setToolTip("Move priority up (higher importance)")
+        self.up_btn.setProperty("moveButton", True)  # Mark as move button for styling
         self.up_btn.clicked.connect(self.move_up)
         layout.addWidget(self.up_btn)
         
-        # Move down button
+        # Move down button - set moveButton property
         self.down_btn = QPushButton("↓")
         self.down_btn.setFixedWidth(30)
         self.down_btn.setToolTip("Move priority down (lower importance)")
+        self.down_btn.setProperty("moveButton", True)  # Mark as move button for styling
         self.down_btn.clicked.connect(self.move_down)
         layout.addWidget(self.down_btn)
+        
+        # Edit button - set specialButton property
+        edit_btn = QPushButton("Edit")
+        edit_btn.setFixedWidth(60)
+        edit_btn.setProperty("specialButton", True)  # Mark as special button for styling
+        edit_btn.clicked.connect(self.edit_priority)
+        layout.addWidget(edit_btn)
+        
+        # Delete button - set specialButton property
+        delete_btn = QPushButton("Delete")
+        delete_btn.setFixedWidth(60)
+        delete_btn.setProperty("specialButton", True)  # Mark as special button for styling
+        delete_btn.clicked.connect(self.delete_priority)
+        layout.addWidget(delete_btn)
         
         # Color button
         color_btn = QPushButton()
@@ -65,22 +87,10 @@ class PriorityItem(QWidget):
         color_btn.clicked.connect(self.change_color)
         layout.addWidget(color_btn)
         
-        # Edit button
-        edit_btn = QPushButton("Edit")
-        edit_btn.setFixedWidth(60)
-        edit_btn.clicked.connect(self.edit_priority)
-        layout.addWidget(edit_btn)
-        
-        # Delete button
-        delete_btn = QPushButton("Delete")
-        delete_btn.setFixedWidth(60)
-        delete_btn.clicked.connect(self.delete_priority)
-        layout.addWidget(delete_btn)
-        
         self.setLayout(layout)
         self.setStyleSheet(f"background-color: {color}; border-radius: 5px;")
         debug.debug(f"PriorityItem initialization complete: {name}")
-    
+        
     @debug_method
     def change_color(self):
         debug.debug(f"Changing color for priority ID: {self.priority_id}")
@@ -212,33 +222,25 @@ class PriorityManager(QWidget):
         super().__init__()
         self.init_ui()
         self.load_priorities()
+        # Keep minimal styling while ensuring buttons are visible
         self.setStyleSheet("""
-            QPushButton { 
-                background-color: #f0f0f0;
-                color: black;
-                padding: 5px;
-                border: 1px solid #cccccc;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #e0e0e0;
-            }
             QLineEdit {
                 max-height: 25px;
                 padding: 2px 5px;
-                border: 1px solid #cccccc;
                 border-radius: 3px;
-                background-color: white;
-                color: black;
             }
             QListWidget {
                 border: 1px solid #cccccc;
-                background-color: white;
                 border-radius: 5px;
             }
             QListWidget::item {
                 padding: 5px;
                 margin: 2px;
+            }
+            /* Ensure the up/down buttons are visible */
+            QPushButton[flat="false"] {
+                background-color: #f0f0f0;
+                border: 1px solid #cccccc;
             }
         """)
         debug.debug("PriorityManager initialization complete")
@@ -487,9 +489,9 @@ class EditPriorityDialog(QDialog):
     
     @debug_method
     def __init__(self, priority_id, parent=None):
-        debug.debug(f"Initializing EditPriorityDialog for priority ID: {priority_id}")
         super().__init__(parent)
         self.priority_id = priority_id
+        debug.debug(f"Initializing EditPriorityDialog for priority ID: {priority_id}")
         self.setWindowTitle("Edit Priority")
         self.setFixedSize(300, 150)
         
@@ -515,8 +517,12 @@ class EditPriorityDialog(QDialog):
         
         self.setLayout(layout)
         self.load_data()
+        
+        # Apply OS-specific styling
+        self.apply_os_style()
+        
         debug.debug("EditPriorityDialog initialization complete")
-    
+   
     @debug_method
     def load_data(self):
         debug.debug(f"Loading data for priority ID: {self.priority_id}")
@@ -577,3 +583,162 @@ class EditPriorityDialog(QDialog):
             debug.debug("Priority changes saved successfully")
         
         self.accept()
+        
+    def apply_os_style(self):
+        """Apply OS-specific styling to the dialog"""
+        import platform
+        os_name = platform.system()
+        
+        if os_name == "Darwin":  # macOS
+            self.apply_macos_style()
+        elif os_name == "Windows":
+            self.apply_windows_style()
+        else:  # Linux or other
+            self.apply_linux_style()
+
+    def apply_macos_style(self):
+        """Apply macOS-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F5F5F7;
+                border-radius: 10px;
+            }
+            QLabel {
+                font-family: -apple-system, '.AppleSystemUIFont', 'SF Pro Text';
+                color: #1D1D1F;
+            }
+            QLineEdit {
+                border: 1px solid #D2D2D7;
+                border-radius: 5px;
+                background-color: white;
+                padding: 5px 8px;
+                height: 24px;
+                font-family: -apple-system, '.AppleSystemUIFont';
+                selection-background-color: #0071E3;
+            }
+            QLineEdit:focus {
+                border: 1px solid #0071E3;
+            }
+            QPushButton {
+                background-color: #E5E5EA;
+                color: #1D1D1F;
+                border: none;
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 80px;
+                height: 24px;
+                font-family: -apple-system, '.AppleSystemUIFont';
+            }
+            QPushButton:hover {
+                background-color: #D1D1D6;
+            }
+            QPushButton:pressed {
+                background-color: #C7C7CC;
+            }
+            QPushButton[primary="true"], QPushButton:default {
+                background-color: #0071E3;
+                color: white;
+                font-weight: 500;
+            }
+        """)
+        
+        self.layout().setContentsMargins(20, 20, 20, 20)
+        self.layout().setSpacing(12)
+        
+        # Set Save button as primary
+        for button in self.findChildren(QPushButton):
+            if "Save" in button.text():
+                button.setProperty("primary", True)
+                button.setDefault(True)
+                button.style().unpolish(button)
+                button.style().polish(button)
+
+    def apply_windows_style(self):
+        """Apply Windows-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F0F0F0;
+            }
+            QLabel {
+                font-family: 'Segoe UI', sans-serif;
+                color: #000000;
+            }
+            QLineEdit {
+                border: 1px solid #CCCCCC;
+                border-radius: 2px;
+                background-color: white;
+                padding: 4px 6px;
+                font-family: 'Segoe UI';
+                selection-background-color: #0078D7;
+            }
+            QLineEdit:focus {
+                border: 1px solid #0078D7;
+            }
+            QPushButton {
+                background-color: #E1E1E1;
+                color: #000000;
+                border: 1px solid #ADADAD;
+                border-radius: 2px;
+                padding: 5px 10px;
+                min-width: 80px;
+                height: 28px;
+                font-family: 'Segoe UI';
+            }
+            QPushButton:hover {
+                background-color: #E5F1FB;
+                border: 1px solid #0078D7;
+            }
+            QPushButton:default {
+                background-color: #0078D7;
+                color: white;
+                border: 1px solid #0078D7;
+            }
+        """)
+        
+        self.layout().setContentsMargins(15, 15, 15, 15)
+        self.layout().setSpacing(8)
+
+    def apply_linux_style(self):
+        """Apply Linux-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F6F5F4;
+            }
+            QLabel {
+                font-family: 'Ubuntu', 'Noto Sans', sans-serif;
+                color: #3D3D3D;
+            }
+            QLineEdit {
+                border: 1px solid #C6C6C6;
+                border-radius: 4px;
+                background-color: white;
+                padding: 5px 8px;
+                font-family: 'Ubuntu', 'Noto Sans';
+                selection-background-color: #3584E4;
+            }
+            QLineEdit:focus {
+                border: 1px solid #3584E4;
+            }
+            QPushButton {
+                background-color: #FFFFFF;
+                color: #3D3D3D;
+                border: 1px solid #C6C6C6;
+                border-radius: 4px;
+                padding: 6px 12px;
+                min-width: 80px;
+                height: 30px;
+                font-family: 'Ubuntu', 'Noto Sans';
+            }
+            QPushButton:hover {
+                background-color: #F2F2F2;
+                border: 1px solid #B8B8B8;
+            }
+            QPushButton:default {
+                background-color: #3584E4;
+                color: white;
+                border: 1px solid #1E65BD;
+            }
+        """)
+        
+        self.layout().setContentsMargins(18, 18, 18, 18)
+        self.layout().setSpacing(10)

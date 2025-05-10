@@ -18,7 +18,6 @@ debug = get_debug_logger()
 class CategoryItem(QWidget):
     @staticmethod
     def get_connection():
-        # This will be overridden in main.py to use the database manager
         debug.debug("Getting database connection from overridden method")
         from database.database_manager import get_db_manager
         return get_db_manager().get_connection()
@@ -33,9 +32,15 @@ class CategoryItem(QWidget):
         layout.setContentsMargins(15, 17, 15, 17)  # Horizontal padding only
         layout.setSpacing(10)  # Space between controls
         
-        # Category name with larger font
+        # Calculate text color based on background brightness
+        # This ensures text is visible regardless of background color
+        bg_color = QColor(color)
+        brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
+        text_color = "black" if brightness > 128 else "white"
+        
+        # Category name with larger font and contrast-based text color
         name_label = QLabel(name)
-        name_label.setStyleSheet("font-weight: bold; font-size: 14px;")  # Increased font size
+        name_label.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {text_color};")
         layout.addWidget(name_label)
         
         layout.addStretch()
@@ -44,19 +49,20 @@ class CategoryItem(QWidget):
         color_btn = QPushButton()
         color_btn.setFixedSize(30, 30)
         color_btn.setStyleSheet(f"background-color: {color}; border-radius: 20px;")
-        color_btn.setText("Edit Color")
         color_btn.clicked.connect(self.change_color)
         layout.addWidget(color_btn)
         
-        # Edit button - increased width and height
+        # Edit button - set specialButton property
         edit_btn = QPushButton("Edit Name")
-        edit_btn.setFixedSize(80, 30)  # Increased width from 60 to 80
+        edit_btn.setFixedSize(80, 30)
+        edit_btn.setProperty("specialButton", True)  # Mark as special button for styling
         edit_btn.clicked.connect(self.edit_category)
         layout.addWidget(edit_btn)
         
-        # Delete button - increased width and height
+        # Delete button - set specialButton property
         delete_btn = QPushButton("Delete")
-        delete_btn.setFixedSize(80, 30)  # Increased width from 60 to 80
+        delete_btn.setFixedSize(80, 30)
+        delete_btn.setProperty("specialButton", True)  # Mark as special button for styling
         delete_btn.clicked.connect(self.delete_category)
         layout.addWidget(delete_btn)
         
@@ -64,6 +70,22 @@ class CategoryItem(QWidget):
         self.setFixedHeight(60)  # Set a fixed height for the item - doubled from typical 30
         self.setStyleSheet(f"background-color: {color}; border-radius: 5px;")
         debug.debug(f"CategoryItem initialized: {name}")
+        
+        # Move up button - make sure it's visible with explicit styling
+        self.up_btn = QPushButton("↑")
+        self.up_btn.setFixedWidth(30)
+        self.up_btn.setToolTip("Move category up (higher importance)")
+        self.up_btn.setStyleSheet("background-color: #f0f0f0; color: black; border: 1px solid #cccccc;")
+        self.up_btn.clicked.connect(self.move_up)
+        layout.addWidget(self.up_btn)
+        
+        # Move down button - make sure it's visible with explicit styling
+        self.down_btn = QPushButton("↓")
+        self.down_btn.setFixedWidth(30)
+        self.down_btn.setToolTip("Move category down (lower importance)")
+        self.down_btn.setStyleSheet("background-color: #f0f0f0; color: black; border: 1px solid #cccccc;")
+        self.down_btn.clicked.connect(self.move_down)
+        layout.addWidget(self.down_btn)
         
     @debug_method
     def change_color(self):
@@ -176,33 +198,25 @@ class CategoryManager(QWidget):
         super().__init__()
         self.init_ui()
         self.load_categories()
+        # Keep minimal styling while ensuring buttons are visible
         self.setStyleSheet("""
-            QPushButton { 
-                background-color: #f0f0f0;
-                color: black;
-                padding:5px;
-                border: 1px solid #cccccc;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #e0e0e0;
-            }
             QLineEdit {
                 max-height: 25px;
                 padding: 2px 5px;
-                border: 1px solid #cccccc;
                 border-radius: 3px;
-                background-color: white;
-                color: black;
             }
             QListWidget {
                 border: 1px solid #cccccc;
-                background-color: white;
                 border-radius: 5px;
             }
             QListWidget::item {
-                padding: 1px;  /* Reduced from 5px */
-                margin: 1px;   /* Reduced from 2px */
+                padding: 1px;
+                margin: 1px;
+            }
+            /* Ensure buttons are visible */
+            QPushButton[flat="false"] {
+                background-color: #f0f0f0;
+                border: 1px solid #cccccc;
             }
         """)
         debug.debug("CategoryManager initialized")
@@ -224,18 +238,6 @@ class CategoryManager(QWidget):
         self.categories_list = QListWidget()
         self.categories_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         main_layout.addWidget(self.categories_list)
-        self.categories_list.setStyleSheet("""
-        QListWidget {
-                border: 1px solid #cccccc;
-                background-color: white;
-                border-radius: 5px;
-                spacing: 0px;  /* This controls the gap between items */
-            }
-            QListWidget::item {
-                padding: 0px;  /* No padding */
-                margin: 0px;   /* No margin */
-            }
-        """)
         
         # Add new category form
         debug.debug("Creating add category form")

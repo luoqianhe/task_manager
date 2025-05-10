@@ -33,31 +33,53 @@ class StatusItem(QWidget):
         layout = QHBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
         
-        # Status level indicator
+        # Calculate text color based on background brightness
+        # This ensures text is visible regardless of background color
+        bg_color = QColor(color)
+        brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
+        text_color = "black" if brightness > 128 else "white"
+        
+        # Status level indicator with contrast text
         level_label = QLabel(f"Order {display_order}:")
-        level_label.setStyleSheet("font-weight: bold; min-width: 60px;")
+        level_label.setStyleSheet(f"font-weight: bold; min-width: 60px; color: {text_color};")
         layout.addWidget(level_label)
         
-        # Status name
+        # Status name with contrast text
         name_label = QLabel(name)
-        name_label.setStyleSheet("font-weight: bold;")
+        name_label.setStyleSheet(f"font-weight: bold; color: {text_color};")
         layout.addWidget(name_label)
         
         layout.addStretch()
         
-        # Move up button
+        # Move up button - set moveButton property
         self.up_btn = QPushButton("↑")
         self.up_btn.setFixedWidth(30)
         self.up_btn.setToolTip("Move status up (higher in list)")
+        self.up_btn.setProperty("moveButton", True)  # Mark as move button for styling
         self.up_btn.clicked.connect(self.move_up)
         layout.addWidget(self.up_btn)
         
-        # Move down button
+        # Move down button - set moveButton property
         self.down_btn = QPushButton("↓")
         self.down_btn.setFixedWidth(30)
         self.down_btn.setToolTip("Move status down (lower in list)")
+        self.down_btn.setProperty("moveButton", True)  # Mark as move button for styling
         self.down_btn.clicked.connect(self.move_down)
         layout.addWidget(self.down_btn)
+        
+        # Edit button - set specialButton property
+        edit_btn = QPushButton("Edit")
+        edit_btn.setFixedWidth(60)
+        edit_btn.setProperty("specialButton", True)  # Mark as special button for styling
+        edit_btn.clicked.connect(self.edit_status)
+        layout.addWidget(edit_btn)
+        
+        # Delete button - set specialButton property
+        delete_btn = QPushButton("Delete")
+        delete_btn.setFixedWidth(60)
+        delete_btn.setProperty("specialButton", True)  # Mark as special button for styling
+        delete_btn.clicked.connect(self.delete_status)
+        layout.addWidget(delete_btn)
         
         # Color button
         color_btn = QPushButton()
@@ -65,18 +87,6 @@ class StatusItem(QWidget):
         color_btn.setStyleSheet(f"background-color: {color}; border-radius: 15px;")
         color_btn.clicked.connect(self.change_color)
         layout.addWidget(color_btn)
-        
-        # Edit button
-        edit_btn = QPushButton("Edit")
-        edit_btn.setFixedWidth(60)
-        edit_btn.clicked.connect(self.edit_status)
-        layout.addWidget(edit_btn)
-        
-        # Delete button
-        delete_btn = QPushButton("Delete")
-        delete_btn.setFixedWidth(60)
-        delete_btn.clicked.connect(self.delete_status)
-        layout.addWidget(delete_btn)
         
         self.setLayout(layout)
         self.setStyleSheet(f"background-color: {color}; border-radius: 5px;")
@@ -213,33 +223,25 @@ class StatusManager(QWidget):
         super().__init__()
         self.init_ui()
         self.load_statuses()
+        # Keep minimal styling while ensuring buttons are visible
         self.setStyleSheet("""
-            QPushButton { 
-                background-color: #f0f0f0;
-                color: black;
-                padding: 5px;
-                border: 1px solid #cccccc;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #e0e0e0;
-            }
             QLineEdit {
                 max-height: 25px;
                 padding: 2px 5px;
-                border: 1px solid #cccccc;
                 border-radius: 3px;
-                background-color: white;
-                color: black;
             }
             QListWidget {
                 border: 1px solid #cccccc;
-                background-color: white;
                 border-radius: 5px;
             }
             QListWidget::item {
                 padding: 5px;
                 margin: 2px;
+            }
+            /* Ensure the up/down buttons are visible */
+            QPushButton[flat="false"] {
+                background-color: #f0f0f0;
+                border: 1px solid #cccccc;
             }
         """)
         debug.debug("StatusManager initialization complete")

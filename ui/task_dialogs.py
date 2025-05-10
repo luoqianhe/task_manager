@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QComboBox, QPushButton, QTextEdit,
                              QDateEdit, QFormLayout, QWidget, QListWidget,
                              QListWidgetItem, QInputDialog, QMessageBox,
-                             QScrollArea)
+                             QScrollArea, QApplication)
 from pathlib import Path
 import sqlite3
 from PyQt6.QtGui import QKeySequence, QShortcut, QIcon
@@ -27,16 +27,62 @@ class AddTaskDialog(QDialog):
     
     @debug_method
     def __init__(self, parent=None):
-        debug.debug("Initializing AddTaskDialog")
         super().__init__(parent)
         self.setWindowTitle("Add New Task")
         self.setMinimumWidth(500)
         self.setMinimumHeight(500)
+        
+        # Detect OS style
+        app = QApplication.instance()
+        self.os_style = "Default"
+        if app.property("style_manager"):
+            self.os_style = app.property("style_manager").current_style
+            debug.debug(f"AddTaskDialog using OS style: {self.os_style}")
+        
         self.setup_ui()
+        # Apply OS-specific styling
+        self.apply_os_specific_adjustments()
         self.load_statuses()
         self.data = None  # Store the data here
-        debug.debug("AddTaskDialog initialization complete")
-    
+        
+    def apply_os_specific_adjustments(self):
+        """Apply OS-specific adjustments to the dialog"""
+        if self.os_style == "macOS":
+            # macOS-specific adjustments
+            self.setContentsMargins(20, 20, 20, 20)
+            
+            # More rounded corners for macOS
+            for btn in self.findChildren(QPushButton):
+                btn.setStyleSheet("border-radius: 5px;")
+                
+            # Adjust spacing for macOS
+            for layout in self.findChildren(QFormLayout):
+                layout.setSpacing(10)
+                
+        elif self.os_style == "Windows":
+            # Windows-specific adjustments
+            self.setContentsMargins(15, 15, 15, 15)
+            
+            # More rectangular elements for Windows
+            for btn in self.findChildren(QPushButton):
+                btn.setStyleSheet("border-radius: 2px;")
+                
+            # Adjust spacing for Windows
+            for layout in self.findChildren(QFormLayout):
+                layout.setSpacing(6)
+                
+        else:  # Linux
+            # Linux-specific adjustments
+            self.setContentsMargins(18, 18, 18, 18)
+            
+            # Medium roundness for Linux
+            for btn in self.findChildren(QPushButton):
+                btn.setStyleSheet("border-radius: 4px;")
+                
+            # Adjust spacing for Linux
+            for layout in self.findChildren(QFormLayout):
+                layout.setSpacing(8)
+                
     @debug_method
     def load_priorities(self):
         """Load priorities including 'Unprioritized' option"""
@@ -215,10 +261,14 @@ class AddTaskDialog(QDialog):
         button_layout = QHBoxLayout()
         save_btn = QPushButton("Save")
         save_btn.setFixedHeight(30)
+        save_btn.setDefault(True)  # This will apply the default button style for the OS
         save_btn.clicked.connect(self.accept)
+        
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFixedHeight(30)
+        cancel_btn.setProperty("secondary", True)  # Mark as secondary button
         cancel_btn.clicked.connect(self.reject)
+        
         button_layout.addWidget(save_btn)
         button_layout.addWidget(cancel_btn)
         layout.addLayout(button_layout)
@@ -365,10 +415,20 @@ class EditTaskDialog(QDialog):
         self.setWindowTitle("Edit Task")
         self.setMinimumWidth(500)
         self.setMinimumHeight(500)
+        
+        # Detect OS style
+        app = QApplication.instance()
+        self.os_style = "Default"
+        if app.property("style_manager"):
+            self.os_style = app.property("style_manager").current_style
+            debug.debug(f"EditTaskDialog using OS style: {self.os_style}")
+        
         self.setup_ui()
+        # Apply OS-specific styling
+        self.apply_os_specific_adjustments()
         self.load_statuses()
         debug.debug("EditTaskDialog initialization complete")
-
+        
     @debug_method
     def setup_ui(self):
         debug.debug("Setting up EditTaskDialog UI")
@@ -500,10 +560,14 @@ class EditTaskDialog(QDialog):
         button_layout = QHBoxLayout()
         save_btn = QPushButton("Save")
         save_btn.setFixedHeight(30)
+        save_btn.setDefault(True)  # This will apply the default button style for the OS
         save_btn.clicked.connect(self.accept)
+        
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFixedHeight(30)
+        cancel_btn.setProperty("secondary", True)  # Mark as secondary button
         cancel_btn.clicked.connect(self.reject)
+        
         button_layout.addWidget(save_btn)
         button_layout.addWidget(cancel_btn)
         layout.addLayout(button_layout)
@@ -744,7 +808,45 @@ class EditTaskDialog(QDialog):
             debug.error(f"Error loading files: {e}")
             import traceback
             traceback.print_exc()
+   
+    def apply_os_specific_adjustments(self):
+        """Apply OS-specific adjustments to the dialog"""
+        if self.os_style == "macOS":
+            # macOS-specific adjustments
+            self.setContentsMargins(20, 20, 20, 20)
             
+            # More rounded corners for macOS
+            for btn in self.findChildren(QPushButton):
+                btn.setStyleSheet("border-radius: 5px;")
+                    
+            # Adjust spacing for macOS
+            for layout in self.findChildren(QFormLayout):
+                layout.setSpacing(10)
+                    
+        elif self.os_style == "Windows":
+            # Windows-specific adjustments
+            self.setContentsMargins(15, 15, 15, 15)
+            
+            # More rectangular elements for Windows
+            for btn in self.findChildren(QPushButton):
+                btn.setStyleSheet("border-radius: 2px;")
+                    
+            # Adjust spacing for Windows
+            for layout in self.findChildren(QFormLayout):
+                layout.setSpacing(6)
+                    
+        else:  # Linux
+            # Linux-specific adjustments
+            self.setContentsMargins(18, 18, 18, 18)
+            
+            # Medium roundness for Linux
+            for btn in self.findChildren(QPushButton):
+                btn.setStyleSheet("border-radius: 4px;")
+                    
+            # Adjust spacing for Linux
+            for layout in self.findChildren(QFormLayout):
+                layout.setSpacing(8)
+
 class EditStatusDialog(QDialog):
     @staticmethod
     def get_connection():
@@ -782,8 +884,12 @@ class EditStatusDialog(QDialog):
         
         self.setLayout(layout)
         self.load_data()
+        
+        # Apply OS-specific styling
+        self.apply_os_style()
+        
         debug.debug("EditStatusDialog initialization complete")
-    
+   
     @debug_method
     def load_data(self):
         debug.debug(f"Loading data for status ID: {self.status_id}")
@@ -845,6 +951,165 @@ class EditStatusDialog(QDialog):
         
         self.accept()
 
+    def apply_os_style(self):
+        """Apply OS-specific styling to the dialog"""
+        import platform
+        os_name = platform.system()
+        
+        if os_name == "Darwin":  # macOS
+            self.apply_macos_style()
+        elif os_name == "Windows":
+            self.apply_windows_style()
+        else:  # Linux or other
+            self.apply_linux_style()
+
+    def apply_macos_style(self):
+        """Apply macOS-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F5F5F7;
+                border-radius: 10px;
+            }
+            QLabel {
+                font-family: -apple-system, '.AppleSystemUIFont', 'SF Pro Text';
+                color: #1D1D1F;
+            }
+            QLineEdit {
+                border: 1px solid #D2D2D7;
+                border-radius: 5px;
+                background-color: white;
+                padding: 5px 8px;
+                height: 24px;
+                font-family: -apple-system, '.AppleSystemUIFont';
+                selection-background-color: #0071E3;
+            }
+            QLineEdit:focus {
+                border: 1px solid #0071E3;
+            }
+            QPushButton {
+                background-color: #E5E5EA;
+                color: #1D1D1F;
+                border: none;
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 80px;
+                height: 24px;
+                font-family: -apple-system, '.AppleSystemUIFont';
+            }
+            QPushButton:hover {
+                background-color: #D1D1D6;
+            }
+            QPushButton:pressed {
+                background-color: #C7C7CC;
+            }
+            QPushButton[primary="true"], QPushButton:default {
+                background-color: #0071E3;
+                color: white;
+                font-weight: 500;
+            }
+        """)
+        
+        self.layout().setContentsMargins(20, 20, 20, 20)
+        self.layout().setSpacing(12)
+        
+        # Set Save button as primary
+        for button in self.findChildren(QPushButton):
+            if "Save" in button.text():
+                button.setProperty("primary", True)
+                button.setDefault(True)
+                button.style().unpolish(button)
+                button.style().polish(button)
+
+    def apply_windows_style(self):
+        """Apply Windows-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F0F0F0;
+            }
+            QLabel {
+                font-family: 'Segoe UI', sans-serif;
+                color: #000000;
+            }
+            QLineEdit {
+                border: 1px solid #CCCCCC;
+                border-radius: 2px;
+                background-color: white;
+                padding: 4px 6px;
+                font-family: 'Segoe UI';
+                selection-background-color: #0078D7;
+            }
+            QLineEdit:focus {
+                border: 1px solid #0078D7;
+            }
+            QPushButton {
+                background-color: #E1E1E1;
+                color: #000000;
+                border: 1px solid #ADADAD;
+                border-radius: 2px;
+                padding: 5px 10px;
+                min-width: 80px;
+                height: 28px;
+                font-family: 'Segoe UI';
+            }
+            QPushButton:hover {
+                background-color: #E5F1FB;
+                border: 1px solid #0078D7;
+            }
+            QPushButton:default {
+                background-color: #0078D7;
+                color: white;
+                border: 1px solid #0078D7;
+            }
+        """)
+        
+        self.layout().setContentsMargins(15, 15, 15, 15)
+        self.layout().setSpacing(8)
+
+    def apply_linux_style(self):
+        """Apply Linux-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F6F5F4;
+            }
+            QLabel {
+                font-family: 'Ubuntu', 'Noto Sans', sans-serif;
+                color: #3D3D3D;
+            }
+            QLineEdit {
+                border: 1px solid #C6C6C6;
+                border-radius: 4px;
+                background-color: white;
+                padding: 5px 8px;
+                font-family: 'Ubuntu', 'Noto Sans';
+                selection-background-color: #3584E4;
+            }
+            QLineEdit:focus {
+                border: 1px solid #3584E4;
+            }
+            QPushButton {
+                background-color: #FFFFFF;
+                color: #3D3D3D;
+                border: 1px solid #C6C6C6;
+                border-radius: 4px;
+                padding: 6px 12px;
+                min-width: 80px;
+                height: 30px;
+                font-family: 'Ubuntu', 'Noto Sans';
+            }
+            QPushButton:hover {
+                background-color: #F2F2F2;
+                border: 1px solid #B8B8B8;
+            }
+            QPushButton:default {
+                background-color: #3584E4;
+                color: white;
+                border: 1px solid #1E65BD;
+            }
+        """)
+        
+        self.layout().setContentsMargins(18, 18, 18, 18)
+        self.layout().setSpacing(10)
+        
 # New component for task_dialogs.py
 class LinkListWidget(QWidget):
     """Widget for managing multiple links for a task"""
@@ -1006,6 +1271,10 @@ class LinkDialog(QDialog):
         self.setWindowTitle("Link Details")
         self.setMinimumWidth(400)
         self.setup_ui(url, label)
+        
+        # Apply OS-specific styling
+        self.apply_os_style()
+        
         debug.debug("LinkDialog initialization complete")
     
     @debug_method
@@ -1313,3 +1582,162 @@ class FileListWidget(QWidget):
             # Handle other errors if we have an item reference
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Error", f"Could not open file: {str(e)}")
+            
+    def apply_os_style(self):
+        """Apply OS-specific styling to the dialog"""
+        import platform
+        os_name = platform.system()
+        
+        if os_name == "Darwin":  # macOS
+            self.apply_macos_style()
+        elif os_name == "Windows":
+            self.apply_windows_style()
+        else:  # Linux or other
+            self.apply_linux_style()
+
+    def apply_macos_style(self):
+        """Apply macOS-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F5F5F7;
+                border-radius: 10px;
+            }
+            QLabel {
+                font-family: -apple-system, '.AppleSystemUIFont', 'SF Pro Text';
+                color: #1D1D1F;
+            }
+            QLineEdit {
+                border: 1px solid #D2D2D7;
+                border-radius: 5px;
+                background-color: white;
+                padding: 5px 8px;
+                height: 24px;
+                font-family: -apple-system, '.AppleSystemUIFont';
+                selection-background-color: #0071E3;
+            }
+            QLineEdit:focus {
+                border: 1px solid #0071E3;
+            }
+            QPushButton {
+                background-color: #E5E5EA;
+                color: #1D1D1F;
+                border: none;
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 80px;
+                height: 24px;
+                font-family: -apple-system, '.AppleSystemUIFont';
+            }
+            QPushButton:hover {
+                background-color: #D1D1D6;
+            }
+            QPushButton:pressed {
+                background-color: #C7C7CC;
+            }
+            QPushButton[primary="true"], QPushButton:default {
+                background-color: #0071E3;
+                color: white;
+                font-weight: 500;
+            }
+        """)
+        
+        self.layout().setContentsMargins(20, 20, 20, 20)
+        self.layout().setSpacing(12)
+        
+        # Set Save button as primary
+        for button in self.findChildren(QPushButton):
+            if "Save" in button.text():
+                button.setProperty("primary", True)
+                button.setDefault(True)
+                button.style().unpolish(button)
+                button.style().polish(button)
+
+    def apply_windows_style(self):
+        """Apply Windows-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F0F0F0;
+            }
+            QLabel {
+                font-family: 'Segoe UI', sans-serif;
+                color: #000000;
+            }
+            QLineEdit {
+                border: 1px solid #CCCCCC;
+                border-radius: 2px;
+                background-color: white;
+                padding: 4px 6px;
+                font-family: 'Segoe UI';
+                selection-background-color: #0078D7;
+            }
+            QLineEdit:focus {
+                border: 1px solid #0078D7;
+            }
+            QPushButton {
+                background-color: #E1E1E1;
+                color: #000000;
+                border: 1px solid #ADADAD;
+                border-radius: 2px;
+                padding: 5px 10px;
+                min-width: 80px;
+                height: 28px;
+                font-family: 'Segoe UI';
+            }
+            QPushButton:hover {
+                background-color: #E5F1FB;
+                border: 1px solid #0078D7;
+            }
+            QPushButton:default {
+                background-color: #0078D7;
+                color: white;
+                border: 1px solid #0078D7;
+            }
+        """)
+        
+        self.layout().setContentsMargins(15, 15, 15, 15)
+        self.layout().setSpacing(8)
+
+    def apply_linux_style(self):
+        """Apply Linux-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F6F5F4;
+            }
+            QLabel {
+                font-family: 'Ubuntu', 'Noto Sans', sans-serif;
+                color: #3D3D3D;
+            }
+            QLineEdit {
+                border: 1px solid #C6C6C6;
+                border-radius: 4px;
+                background-color: white;
+                padding: 5px 8px;
+                font-family: 'Ubuntu', 'Noto Sans';
+                selection-background-color: #3584E4;
+            }
+            QLineEdit:focus {
+                border: 1px solid #3584E4;
+            }
+            QPushButton {
+                background-color: #FFFFFF;
+                color: #3D3D3D;
+                border: 1px solid #C6C6C6;
+                border-radius: 4px;
+                padding: 6px 12px;
+                min-width: 80px;
+                height: 30px;
+                font-family: 'Ubuntu', 'Noto Sans';
+            }
+            QPushButton:hover {
+                background-color: #F2F2F2;
+                border: 1px solid #B8B8B8;
+            }
+            QPushButton:default {
+                background-color: #3584E4;
+                color: white;
+                border: 1px solid #1E65BD;
+            }
+        """)
+        
+        self.layout().setContentsMargins(18, 18, 18, 18)
+        self.layout().setSpacing(10)

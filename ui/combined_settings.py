@@ -19,6 +19,8 @@ from utils.debug_decorator import debug_method
 debug = get_debug_logger()
 
 # Base class for setting items with consistent pill style
+# Comprehensive fix for SettingPillItem class
+
 class SettingPillItem(QWidget):
     @staticmethod
     def get_connection():
@@ -37,6 +39,13 @@ class SettingPillItem(QWidget):
         self.color = color  # Store the color for reference
         self.setAcceptDrops(True)  # Enable drops
         
+        # Calculate text color based on background brightness
+        # This ensures text is visible regardless of background color
+        bg_color = QColor(color)
+        brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
+        text_color = "black" if brightness > 128 else "white"
+        debug.debug(f"Setting {item_type} pill text color to {text_color} for background {color}")
+        
         # Create a frame to serve as the colored background
         self.frame = QFrame(self)
         self.frame.setObjectName("coloredFrame")
@@ -47,17 +56,17 @@ class SettingPillItem(QWidget):
         layout.setContentsMargins(15, 17, 15, 17)  # Consistent padding
         layout.setSpacing(10)  # Space between controls
         
-        # Item name with larger font - white text
+        # Item name with larger font - use dynamic text color
         name_label = QLabel(name)
-        name_label.setStyleSheet("font-weight: bold; font-size: 14px; color: white;")
+        name_label.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {text_color};")
         layout.addWidget(name_label)
         
         # Add stretch to push buttons to the right
         layout.addStretch()
         
-        # Add grip handle icon to indicate draggable - white color
+        # Add grip handle icon to indicate draggable - use dynamic text color
         drag_icon = QLabel("☰")  # Unicode hamburger/grip icon
-        drag_icon.setStyleSheet("font-size: 16px; color: white;")
+        drag_icon.setStyleSheet(f"font-size: 16px; color: {text_color};")
         drag_icon.setToolTip("Drag to reorder")
         layout.addWidget(drag_icon)
         
@@ -97,7 +106,37 @@ class SettingPillItem(QWidget):
         
         self.setFixedHeight(60)  # Consistent height for all items
         debug.debug(f"Created {self.item_type} pill: {self.name}")
-
+    
+    @debug_method
+    def change_color(self, checked=None):
+        debug.debug(f"Opening color dialog for {self.item_type}: {self.name}")
+        color = QColorDialog.getColor()
+        if color.isValid():
+            new_color = color.name()
+            debug.debug(f"New color selected: {new_color}")
+            self.update_color_in_db(new_color)
+            
+            # Update the stored color
+            self.color = new_color
+            
+            # Calculate text color based on background brightness
+            bg_color = QColor(new_color)
+            brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
+            text_color = "black" if brightness > 128 else "white"
+            debug.debug(f"Updating {self.item_type} pill text color to {text_color}")
+            
+            # Update the frame background
+            self.frame.setStyleSheet(f"#coloredFrame {{ background-color: {new_color}; border-radius: 5px; }}")
+            
+            # Update text color for labels
+            for child in self.findChildren(QLabel):
+                if child.text() == "☰":  # Grip icon
+                    child.setStyleSheet(f"font-size: 16px; color: {text_color};")
+                elif child.text() == self.name:  # Name label
+                    child.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {text_color};")
+                    
+            debug.debug(f"Updated color for {self.item_type}: {self.name}")
+             
     @debug_method
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.display_order is not None:
@@ -191,22 +230,6 @@ class SettingPillItem(QWidget):
         else:
             debug.debug("Drop event has no text data, ignoring")
             event.ignore()
-    
-    @debug_method
-    def change_color(self, checked=None):
-        debug.debug(f"Opening color dialog for {self.item_type}: {self.name}")
-        color = QColorDialog.getColor()
-        if color.isValid():
-            new_color = color.name()
-            debug.debug(f"New color selected: {new_color}")
-            self.update_color_in_db(new_color)
-            
-            # Update the stored color
-            self.color = new_color
-            
-            # Update the frame background
-            self.frame.setStyleSheet(f"#coloredFrame {{ background-color: {new_color}; border-radius: 5px; }}")
-            debug.debug(f"Updated color for {self.item_type}: {self.name}")
     
     @debug_method
     def update_color_in_db(self, color):
@@ -722,8 +745,10 @@ class CombinedSettingsManager(QWidget):
             table_name = "statuses"
         elif item_type == "priority":
             table_name = "priorities"
+        elif item_type == "category":
+            table_name = "categories"  # Use the correct table name
         else:
-            table_name = f"{item_type}s"  # categories
+            table_name = f"{item_type}s"  # Default pluralization
             
         foreign_key = f"{item_type}_id" if item_type == "category" else item_type
         
@@ -781,6 +806,8 @@ class CombinedSettingsManager(QWidget):
                 debug.debug(f"Successfully deleted {item_type} ID {item_id}")
         except Exception as e:
             debug.error(f"Error deleting {item_type}: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to delete {item_type}: {str(e)}")
+            return
         
         # Reload the appropriate list
         if item_type == "category":
@@ -801,14 +828,18 @@ class CombinedSettingsManager(QWidget):
         
         if current_type == "statuses":
             item_type = "status"
+            table_name = "statuses"
         elif current_type == "priorities":
             item_type = "priority"
+            table_name = "priorities"
         elif current_type == "categories":
             item_type = "category"
+            table_name = "categories"  # Use the correct table name
         else:
-            # Fallback for any other cases
+            # Fallback for any other cases - shouldn't happen with the current UI
             item_type = current_type.rstrip('s')
-            debug.debug(f"Using fallback item_type: {item_type}")
+            table_name = current_type
+            debug.debug(f"Using fallback item_type: {item_type}, table_name: {table_name}")
         
         name = self.name_input.text().strip()
         
@@ -828,9 +859,6 @@ class CombinedSettingsManager(QWidget):
             else:  # status
                 self.selected_color = "#E0E0E0"  # Light gray
                 debug.debug(f"Using default status color: {self.selected_color}")
-        
-        table_name = "statuses" if item_type == "status" else "priorities" if item_type == "priority" else f"{item_type}s"
-        debug.debug(f"Using table name: {table_name}")
         
         try:
             with self.get_connection() as conn:
@@ -873,6 +901,8 @@ class CombinedSettingsManager(QWidget):
                 
         except Exception as e:
             debug.error(f"Error adding {item_type}: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to add {item_type}: {str(e)}")
+            return
         
         # Clear inputs and refresh
         self.name_input.clear()
@@ -933,7 +963,11 @@ class EditItemDialog(QDialog):
         
         self.setLayout(layout)
         self.load_data()
-        debug.debug("EditItemDialog initialized")
+        
+        # Apply OS-specific styling
+        self.apply_os_style()
+        
+        debug.debug("EditItemDialog initialization complete")
     
     @debug_method
     def load_data(self):
@@ -961,7 +995,7 @@ class EditItemDialog(QDialog):
                     debug.warning(f"No {self.item_type} found with ID {self.item_id}")
         except Exception as e:
             debug.error(f"Error loading data: {e}")
-    
+
     @debug_method
     def save_changes(self, checked=False):
         debug.debug("Saving changes")
@@ -977,8 +1011,10 @@ class EditItemDialog(QDialog):
             table_name = "statuses"
         elif self.item_type == "priority":
             table_name = "priorities"
+        elif self.item_type == "category":
+            table_name = "categories"  # Fix: was incorrectly pluralized to "categorys" in some places
         else:
-            table_name = f"{self.item_type}s"  # categories
+            table_name = f"{self.item_type}s"  # Default pluralization
         
         debug.debug(f"Using table name: {table_name}")
         
@@ -1038,4 +1074,163 @@ class EditItemDialog(QDialog):
             return
             
         debug.debug("Accepting dialog")
-        self.accept()
+        self.accept()    
+    
+    def apply_os_style(self):
+        """Apply OS-specific styling to the dialog"""
+        import platform
+        os_name = platform.system()
+        
+        if os_name == "Darwin":  # macOS
+            self.apply_macos_style()
+        elif os_name == "Windows":
+            self.apply_windows_style()
+        else:  # Linux or other
+            self.apply_linux_style()
+
+    def apply_macos_style(self):
+        """Apply macOS-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F5F5F7;
+                border-radius: 10px;
+            }
+            QLabel {
+                font-family: -apple-system, '.AppleSystemUIFont', 'SF Pro Text';
+                color: #1D1D1F;
+            }
+            QLineEdit {
+                border: 1px solid #D2D2D7;
+                border-radius: 5px;
+                background-color: white;
+                padding: 5px 8px;
+                height: 24px;
+                font-family: -apple-system, '.AppleSystemUIFont';
+                selection-background-color: #0071E3;
+            }
+            QLineEdit:focus {
+                border: 1px solid #0071E3;
+            }
+            QPushButton {
+                background-color: #E5E5EA;
+                color: #1D1D1F;
+                border: none;
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 80px;
+                height: 24px;
+                font-family: -apple-system, '.AppleSystemUIFont';
+            }
+            QPushButton:hover {
+                background-color: #D1D1D6;
+            }
+            QPushButton:pressed {
+                background-color: #C7C7CC;
+            }
+            QPushButton[primary="true"], QPushButton:default {
+                background-color: #0071E3;
+                color: white;
+                font-weight: 500;
+            }
+        """)
+        
+        self.layout().setContentsMargins(20, 20, 20, 20)
+        self.layout().setSpacing(12)
+        
+        # Set Save button as primary
+        for button in self.findChildren(QPushButton):
+            if "Save" in button.text():
+                button.setProperty("primary", True)
+                button.setDefault(True)
+                button.style().unpolish(button)
+                button.style().polish(button)
+
+    def apply_windows_style(self):
+        """Apply Windows-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F0F0F0;
+            }
+            QLabel {
+                font-family: 'Segoe UI', sans-serif;
+                color: #000000;
+            }
+            QLineEdit {
+                border: 1px solid #CCCCCC;
+                border-radius: 2px;
+                background-color: white;
+                padding: 4px 6px;
+                font-family: 'Segoe UI';
+                selection-background-color: #0078D7;
+            }
+            QLineEdit:focus {
+                border: 1px solid #0078D7;
+            }
+            QPushButton {
+                background-color: #E1E1E1;
+                color: #000000;
+                border: 1px solid #ADADAD;
+                border-radius: 2px;
+                padding: 5px 10px;
+                min-width: 80px;
+                height: 28px;
+                font-family: 'Segoe UI';
+            }
+            QPushButton:hover {
+                background-color: #E5F1FB;
+                border: 1px solid #0078D7;
+            }
+            QPushButton:default {
+                background-color: #0078D7;
+                color: white;
+                border: 1px solid #0078D7;
+            }
+        """)
+        
+        self.layout().setContentsMargins(15, 15, 15, 15)
+        self.layout().setSpacing(8)
+
+    def apply_linux_style(self):
+        """Apply Linux-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F6F5F4;
+            }
+            QLabel {
+                font-family: 'Ubuntu', 'Noto Sans', sans-serif;
+                color: #3D3D3D;
+            }
+            QLineEdit {
+                border: 1px solid #C6C6C6;
+                border-radius: 4px;
+                background-color: white;
+                padding: 5px 8px;
+                font-family: 'Ubuntu', 'Noto Sans';
+                selection-background-color: #3584E4;
+            }
+            QLineEdit:focus {
+                border: 1px solid #3584E4;
+            }
+            QPushButton {
+                background-color: #FFFFFF;
+                color: #3D3D3D;
+                border: 1px solid #C6C6C6;
+                border-radius: 4px;
+                padding: 6px 12px;
+                min-width: 80px;
+                height: 30px;
+                font-family: 'Ubuntu', 'Noto Sans';
+            }
+            QPushButton:hover {
+                background-color: #F2F2F2;
+                border: 1px solid #B8B8B8;
+            }
+            QPushButton:default {
+                background-color: #3584E4;
+                color: white;
+                border: 1px solid #1E65BD;
+            }
+        """)
+        
+        self.layout().setContentsMargins(18, 18, 18, 18)
+        self.layout().setSpacing(10)

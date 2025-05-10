@@ -6,6 +6,7 @@ from PyQt6.QtCore import QRectF, Qt, QSize, QPoint, QPointF
 from datetime import datetime, date
 import sqlite3
 from pathlib import Path
+from ui.os_style_manager import OSStyleManager
 
 # Import the debug logger
 from utils.debug_logger import get_debug_logger
@@ -20,13 +21,36 @@ class TaskPillDelegate(QStyledItemDelegate):
         return get_db_manager().get_connection()
     
     def __init__(self, parent=None):
-        debug.debug("Initializing TaskPillDelegate")
         super().__init__(parent)
         # Initialize attributes
         self.text_padding = 10
-        self.pill_height = 80
-        self.compact_height = 40
-        self.pill_radius = 15
+        
+        # Get the OS style manager if available
+        app = QApplication.instance()
+        self.os_style = None
+        if app.property("style_manager"):
+            self.os_style = app.property("style_manager").current_style
+            debug.debug(f"Task pill delegate using OS style: {self.os_style}")
+            
+            # Adjust sizes based on OS
+            if self.os_style == "macOS":
+                self.pill_height = 80
+                self.compact_height = 40
+                self.pill_radius = 15
+            elif self.os_style == "Windows":
+                self.pill_height = 70
+                self.compact_height = 35
+                self.pill_radius = 4  # Much less rounded for Windows
+            else:  # Linux
+                self.pill_height = 75
+                self.compact_height = 38
+                self.pill_radius = 8  # Medium roundness for Linux
+        else:
+            # Default values if no OS style manager
+            self.pill_height = 80
+            self.compact_height = 40
+            self.pill_radius = 10
+            
         self.item_margin = 5
         
         settings = self.get_settings_manager()

@@ -796,6 +796,11 @@ class BatchEditDialog(QDialog):
         debug.debug(f"Initializing BatchEditDialog with {selected_count} selected items")
         self.setup_ui()
         
+        # Apply OS-specific styling
+        self.apply_os_style()
+        
+        debug.debug("BatchEditDialog initialization complete")     
+        
     @debug_method
     def setup_ui(self):
         debug.debug("Setting up batch edit dialog UI")
@@ -921,3 +926,213 @@ class BatchEditDialog(QDialog):
             self.priority_combo.setCurrentIndex(index)
             debug.debug("Set default priority to Medium")
         debug.debug("Priorities loaded in combo box")
+        
+    def apply_os_style(self):
+        """Apply OS-specific styling to the dialog"""
+        import platform
+        os_name = platform.system()
+        
+        if os_name == "Darwin":  # macOS
+            self.apply_macos_style()
+        elif os_name == "Windows":
+            self.apply_windows_style()
+        else:  # Linux or other
+            self.apply_linux_style()
+
+    def apply_macos_style(self):
+        """Apply macOS-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F5F5F7;
+                border-radius: 10px;
+            }
+            QLabel {
+                font-family: -apple-system, '.AppleSystemUIFont', 'SF Pro Text';
+                color: #1D1D1F;
+            }
+            QGroupBox {
+                font-family: -apple-system, '.AppleSystemUIFont', 'SF Pro Text';
+                font-weight: 500;
+                color: #1D1D1F;
+                border: 1px solid #D2D2D7;
+                border-radius: 5px;
+                margin-top: 1ex;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 5px;
+            }
+            QRadioButton, QCheckBox {
+                font-family: -apple-system, '.AppleSystemUIFont', 'SF Pro Text';
+                color: #1D1D1F;
+            }
+            QComboBox {
+                border: 1px solid #D2D2D7;
+                border-radius: 5px;
+                background-color: white;
+                padding: 5px 8px;
+                height: 24px;
+                font-family: -apple-system, '.AppleSystemUIFont';
+                selection-background-color: #0071E3;
+            }
+            QComboBox:focus {
+                border: 1px solid #0071E3;
+            }
+            QPushButton {
+                background-color: #E5E5EA;
+                color: #1D1D1F;
+                border: none;
+                border-radius: 5px;
+                padding: 5px 10px;
+                min-width: 80px;
+                height: 24px;
+                font-family: -apple-system, '.AppleSystemUIFont';
+            }
+            QPushButton:hover {
+                background-color: #D1D1D6;
+            }
+            QPushButton:pressed {
+                background-color: #C7C7CC;
+            }
+            QPushButton[primary="true"], QPushButton:default {
+                background-color: #0071E3;
+                color: white;
+                font-weight: 500;
+            }
+        """)
+        
+        self.layout().setContentsMargins(20, 20, 20, 20)
+        self.layout().setSpacing(12)
+        
+        # Set Apply Changes button as primary
+        for button in self.findChildren(QPushButton):
+            if "Apply" in button.text():
+                button.setProperty("primary", True)
+                button.setDefault(True)
+                button.style().unpolish(button)
+                button.style().polish(button)
+
+    def apply_windows_style(self):
+        """Apply Windows-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F0F0F0;
+            }
+            QLabel {
+                font-family: 'Segoe UI', sans-serif;
+                color: #000000;
+            }
+            QGroupBox {
+                font-family: 'Segoe UI', sans-serif;
+                color: #000000;
+                border: 1px solid #CCCCCC;
+                margin-top: 1ex;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 5px;
+            }
+            QRadioButton, QCheckBox {
+                font-family: 'Segoe UI', sans-serif;
+                color: #000000;
+            }
+            QComboBox {
+                border: 1px solid #CCCCCC;
+                border-radius: 2px;
+                background-color: white;
+                padding: 4px 6px;
+                font-family: 'Segoe UI';
+                selection-background-color: #0078D7;
+            }
+            QComboBox:focus {
+                border: 1px solid #0078D7;
+            }
+            QPushButton {
+                background-color: #E1E1E1;
+                color: #000000;
+                border: 1px solid #ADADAD;
+                border-radius: 2px;
+                padding: 5px 10px;
+                min-width: 80px;
+                height: 28px;
+                font-family: 'Segoe UI';
+            }
+            QPushButton:hover {
+                background-color: #E5F1FB;
+                border: 1px solid #0078D7;
+            }
+            QPushButton:default {
+                background-color: #0078D7;
+                color: white;
+                border: 1px solid #0078D7;
+            }
+        """)
+        
+        self.layout().setContentsMargins(15, 15, 15, 15)
+        self.layout().setSpacing(8)
+
+    def apply_linux_style(self):
+        """Apply Linux-specific styling to the dialog"""
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #F6F5F4;
+            }
+            QLabel {
+                font-family: 'Ubuntu', 'Noto Sans', sans-serif;
+                color: #3D3D3D;
+            }
+            QGroupBox {
+                font-family: 'Ubuntu', 'Noto Sans', sans-serif;
+                color: #3D3D3D;
+                border: 1px solid #C6C6C6;
+                border-radius: 4px;
+                margin-top: 1ex;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 5px;
+            }
+            QRadioButton, QCheckBox {
+                font-family: 'Ubuntu', 'Noto Sans', sans-serif;
+                color: #3D3D3D;
+            }
+            QComboBox {
+                border: 1px solid #C6C6C6;
+                border-radius: 4px;
+                background-color: white;
+                padding: 5px 8px;
+                font-family: 'Ubuntu', 'Noto Sans';
+                selection-background-color: #3584E4;
+            }
+            QComboBox:focus {
+                border: 1px solid #3584E4;
+            }
+            QPushButton {
+                background-color: #FFFFFF;
+                color: #3D3D3D;
+                border: 1px solid #C6C6C6;
+                border-radius: 4px;
+                padding: 6px 12px;
+                min-width: 80px;
+                height: 30px;
+                font-family: 'Ubuntu', 'Noto Sans';
+            }
+            QPushButton:hover {
+                background-color: #F2F2F2;
+                border: 1px solid #B8B8B8;
+            }
+            QPushButton:default {
+                background-color: #3584E4;
+                color: white;
+                border: 1px solid #1E65BD;
+            }
+        """)
+        
+        self.layout().setContentsMargins(18, 18, 18, 18)
+        self.layout().setSpacing(10)

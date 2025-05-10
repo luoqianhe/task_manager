@@ -3,6 +3,7 @@ from utils.debug_logger import get_debug_logger
 from utils.debug_init import init_debugger
 from utils.debug_decorator import debug_method
 from ui.app_settings import SettingsManager
+from ui.os_style_manager import OSStyleManager
 import argparse
 
 # Create argument parser
@@ -62,9 +63,21 @@ class MainWindow(QMainWindow):
     
     @debug_method
     def __init__(self):
-        debug.debug("Initializing MainWindow")
         super().__init__()
         self.setGeometry(100, 100, 900, 600)
+        
+        # Initialize settings manager
+        self.settings = SettingsManager()
+        
+        # Get OS style information
+        app = QApplication.instance()
+        self.os_style = "Default"
+        if app.property("style_manager"):
+            self.os_style = app.property("style_manager").current_style
+            debug.debug(f"MainWindow using OS style: {self.os_style}")
+            
+        # Apply OS-specific window settings
+        self.apply_os_window_settings()
         
         # Initialize settings manager
         debug.debug("Creating SettingsManager")
@@ -214,27 +227,18 @@ class MainWindow(QMainWindow):
         # Export button
         export_button = QPushButton("Export to CSV")
         export_button.setFixedHeight(40)
-        export_button.setStyleSheet("""
-            background-color: #2196F3;
-        """)
         export_button.clicked.connect(self.export_to_csv)
         button_layout.addWidget(export_button)
         
         # Import button
         import_button = QPushButton("Import from CSV")
         import_button.setFixedHeight(40)
-        import_button.setStyleSheet("""
-            background-color: #2196F3;
-        """)
         import_button.clicked.connect(self.import_from_csv)
         button_layout.addWidget(import_button)
         
         # Settings button
         settings_button = QPushButton("Settings")
         settings_button.setFixedHeight(40)
-        settings_button.setStyleSheet("""
-            background-color: #9C27B0;
-        """)
         settings_button.clicked.connect(self.show_settings)
         button_layout.addWidget(settings_button)
         
@@ -620,6 +624,28 @@ class MainWindow(QMainWindow):
         # Store the current tab index for reference
         self.previous_tab_index = index
 
+    @debug_method
+    def apply_os_window_settings(self):
+        """Apply OS-specific settings to the main window"""
+        if self.os_style == "macOS":
+            # macOS styling
+            self.setWindowTitle("Task Organizer")
+            # macOS has its own window controls, so minimal adjustments needed
+            
+        elif self.os_style == "Windows":
+            # Windows styling
+            self.setWindowTitle("Task Organizer")
+            # Optional: Use Windows-specific icon
+            if Path("resources/icons/windows_app_icon.ico").exists():
+                self.setWindowIcon(QIcon("resources/icons/windows_app_icon.ico"))
+                
+        else:  # Linux
+            # Linux styling
+            self.setWindowTitle("Task Organizer")
+            # Optional: Use Linux-specific icon
+            if Path("resources/icons/linux_app_icon.png").exists():
+                self.setWindowIcon(QIcon("resources/icons/linux_app_icon.png"))
+                
 def apply_connection_method():
     """Apply the global connection method to all classes that need it"""
     debug.debug("Applying global connection method to classes")
@@ -644,6 +670,17 @@ def main():
     # Initialize settings manager first
     debug.debug("Initializing SettingsManager")
     settings = SettingsManager()
+    
+    # Create OS Style Manager
+    debug.debug("Creating OS Style Manager")
+    style_manager = OSStyleManager(settings)
+    
+    # Apply OS-specific styling with user customizations
+    os_style = style_manager.apply_os_styles(app)
+    debug.debug(f"Applied {os_style} styling to application")
+    
+    # Store the style manager in the app properties for later reference
+    app.setProperty("style_manager", style_manager)
     
     debug.debug(f"Initial settings: left_panel_contents={settings.get_setting('left_panel_contents')}, right_panel_contents={settings.get_setting('right_panel_contents')}")
     

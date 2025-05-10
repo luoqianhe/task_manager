@@ -2,12 +2,16 @@
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                            QFileDialog, QMessageBox, QLabel, QCheckBox, 
-                           QGroupBox, QFormLayout, QLineEdit, QSpinBox)
+                           QGroupBox, QFormLayout, QLineEdit, QSpinBox, QApplication)
 from pathlib import Path
 import json
 import shutil
 import sqlite3
 import sys
+import platform
+
+from ui.os_style_manager import OSStyleManager
+
 
 # Import the debug logger
 from utils.debug_logger import get_debug_logger
@@ -214,7 +218,32 @@ class AppSettingsWidget(QWidget):
         # Add the panels layout to the main layout
         layout.addLayout(panels_layout)
         
-        # Debug Settings group - NEW
+        # Add Style Preferences group
+        style_prefs_group = QGroupBox("Application Style")
+        style_prefs_layout = QVBoxLayout()
+        
+        # Add OS detection info
+        os_name = platform.system()
+        os_label = QLabel(f"Detected Operating System: <b>{os_name}</b>")
+        style_prefs_layout.addWidget(os_label)
+        
+        # Get current style from app property
+        app = QApplication.instance()
+        current_style = "Default"
+        if app.property("style_manager"):
+            current_style = app.property("style_manager").current_style
+        style_label = QLabel(f"Current Style: <b>{current_style}</b>")
+        style_prefs_layout.addWidget(style_label)
+        
+        # Style preferences button
+        style_prefs_button = QPushButton("Style Preferences...")
+        style_prefs_button.clicked.connect(self.show_style_preferences)
+        style_prefs_layout.addWidget(style_prefs_button)
+        
+        style_prefs_group.setLayout(style_prefs_layout)
+        layout.addWidget(style_prefs_group)
+        
+        # Debug Settings group
         debug_group = QGroupBox("Debug Settings")
         debug_layout = QVBoxLayout()
         
@@ -317,6 +346,12 @@ class AppSettingsWidget(QWidget):
         debug.debug(f"Saved debug_enabled setting: {debug_enabled}")
         
         QMessageBox.information(self, "Settings Saved", "Your settings have been saved.")
+    
+    def show_style_preferences(self):
+        """Show the style preferences dialog"""
+        from ui.style_preferences_dialog import StylePreferencesDialog
+        dialog = StylePreferencesDialog(self.settings, self)
+        dialog.exec()
     
     def toggle_debug_logging(self, enabled):
         """Handle toggling debug logging"""
