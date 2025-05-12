@@ -74,17 +74,20 @@ class SettingPillItem(QWidget):
         color_btn = QPushButton("Edit Color")
         color_btn.setFixedSize(80, 30)
         color_btn.clicked.connect(self.change_color)
+        color_btn.setProperty("secondary", True)
         layout.addWidget(color_btn)
         
         # Edit button
         edit_btn = QPushButton("Edit Name")
         edit_btn.setFixedSize(80, 30)
+        edit_btn.setProperty("secondary", True)
         edit_btn.clicked.connect(self.edit_item)
         layout.addWidget(edit_btn)
         
         # Delete button
         delete_btn = QPushButton("Delete")
         delete_btn.setFixedSize(80, 30)
+        delete_btn.setProperty("secondary", True)
         delete_btn.clicked.connect(self.delete_item)
         
         # Disable deletion of "Completed" status
@@ -301,50 +304,12 @@ class CombinedSettingsManager(QWidget):
         return get_db_manager().get_connection()
     
     @debug_method
-    def __init__(self):
+    def __init__(self, main_window = None):
         debug.debug("Initializing CombinedSettingsManager")
         super().__init__()
+        self.main_window = main_window  # Store main_window reference
         self.init_ui()
         self.load_all_items()
-        self.setStyleSheet("""
-            QPushButton { 
-                background-color: #f0f0f0;
-                color: black;
-                padding: 5px;
-                border: 1px solid #cccccc;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #e0e0e0;
-            }
-            QPushButton:disabled {
-                background-color: #e0e0e0;
-                color: #888888;
-            }
-            QLineEdit {
-                max-height: 25px;
-                padding: 2px 5px;
-                border: 1px solid #cccccc;
-                border-radius: 3px;
-                background-color: white;
-                color: black;
-            }
-            QListWidget {
-                border: 1px solid #cccccc;
-                background-color: white;
-                border-radius: 5px;
-            }
-            QListWidget::item {
-                padding: 1px;
-                margin: 1px;
-            }
-            QComboBox {
-                padding: 5px;
-                border: 1px solid #cccccc;
-                border-radius: 5px;
-                background-color: white;
-            }
-        """)
         debug.debug("CombinedSettingsManager initialized")
     
     @debug_method
@@ -354,26 +319,25 @@ class CombinedSettingsManager(QWidget):
         main_layout.setSpacing(10)
         main_layout.setContentsMargins(10, 10, 10, 10)
         
-        # Add top buttons for Save and Cancel (left-aligned)
+        # Top Save/Cancel buttons
         top_button_layout = QHBoxLayout()
-        
         save_btn_top = QPushButton("Save Settings")
         save_btn_top.setFixedHeight(30)
-        save_btn_top.setMinimumWidth(120)
+        save_btn_top.setMinimumWidth(120)  # Set a consistent minimum width
         save_btn_top.clicked.connect(self.save_settings)
+        save_btn_top.setProperty("primary", True)  # Add the primary property
+        save_btn_top.setDefault(True)
+
+        cancel_btn_top = QPushButton("Cancel")
+        cancel_btn_top.setFixedHeight(30)
+        cancel_btn_top.setMinimumWidth(120)  # Set a consistent minimum width
+        cancel_btn_top.setProperty("secondary", True)  # Add the secondary property
         
         cancel_btn_top = QPushButton("Cancel")
         cancel_btn_top.setFixedHeight(30)
         cancel_btn_top.setMinimumWidth(120)
-        # Try to find the main window to connect to show_task_view
-        parent = self.parent()
-        while parent and not hasattr(parent, 'show_task_view'):
-            parent = parent.parent()
-        if parent and hasattr(parent, 'show_task_view'):
-            debug.debug("Found parent with show_task_view method")
-            cancel_btn_top.clicked.connect(parent.show_task_view)
-        else:
-            debug.debug("Could not find parent with show_task_view method")
+        cancel_btn_top.setProperty("secondary", True)
+        cancel_btn_top.clicked.connect(self.cancel_and_return)
         
         top_button_layout.addWidget(save_btn_top)
         top_button_layout.addWidget(cancel_btn_top)
@@ -479,24 +443,18 @@ class CombinedSettingsManager(QWidget):
         
         # Add Save and Cancel buttons at the bottom
         button_layout = QHBoxLayout()
-        
         save_button = QPushButton("Save Settings")
         save_button.setFixedHeight(30)
         save_button.setMinimumWidth(120)
         save_button.clicked.connect(self.save_settings)
-        
+        save_button.setProperty("primary", True)  # Add the primary property
+        save_button.setDefault(True)
+
         cancel_button = QPushButton("Cancel")
         cancel_button.setFixedHeight(30)
         cancel_button.setMinimumWidth(120)
-        # Try to find the main window to connect to show_task_view
-        parent = self.parent()
-        while parent and not hasattr(parent, 'show_task_view'):
-            parent = parent.parent()
-        if parent and hasattr(parent, 'show_task_view'):
-            debug.debug("Found parent with show_task_view method")
-            cancel_button.clicked.connect(parent.show_task_view)
-        else:
-            debug.debug("Could not find parent with show_task_view method")
+        cancel_button.setProperty("secondary", True)  # Add the secondary property
+        cancel_button.clicked.connect(self.cancel_and_return)
         
         button_layout.addWidget(save_button)
         button_layout.addWidget(cancel_button)
@@ -507,6 +465,36 @@ class CombinedSettingsManager(QWidget):
         self.setLayout(main_layout)
         debug.debug("UI setup completed for CombinedSettingsManager")
     
+    def explore_parents(self):
+        """Print detailed information about the parent hierarchy"""
+        print("\n=== EXPLORING PARENT HIERARCHY ===")
+        parent = self.parent()
+        level = 1
+        while parent:
+            print(f"\nLevel {level} parent: {type(parent).__name__}")
+            print(f"  Address: {parent}")
+            
+            # List all methods (filtered to avoid clutter)
+            methods = [m for m in dir(parent) if callable(getattr(parent, m)) and not m.startswith('__')]
+            relevant_methods = [m for m in methods if any(term in m.lower() for term in ['show', 'view', 'task', 'set', 'get', 'window'])]
+            print(f"  Relevant methods: {', '.join(relevant_methods)}")
+            
+            # Check for common attributes
+            if hasattr(parent, 'windowTitle') and callable(parent.windowTitle):
+                print(f"  Window title: {parent.windowTitle()}")
+            if hasattr(parent, 'objectName') and callable(parent.objectName):
+                print(f"  Object name: {parent.objectName()}")
+            if hasattr(parent, 'width') and callable(parent.width):
+                print(f"  Size: {parent.width()}x{parent.height()}")
+            
+            # Specifically check for the show_task_view method
+            if hasattr(parent, 'show_task_view'):
+                print(f"  *** HAS show_task_view METHOD ***")
+            
+            parent = parent.parent()
+            level += 1
+        print("=== END EXPLORER ===\n")
+       
     @debug_method
     def pick_color(self):
         debug.debug("Opening color picker dialog")
@@ -544,9 +532,7 @@ class CombinedSettingsManager(QWidget):
     def save_settings(self, checked=None):
         """Save settings and notify the user"""
         debug.debug("Saving settings")
-        # You can add any additional saving logic here if needed
-        
-        QMessageBox.information(self, "Settings Saved", "Your settings have been saved.")
+    
         debug.debug("Settings saved successfully")
         
         # Try to find main window to return to task view
@@ -559,6 +545,24 @@ class CombinedSettingsManager(QWidget):
         else:
             debug.warning("Could not find parent with show_task_view method")
     
+    def cancel_and_return(self, checked = False):
+        """Cancel changes and return to task view"""
+        debug.debug("Canceling changes and returning to task view")
+        
+        # Try to find the main window
+        parent = self
+        while parent and not hasattr(parent, 'main_window'):
+            parent = parent.parent()
+        
+        if parent and hasattr(parent, 'main_window'):
+            # Use the main_window to return to task view
+            parent.main_window.show_task_view()
+        elif hasattr(self, 'main_window'):
+            # If we have a direct main_window reference
+            self.main_window.show_task_view()
+        else:
+            debug.warning("Could not find main_window to return to task view")
+            
     @debug_method
     def load_all_items(self):
         """Load all categories, priorities, and statuses"""

@@ -164,28 +164,34 @@ class AppSettingsWidget(QWidget):
         self.main_window = main_window
         self.settings = main_window.settings
         self.setup_ui()
-    
+
     def setup_ui(self):
         debug.debug("Setting up AppSettingsWidget UI")
         layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
         
-        # Add top buttons for Save and Cancel (left-aligned)
+        # Top Save/Cancel buttons
         top_button_layout = QHBoxLayout()
-        
         save_btn_top = QPushButton("Save Settings")
         save_btn_top.setFixedHeight(30)
-        save_btn_top.setMinimumWidth(120)
+        save_btn_top.setMinimumWidth(120)  # Set a consistent minimum width
         save_btn_top.clicked.connect(self.save_settings)
-        
+        save_btn_top.setProperty("primary", True)  # Add the primary property
+        save_btn_top.setDefault(True)
+
         cancel_btn_top = QPushButton("Cancel")
         cancel_btn_top.setFixedHeight(30)
-        cancel_btn_top.setMinimumWidth(120)
-        cancel_btn_top.clicked.connect(self.main_window.show_task_view)  # Go back without saving
-        
+        cancel_btn_top.setMinimumWidth(120)  # Set a consistent minimum width
+        cancel_btn_top.setProperty("secondary", True)  # Add the secondary property
+        cancel_btn_top.clicked.connect(self.main_window.show_task_view)
+
+        # Add buttons to the top_button_layout
         top_button_layout.addWidget(save_btn_top)
         top_button_layout.addWidget(cancel_btn_top)
-        top_button_layout.addStretch()  # Push buttons to the left
-        
+        top_button_layout.addStretch()  # This pushes buttons to the left
+
+        # Add the top_button_layout to the main layout
         layout.addLayout(top_button_layout)
         
         # Create a horizontal layout for the two main panels
@@ -195,11 +201,12 @@ class AppSettingsWidget(QWidget):
         db_group = QGroupBox("Database")
         db_layout = QFormLayout()
         
-        # Current database location
-        current_db = self.settings.get_setting("database_path")
-        debug.debug(f"Current database path: {current_db}")
-        db_location = QLabel(f"Current location: {current_db}")
-        db_layout.addRow(db_location)
+        # Go to File Location button (above Change Location button)
+        goto_file_btn = QPushButton("Go to File Location")
+        goto_file_btn.setFixedHeight(30)
+        goto_file_btn.setProperty("secondary", True)  # Mark as secondary
+        goto_file_btn.clicked.connect(self.open_database_location)
+        db_layout.addRow(goto_file_btn)
         
         # Change location button
         change_db_btn = QPushButton("Change Database Location")
@@ -216,7 +223,7 @@ class AppSettingsWidget(QWidget):
         template_button = QPushButton("Import Template")
         template_button.setFixedHeight(30)
         template_button.clicked.connect(self.main_window.save_template)
-        csv_layout.addRow("Get template CSV:", template_button)
+        csv_layout.addRow("Get import template (CSV):", template_button)
         
         export_button = QPushButton("Export to CSV")
         export_button.setFixedHeight(30)
@@ -236,6 +243,9 @@ class AppSettingsWidget(QWidget):
         
         # Add the panels layout to the main layout
         layout.addLayout(panels_layout)
+        
+        # Create a horizontal layout for Application Style and Bee API Settings
+        style_bee_layout = QHBoxLayout()
         
         # Add Style Preferences group
         style_prefs_group = QGroupBox("Application Style")
@@ -260,10 +270,52 @@ class AppSettingsWidget(QWidget):
         style_prefs_layout.addWidget(style_prefs_button)
         
         style_prefs_group.setLayout(style_prefs_layout)
-        layout.addWidget(style_prefs_group)
         
-        # Debug Settings group
+        # Bee API Settings group
+        bee_api_group = QGroupBox("Bee API Settings")
+        bee_api_layout = QVBoxLayout()
+        
+        # Get API key and label from settings
+        api_key = self.settings.get_setting("bee_api_key", "")
+        api_key_label = self.settings.get_setting("bee_api_key_label", "")
+        debug.debug(f"API key configured: {bool(api_key)}, Label: {api_key_label}")
+        
+        if api_key:
+            # Display API key label or a default message
+            display_text = f'API Key: "{api_key_label}"' if api_key_label else "API Key: [Configured]"
+            key_label = QLabel(display_text)
+            bee_api_layout.addWidget(key_label)
+            
+            # Delete button
+            delete_btn = QPushButton("Delete API Key")
+            delete_btn.setFixedHeight(30)
+            delete_btn.clicked.connect(self.delete_bee_api_key)
+            bee_api_layout.addWidget(delete_btn)
+        else:
+            # No API key configured
+            key_label = QLabel("No Bee API key configured")
+            bee_api_layout.addWidget(key_label)
+            
+            # Add button
+            add_btn = QPushButton("Add API Key")
+            add_btn.setFixedHeight(30)
+            add_btn.clicked.connect(self.add_bee_api_key)
+            bee_api_layout.addWidget(add_btn)
+        
+        bee_api_group.setLayout(bee_api_layout)
+        
+        # Add both groups to the horizontal layout
+        style_bee_layout.addWidget(style_prefs_group)
+        style_bee_layout.addWidget(bee_api_group)
+        
+        # Add the style_bee_layout to the main layout
+        layout.addLayout(style_bee_layout)
+        
+        # Debug Settings group with distinct background color
         debug_group = QGroupBox("Debug Settings")
+        # Set a light yellow background color to make it stand out
+        debug_group.setStyleSheet("QGroupBox { background-color: #FFFDE7; border: 1px solid #E0E0E0; border-radius: 5px; margin-top: 1ex; } QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; }")
+        
         debug_layout = QVBoxLayout()
         
         # Get debug enabled setting
@@ -284,77 +336,63 @@ class AppSettingsWidget(QWidget):
         debug_group.setLayout(debug_layout)
         layout.addWidget(debug_group)
         
-        # Bee API Settings group
-        if hasattr(self.main_window, 'settings'):
-            debug.debug("Setting up Bee API settings group")
-            bee_container = QHBoxLayout()
-            
-            bee_api_group = QGroupBox("Bee API Settings")
-            bee_api_layout = QVBoxLayout()
-            
-            # Get API key and label from settings
-            api_key = self.settings.get_setting("bee_api_key", "")
-            api_key_label = self.settings.get_setting("bee_api_key_label", "")
-            debug.debug(f"API key configured: {bool(api_key)}, Label: {api_key_label}")
-            
-            if api_key:
-                # Display API key label or a default message
-                display_text = f'API Key: "{api_key_label}"' if api_key_label else "API Key: [Configured]"
-                key_label = QLabel(display_text)
-                bee_api_layout.addWidget(key_label)
-                
-                # Delete button
-                delete_btn = QPushButton("Delete API Key")
-                delete_btn.setFixedHeight(30)
-                delete_btn.clicked.connect(self.delete_bee_api_key)
-                bee_api_layout.addWidget(delete_btn)
-            else:
-                # No API key configured
-                key_label = QLabel("No Bee API key configured")
-                bee_api_layout.addWidget(key_label)
-                
-                # Add button
-                add_btn = QPushButton("Add API Key")
-                add_btn.setFixedHeight(30)
-                add_btn.clicked.connect(self.add_bee_api_key)
-                bee_api_layout.addWidget(add_btn)
-            
-            bee_api_group.setLayout(bee_api_layout)
-            
-            # Add the Bee API group to a container with less additional space to make it 2x width
-            # Remove the stretch that was making it half-width
-            bee_container.addWidget(bee_api_group)
-            layout.addLayout(bee_container)
-            
-            bee_api_group.setLayout(bee_api_layout)
-            
-            # Add the Bee API group to a container with additional space to make it half-width
-            bee_container.addWidget(bee_api_group)
-            # bee_container.addStretch()  # This makes the group take only half the width
-            layout.addLayout(bee_container)
-        
         # Add stretch to push Done button to bottom
         layout.addStretch()
         
-        # Save and Cancel buttons - keep these at the bottom
-        button_layout = QHBoxLayout()
-        
+        # Add Save and Cancel buttons at the bottom
+        bottom_button_layout = QHBoxLayout()
         save_button = QPushButton("Save Settings")
         save_button.setFixedHeight(30)
-        save_button.setMinimumWidth(120)  # Make sure buttons are the same size
+        save_button.setMinimumWidth(120)
         save_button.clicked.connect(self.save_settings)
-        button_layout.addWidget(save_button)
-        
+        save_button.setProperty("primary", True)  # Add the primary property
+        save_button.setDefault(True)
+
         cancel_button = QPushButton("Cancel")
         cancel_button.setFixedHeight(30)
-        cancel_button.setMinimumWidth(120)  # Make sure buttons are the same size
-        cancel_button.clicked.connect(self.main_window.show_task_view)  # Go back without saving
-        button_layout.addWidget(cancel_button)
+        cancel_button.setMinimumWidth(120)
+        cancel_button.clicked.connect(self.main_window.show_task_view)
+        cancel_button.setProperty("secondary", True)  # Add the secondary property
         
-        button_layout.addStretch()  # This pushes buttons to the left by placing stretch AFTER the buttons
+        bottom_button_layout.addWidget(save_button)
+        bottom_button_layout.addWidget(cancel_button)
+        bottom_button_layout.addStretch()
+        layout.addLayout(bottom_button_layout)
+        debug.debug("AppSettingsWidget UI setup complete")    
+
+    def open_database_location(self):
+        debug.debug("Opening database location")
+        import os
+        import platform
+        import subprocess
         
-        layout.addLayout(button_layout)
-        debug.debug("AppSettingsWidget UI setup complete")
+        # Get the current database path
+        db_path = Path(self.settings.get_setting("database_path"))
+        
+        # Make sure the parent directory exists
+        if not db_path.parent.exists():
+            debug.debug(f"Parent directory doesn't exist, creating: {db_path.parent}")
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Get the parent directory path
+        dir_path = str(db_path.parent)
+        debug.debug(f"Opening directory: {dir_path}")
+        
+        # Open the directory based on the OS
+        system = platform.system()
+        try:
+            if system == 'Windows':
+                os.startfile(dir_path)
+                debug.debug("Opened directory with Windows startfile")
+            elif system == 'Darwin':  # macOS
+                subprocess.run(['open', dir_path])
+                debug.debug("Opened directory with macOS 'open' command")
+            else:  # Linux and others
+                subprocess.run(['xdg-open', dir_path])
+                debug.debug("Opened directory with Linux 'xdg-open' command")
+        except Exception as e:
+            debug.error(f"Error opening directory: {e}")
+            QMessageBox.warning(self, "Error", f"Could not open database location: {str(e)}")
     
     def save_settings(self):
         debug.debug("Saving settings")
@@ -363,8 +401,6 @@ class AppSettingsWidget(QWidget):
         debug_enabled = self.debug_checkbox.isChecked()
         self.settings.set_setting("debug_enabled", debug_enabled)
         debug.debug(f"Saved debug_enabled setting: {debug_enabled}")
-        
-        QMessageBox.information(self, "Settings Saved", "Your settings have been saved.")
     
     def show_style_preferences(self):
         """Show the style preferences dialog"""

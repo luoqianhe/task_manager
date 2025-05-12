@@ -358,7 +358,7 @@ class AddTaskDialog(QDialog):
             cursor.execute("SELECT id, name FROM categories ORDER BY name")
             categories = cursor.fetchall()
             debug.debug(f"Loaded {len(categories)} categories from database")
-            for cat_id, name in cursor.fetchall():
+            for cat_id, name in categories:  # Fixed - iterate over categories instead of calling fetchall() again
                 self.category_combo.addItem(name, cat_id)
     
     @debug_method
@@ -765,12 +765,12 @@ class EditTaskDialog(QDialog):
             cursor.execute("SELECT id, name FROM categories ORDER BY name")
             categories = cursor.fetchall()
             debug.debug(f"Loaded {len(categories)} categories from database")
-            for cat_id, name in cursor.fetchall():
+            for cat_id, name in categories:  # Fixed - iterate over categories instead of calling fetchall() again
                 self.category_combo.addItem(name, cat_id)
                 if name == self.task_data['category']:
                     debug.debug(f"Setting current category: {name}")
                     self.category_combo.setCurrentIndex(self.category_combo.count() - 1)
-    
+                    
     @debug_method
     def load_possible_parents(self):
         debug.debug(f"Loading possible parent tasks for task {self.task_data['id']}")

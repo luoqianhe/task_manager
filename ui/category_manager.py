@@ -198,6 +198,7 @@ class CategoryManager(QWidget):
         super().__init__()
         self.init_ui()
         self.load_categories()
+        
         # Keep minimal styling while ensuring buttons are visible
         self.setStyleSheet("""
             QLineEdit {
@@ -228,34 +229,28 @@ class CategoryManager(QWidget):
         main_layout.setSpacing(10)
         main_layout.setContentsMargins(10, 10, 10, 10)
         
-        # Header
-        header_label = QLabel("Categories")
-        header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
-        main_layout.addWidget(header_label)
-        
         # Add top buttons for Save and Cancel (left-aligned)
         top_button_layout = QHBoxLayout()
+        
+         # DEBUG PARENT BUTTON
+        debug_btn = QPushButton("Debug Parents")
+        debug_btn.clicked.connect(self.explore_parents)
+        debug_btn.setFixedHeight(30)
+        debug_btn.setMinimumWidth(120)
         
         save_btn_top = QPushButton("Save Settings")
         save_btn_top.setFixedHeight(30)
         save_btn_top.setMinimumWidth(120)
         save_btn_top.clicked.connect(self.save_settings)
         
-        cancel_btn_top = QPushButton("Cancel")
-        cancel_btn_top.setFixedHeight(30)
-        cancel_btn_top.setMinimumWidth(120)
-        # Try to find the main window to connect to show_task_view
-        parent = self.parent()
-        while parent and not hasattr(parent, 'show_task_view'):
-            parent = parent.parent()
-        if parent and hasattr(parent, 'show_task_view'):
-            debug.debug("Found parent with show_task_view method")
-            cancel_btn_top.clicked.connect(parent.show_task_view)
-        else:
-            debug.debug("Could not find parent with show_task_view method")
+        # cancel_btn_top = QPushButton("Cancel")
+        # cancel_btn_top.setFixedHeight(30)
+        # cancel_btn_top.setMinimumWidth(120)
+        # cancel_btn_top.clicked.connect(self.cancel_and_return)
         
         top_button_layout.addWidget(save_btn_top)
         top_button_layout.addWidget(cancel_btn_top)
+        top_button_layout.addWidget(debug_btn)
         top_button_layout.addStretch()  # Push buttons to the left
         
         main_layout.addLayout(top_button_layout)
@@ -301,15 +296,7 @@ class CategoryManager(QWidget):
         cancel_btn_bottom = QPushButton("Cancel")
         cancel_btn_bottom.setFixedHeight(30)
         cancel_btn_bottom.setMinimumWidth(120)
-        # Try to find the main window to connect to show_task_view
-        parent = self.parent()
-        while parent and not hasattr(parent, 'show_task_view'):
-            parent = parent.parent()
-        if parent and hasattr(parent, 'show_task_view'):
-            debug.debug("Found parent with show_task_view method")
-            cancel_btn_bottom.clicked.connect(parent.show_task_view)
-        else:
-            debug.debug("Could not find parent with show_task_view method")
+        cancel_btn_bottom.clicked.connect(self.cancel_and_return)
         
         bottom_button_layout.addWidget(save_btn_bottom)
         bottom_button_layout.addWidget(cancel_btn_bottom)
@@ -334,6 +321,51 @@ class CategoryManager(QWidget):
         else:
             debug.debug("Could not find parent with show_task_view method")        
     
+    @debug_method
+    def find_and_execute_parent_method(self, method_name, *args, **kwargs):
+        """Generic method to find a parent with a specified method and execute it."""
+        print(f"DIRECT DEBUG: Looking for parent with '{method_name}' method")
+        debug.debug(f"Looking for parent with '{method_name}' method")
+        
+        parent = self.parent()
+        found_parent = None
+        
+        while parent:
+            print(f"DIRECT DEBUG: Checking parent: {type(parent).__name__}")
+            debug.debug(f"Checking parent: {type(parent).__name__}")
+            if hasattr(parent, method_name):
+                found_parent = parent
+                print(f"DIRECT DEBUG: Found parent with '{method_name}' method: {type(parent).__name__}")
+                debug.debug(f"Found parent with '{method_name}' method: {type(parent).__name__}")
+                break
+            parent = parent.parent()
+        
+        if found_parent:
+            method = getattr(found_parent, method_name)
+            print(f"DIRECT DEBUG: Calling {method_name} on {type(found_parent).__name__}")
+            debug.debug(f"Calling {method_name} on {type(found_parent).__name__}")
+            method(*args, **kwargs)
+            return True
+        else:
+            print(f"DIRECT DEBUG: Could not find parent with '{method_name}' method")
+            debug.warning(f"Could not find parent with '{method_name}' method")
+            return False
+
+    @debug_method
+    def cancel_and_return(self, checked=False):
+        """Handle Cancel button click by returning to task view"""
+        print("DIRECT DEBUG: Cancel button clicked!")
+        debug.debug("Cancel button clicked")
+        
+        # Try to find and execute show_task_view method on a parent
+        success = self.find_and_execute_parent_method('show_task_view')
+        
+        # If we couldn't find the method, use a fallback
+        if not success:
+            print("DIRECT DEBUG: Using fallback action: hide")
+            debug.debug("Using fallback action: hide")
+            self.hide()
+            
     @debug_method
     def pick_color(self):
         debug.debug("Opening color picker dialog")
@@ -418,6 +450,36 @@ class CategoryManager(QWidget):
         self.load_categories()
         debug.debug("Categories reloaded after adding new category")
 
+    def explore_parents(self):
+        """Print detailed information about the parent hierarchy"""
+        print("\n=== EXPLORING PARENT HIERARCHY ===")
+        parent = self.parent()
+        level = 1
+        while parent:
+            print(f"\nLevel {level} parent: {type(parent).__name__}")
+            print(f"  Address: {parent}")
+            
+            # List all methods (filtered to avoid clutter)
+            methods = [m for m in dir(parent) if callable(getattr(parent, m)) and not m.startswith('__')]
+            relevant_methods = [m for m in methods if any(term in m.lower() for term in ['show', 'view', 'task', 'set', 'get', 'window'])]
+            print(f"  Relevant methods: {', '.join(relevant_methods)}")
+            
+            # Check for common attributes
+            if hasattr(parent, 'windowTitle') and callable(parent.windowTitle):
+                print(f"  Window title: {parent.windowTitle()}")
+            if hasattr(parent, 'objectName') and callable(parent.objectName):
+                print(f"  Object name: {parent.objectName()}")
+            if hasattr(parent, 'width') and callable(parent.width):
+                print(f"  Size: {parent.width()}x{parent.height()}")
+            
+            # Specifically check for the show_task_view method
+            if hasattr(parent, 'show_task_view'):
+                print(f"  *** HAS show_task_view METHOD ***")
+            
+            parent = parent.parent()
+            level += 1
+        print("=== END EXPLORER ===\n")
+        
 class EditCategoryDialog(QDialog):
     @staticmethod
     def get_connection():

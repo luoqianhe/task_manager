@@ -42,6 +42,8 @@ class CombinedDisplaySettingsWidget(QWidget):
         debug.debug("Setting up main UI for CombinedDisplaySettingsWidget")
         # Create a main layout for the entire widget
         main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(10, 10, 10, 10)
         
         # Add top buttons and header
         self._setup_header_section(main_layout)
@@ -686,20 +688,25 @@ class CombinedDisplaySettingsWidget(QWidget):
     def _setup_header_section(self, parent_layout):
         """Set up the header section with top buttons"""
         debug.debug("Setting up header section")
-        # Add top buttons for Save and Cancel (left-aligned)
+        # Top Save/Cancel buttons
         top_button_layout = QHBoxLayout()
-        
         save_btn_top = QPushButton("Save Settings")
-        save_btn_top.setFixedSize(120, 30)
-        save_btn_top.clicked.connect(self.save_and_return)
-        
+        save_btn_top.setFixedHeight(30)
+        save_btn_top.setMinimumWidth(120)  # Set a consistent minimum width
+        save_btn_top.clicked.connect(self.save_settings)
+        save_btn_top.setProperty("primary", True)  # Add the primary property
+        save_btn_top.setDefault(True)
+
         cancel_btn_top = QPushButton("Cancel")
-        cancel_btn_top.setFixedSize(120, 30)
-        cancel_btn_top.clicked.connect(self.cancel_and_return)
-        
+        cancel_btn_top.setFixedHeight(30)
+        cancel_btn_top.setMinimumWidth(120)  # Set a consistent minimum width
+        cancel_btn_top.setProperty("secondary", True)  # Add the secondary property
+        cancel_btn_top.clicked.connect(self.main_window.show_task_view)
+
+        # Add buttons to the top_button_layout
         top_button_layout.addWidget(save_btn_top)
         top_button_layout.addWidget(cancel_btn_top)
-        top_button_layout.addStretch()  # Push buttons to the left by placing stretch AFTER the buttons
+        top_button_layout.addStretch()  # This pushes buttons to the left
         
         parent_layout.addLayout(top_button_layout)
         debug.debug("Header section setup complete")
@@ -708,19 +715,25 @@ class CombinedDisplaySettingsWidget(QWidget):
     def _setup_bottom_buttons(self, parent_layout):
         """Set up the bottom button section (left-aligned)"""
         debug.debug("Setting up bottom buttons")
+        
+        # Add Save and Cancel buttons at the bottom
         bottom_button_layout = QHBoxLayout()
+        save_button = QPushButton("Save Settings")
+        save_button.setFixedHeight(30)
+        save_button.setMinimumWidth(120)
+        save_button.clicked.connect(self.save_settings)
+        save_button.setProperty("primary", True)  # Add the primary property
+        save_button.setDefault(True)
+
+        cancel_button = QPushButton("Cancel")
+        cancel_button.setFixedHeight(30)
+        cancel_button.setMinimumWidth(120)
+        cancel_button.clicked.connect(self.main_window.show_task_view)
+        cancel_button.setProperty("secondary", True)  # Add the secondary property
         
-        save_btn_bottom = QPushButton("Save Settings")
-        save_btn_bottom.setFixedSize(120, 30)
-        save_btn_bottom.clicked.connect(self.save_and_return)
-        
-        cancel_btn_bottom = QPushButton("Cancel")
-        cancel_btn_bottom.setFixedSize(120, 30)
-        cancel_btn_bottom.clicked.connect(self.cancel_and_return)
-        
-        bottom_button_layout.addWidget(save_btn_bottom)
-        bottom_button_layout.addWidget(cancel_btn_bottom)
-        bottom_button_layout.addStretch()  # Push buttons to the left by placing stretch AFTER the buttons
+        bottom_button_layout.addWidget(save_button)
+        bottom_button_layout.addWidget(cancel_button)
+        bottom_button_layout.addStretch()
         
         parent_layout.addLayout(bottom_button_layout)
         debug.debug("Bottom buttons setup complete")

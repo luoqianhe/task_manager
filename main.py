@@ -131,7 +131,7 @@ class MainWindow(QMainWindow):
         
         # Create Combined Settings Manager tab
         debug.debug('Creating Combined Settings tab')
-        self.combined_settings = CombinedSettingsManager()
+        self.combined_settings = CombinedSettingsManager(main_window=self)
         self.settings_tabs.addTab(self.combined_settings, "Task Attributes")
         
         # Create Combined Display Settings tab
@@ -380,7 +380,7 @@ class MainWindow(QMainWindow):
                     self.tabs.reload_all()
     
     @debug_method
-    def export_to_csv(self):
+    def export_to_csv(self, checked=False):
         debug.debug("Opening export to CSV dialog")
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Save CSV", "", "CSV Files (*.csv)")
@@ -423,7 +423,7 @@ class MainWindow(QMainWindow):
             debug.debug("Export canceled by user")
 
     @debug_method
-    def import_from_csv(self):
+    def import_from_csv(self, checked=False):
         debug.debug("Opening import from CSV dialog")
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Open CSV", "", "CSV Files (*.csv)")
@@ -498,7 +498,7 @@ class MainWindow(QMainWindow):
             debug.debug("Import canceled by user")
 
     @debug_method
-    def save_template(self):
+    def save_template(self, checked=False):
         debug.debug("Saving template CSV")
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Save Template CSV", "", "CSV Files (*.csv)")
