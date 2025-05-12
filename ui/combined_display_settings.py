@@ -117,6 +117,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         main_size_label = QLabel("Main Text Size:")
         main_size_layout.addWidget(main_size_label)
         main_size_layout.addWidget(self.font_size_spin)
+        self.font_size_spin.setFixedHeight(30)
         main_size_layout.addStretch()
         font_basics_layout.addLayout(main_size_layout)
         
@@ -125,6 +126,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         panel_size_label = QLabel("Panel Text Size:")
         panel_size_layout.addWidget(panel_size_label)
         panel_size_layout.addWidget(self.left_panel_size_spin)
+        self.left_panel_size_spin.setFixedHeight(30)
         panel_size_layout.addStretch()
         font_basics_layout.addLayout(panel_size_layout)
         
@@ -688,11 +690,11 @@ class CombinedDisplaySettingsWidget(QWidget):
         top_button_layout = QHBoxLayout()
         
         save_btn_top = QPushButton("Save Settings")
-        save_btn_top.setFixedSize(100, 30)
+        save_btn_top.setFixedSize(120, 30)
         save_btn_top.clicked.connect(self.save_and_return)
         
         cancel_btn_top = QPushButton("Cancel")
-        cancel_btn_top.setFixedSize(100, 30)
+        cancel_btn_top.setFixedSize(120, 30)
         cancel_btn_top.clicked.connect(self.cancel_and_return)
         
         top_button_layout.addWidget(save_btn_top)
@@ -709,11 +711,11 @@ class CombinedDisplaySettingsWidget(QWidget):
         bottom_button_layout = QHBoxLayout()
         
         save_btn_bottom = QPushButton("Save Settings")
-        save_btn_bottom.setFixedSize(100, 30)
+        save_btn_bottom.setFixedSize(120, 30)
         save_btn_bottom.clicked.connect(self.save_and_return)
         
         cancel_btn_bottom = QPushButton("Cancel")
-        cancel_btn_bottom.setFixedSize(100, 30)
+        cancel_btn_bottom.setFixedSize(120, 30)
         cancel_btn_bottom.clicked.connect(self.cancel_and_return)
         
         bottom_button_layout.addWidget(save_btn_bottom)
@@ -822,11 +824,6 @@ class CombinedDisplaySettingsWidget(QWidget):
         # Explicitly save settings to disk
         self.settings.save_settings(self.settings.settings)
         debug.debug("Settings saved to disk")
-    
-        # Notify the user
-        QMessageBox.information(self, "Settings Saved", 
-                            "Display settings have been saved. Changes will be applied immediately.")
-        debug.debug("User notified about successful settings save")
         
         # Update the preview
         if hasattr(self, 'task_preview'):

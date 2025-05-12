@@ -169,6 +169,25 @@ class AppSettingsWidget(QWidget):
         debug.debug("Setting up AppSettingsWidget UI")
         layout = QVBoxLayout(self)
         
+        # Add top buttons for Save and Cancel (left-aligned)
+        top_button_layout = QHBoxLayout()
+        
+        save_btn_top = QPushButton("Save Settings")
+        save_btn_top.setFixedHeight(30)
+        save_btn_top.setMinimumWidth(120)
+        save_btn_top.clicked.connect(self.save_settings)
+        
+        cancel_btn_top = QPushButton("Cancel")
+        cancel_btn_top.setFixedHeight(30)
+        cancel_btn_top.setMinimumWidth(120)
+        cancel_btn_top.clicked.connect(self.main_window.show_task_view)  # Go back without saving
+        
+        top_button_layout.addWidget(save_btn_top)
+        top_button_layout.addWidget(cancel_btn_top)
+        top_button_layout.addStretch()  # Push buttons to the left
+        
+        layout.addLayout(top_button_layout)
+        
         # Create a horizontal layout for the two main panels
         panels_layout = QHBoxLayout()
         

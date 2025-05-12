@@ -515,56 +515,6 @@ class TaskPillDelegate(QStyledItemDelegate):
                 # Open individual link
                 self.open_link(action_data)
 
-    def _draw_priority_header(self, painter, option, index, user_data):
-        """Draw a priority header item"""
-        # Save painter state
-        painter.save()
-        
-        # Get data
-        priority = user_data.get('priority', 'Medium')
-        color = user_data.get('color', '#FFC107')
-        expanded = user_data.get('expanded', True)
-        
-        # Calculate rect - REDUCE MARGINS HERE
-        rect = option.rect.adjusted(
-            self.item_margin,
-            self.item_margin,  # Reduce top margin
-            -self.item_margin,
-            -self.item_margin  # Reduce bottom margin
-        )
-        
-        # Draw background
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(rect), 5, 5)
-        painter.fillPath(path, QBrush(QColor(color)))
-        
-        # Draw priority text
-        # Get font settings from SettingsManager
-        settings = self.get_settings_manager()
-        font_family = settings.get_setting("font_family", "Segoe UI")
-        font_size = int(settings.get_setting("font_size", 12))
-        
-        header_font = QFont(font_family)
-        header_font.setPointSize(font_size)
-        header_font.setBold(True)
-        
-        painter.setFont(header_font)
-        painter.setPen(QColor("#FFFFFF"))
-        
-        header_text_rect = QRectF(
-            rect.left() + 40,  # Position after arrow
-            rect.top(),
-            rect.width() - 50,
-            rect.height()
-        )
-        
-        painter.drawText(header_text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, 
-                        priority.upper())
-        
-        # Restore painter
-        painter.restore()
-
     def _extract_item_data(self, index):
         """Extract and normalize item data from the index"""
         user_data = index.data(Qt.ItemDataRole.UserRole)
@@ -621,91 +571,151 @@ class TaskPillDelegate(QStyledItemDelegate):
         painter.drawPath(path)
 
     def _draw_custom_panel(self, painter, path, rect, is_compact, content_types, 
-                        user_data, panel_width, panel_side="left"):
-        """Draw custom panel with multiple sections based on settings"""
-        # Get settings for panel text
-        settings = self.get_settings_manager()
-        text_color = settings.get_setting("left_panel_color", "#FFFFFF")
-        text_size = int(settings.get_setting("left_panel_size", 8))
-        text_bold = settings.get_setting("left_panel_bold", False)
-        
-        # Use clipping to ensure proper drawing within the pill
-        painter.setClipPath(path)
-        
-        # Calculate section height - ensure it's evenly divided
-        section_count = len(content_types)
-        section_height = rect.height() / section_count
-        
-        # Draw each section
-        for i, content_type in enumerate(content_types):
-            # Skip if content type is None
-            if content_type == "None":
-                continue
+                            user_data, panel_width, panel_side="left"):
+            """Draw custom panel with multiple sections based on settings"""
+            # Get settings for panel text
+            settings = self.get_settings_manager()
+            default_text_color = settings.get_setting("left_panel_color", "#FFFFFF")
+            text_size = int(settings.get_setting("left_panel_size", 8))
+            text_bold = settings.get_setting("left_panel_bold", False)
+            
+            # Use clipping to ensure proper drawing within the pill
+            painter.setClipPath(path)
+            
+            # Calculate section height - ensure it's evenly divided
+            section_count = len(content_types)
+            section_height = rect.height() / section_count
+            
+            # Draw each section
+            for i, content_type in enumerate(content_types):
+                # Skip if content type is None
+                if content_type == "None":
+                    continue
+                    
+                # Get section data
+                section_data = self._get_section_data(user_data, content_type)
                 
-            # Get section data
-            section_data = self._get_section_data(user_data, content_type)
+                # Get color based on content type
+                section_color = self._get_section_color(content_type, section_data)
+                
+                # Calculate text color based on background brightness
+                bg_color = section_color
+                brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
+                text_color = "#000000" if brightness > 128 else "#FFFFFF"
+                
+                # Calculate section rectangle
+                if panel_side == "left":
+                    section_rect = QRectF(
+                        rect.left(),
+                        rect.top() + (i * section_height),
+                        panel_width,
+                        section_height
+                    )
+                else:  # right panel
+                    section_rect = QRectF(
+                        rect.right() - panel_width,
+                        rect.top() + (i * section_height),
+                        panel_width,
+                        section_height
+                    )
+                
+                # Fill the section
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QBrush(section_color))
+                painter.drawRect(section_rect)
+                
+                # Draw text if not in compact mode
+                if not is_compact:
+                    # Set up font for section text
+                    section_font = QFont(painter.font())
+                    section_font.setPointSize(text_size)
+                    if text_bold:
+                        section_font.setBold(True)
+                        
+                    painter.setFont(section_font)
+                    painter.setPen(QColor(text_color))
+                    
+                    # Draw section text
+                    painter.drawText(
+                        section_rect,
+                        Qt.AlignmentFlag.AlignCenter,
+                        str(section_data) or f"No {content_type}"
+                    )
             
-            # Get color based on content type
-            section_color = self._get_section_color(content_type, section_data)
+            # Remove clipping
+            painter.setClipping(False)
             
-            # Calculate section rectangle
+            # Draw divider line
+            painter.setPen(QPen(QColor("#cccccc"), 1))
             if panel_side == "left":
-                section_rect = QRectF(
-                    rect.left(),
-                    rect.top() + (i * section_height),
-                    panel_width,
-                    section_height
+                painter.drawLine(
+                    rect.left() + panel_width,
+                    rect.top(),
+                    rect.left() + panel_width,
+                    rect.bottom()
                 )
             else:  # right panel
-                section_rect = QRectF(
+                painter.drawLine(
                     rect.right() - panel_width,
-                    rect.top() + (i * section_height),
-                    panel_width,
-                    section_height
+                    rect.top(),
+                    rect.right() - panel_width,
+                    rect.bottom()
                 )
+
+    def _draw_priority_header(self, painter, option, index, user_data):
+            """Draw a priority header item"""
+            # Save painter state
+            painter.save()
             
-            # Fill the section
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(section_color))
-            painter.drawRect(section_rect)
+            # Get data
+            priority = user_data.get('priority', 'Medium')
+            color = user_data.get('color', '#FFC107')
+            expanded = user_data.get('expanded', True)
             
-            # Draw text if not in compact mode
-            if not is_compact:
-                # Set up font for section text
-                section_font = QFont(painter.font())
-                section_font.setPointSize(text_size)
-                if text_bold:
-                    section_font.setBold(True)
-                    
-                painter.setFont(section_font)
-                painter.setPen(QColor(text_color))
-                
-                # Draw section text
-                painter.drawText(
-                    section_rect,
-                    Qt.AlignmentFlag.AlignCenter,
-                    str(section_data) or f"No {content_type}"
-                )
-        
-        # Remove clipping
-        painter.setClipping(False)
-        
-        # Draw divider line
-        painter.setPen(QPen(QColor("#cccccc"), 1))
-        if panel_side == "left":
-            painter.drawLine(
-                rect.left() + panel_width,
-                rect.top(),
-                rect.left() + panel_width,
-                rect.bottom()
+            # Calculate rect - REDUCE MARGINS HERE
+            rect = option.rect.adjusted(
+                self.item_margin,
+                self.item_margin,  # Reduce top margin
+                -self.item_margin,
+                -self.item_margin  # Reduce bottom margin
             )
-        else:  # right panel
-            painter.drawLine(
-                rect.right() - panel_width,
+            
+            # Draw background
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(rect), 5, 5)
+            painter.fillPath(path, QBrush(QColor(color)))
+            
+            # Calculate text color based on background brightness
+            bg_color = QColor(color)
+            brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
+            text_color = "#000000" if brightness > 128 else "#FFFFFF"
+            
+            # Draw priority text
+            # Get font settings from SettingsManager
+            settings = self.get_settings_manager()
+            font_family = settings.get_setting("font_family", "Segoe UI")
+            font_size = int(settings.get_setting("font_size", 12))
+            
+            header_font = QFont(font_family)
+            header_font.setPointSize(font_size)
+            header_font.setBold(True)
+            
+            painter.setFont(header_font)
+            painter.setPen(QColor(text_color))
+            
+            header_text_rect = QRectF(
+                rect.left() + 40,  # Position after arrow
                 rect.top(),
-                rect.right() - panel_width,
-                rect.bottom()
+                rect.width() - 50,
+                rect.height()
             )
+            
+            painter.drawText(header_text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, 
+                            priority.upper())
+            
+            # Restore painter
+            painter.restore()
 
     def _draw_task_content(self, painter, rect, is_compact, title, description, due_date_str, item_id, left_width, right_width):
         """Draw the main task content (title, description, due date)"""

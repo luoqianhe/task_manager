@@ -233,6 +233,33 @@ class CategoryManager(QWidget):
         header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         main_layout.addWidget(header_label)
         
+        # Add top buttons for Save and Cancel (left-aligned)
+        top_button_layout = QHBoxLayout()
+        
+        save_btn_top = QPushButton("Save Settings")
+        save_btn_top.setFixedHeight(30)
+        save_btn_top.setMinimumWidth(120)
+        save_btn_top.clicked.connect(self.save_settings)
+        
+        cancel_btn_top = QPushButton("Cancel")
+        cancel_btn_top.setFixedHeight(30)
+        cancel_btn_top.setMinimumWidth(120)
+        # Try to find the main window to connect to show_task_view
+        parent = self.parent()
+        while parent and not hasattr(parent, 'show_task_view'):
+            parent = parent.parent()
+        if parent and hasattr(parent, 'show_task_view'):
+            debug.debug("Found parent with show_task_view method")
+            cancel_btn_top.clicked.connect(parent.show_task_view)
+        else:
+            debug.debug("Could not find parent with show_task_view method")
+        
+        top_button_layout.addWidget(save_btn_top)
+        top_button_layout.addWidget(cancel_btn_top)
+        top_button_layout.addStretch()  # Push buttons to the left
+        
+        main_layout.addLayout(top_button_layout)
+        
         # List of existing categories
         debug.debug("Creating categories list widget")
         self.categories_list = QListWidget()
@@ -240,7 +267,6 @@ class CategoryManager(QWidget):
         main_layout.addWidget(self.categories_list)
         
         # Add new category form
-        debug.debug("Creating add category form")
         form_layout = QHBoxLayout()
         
         self.name_input = QLineEdit()
@@ -260,9 +286,54 @@ class CategoryManager(QWidget):
         form_layout.addWidget(self.add_btn)
         
         main_layout.addLayout(form_layout)
+        
+        # Add stretch to push bottom buttons down
+        main_layout.addStretch()
+        
+        # Add bottom buttons
+        bottom_button_layout = QHBoxLayout()
+        
+        save_btn_bottom = QPushButton("Save Settings")
+        save_btn_bottom.setFixedHeight(30)
+        save_btn_bottom.setMinimumWidth(120)
+        save_btn_bottom.clicked.connect(self.save_settings)
+        
+        cancel_btn_bottom = QPushButton("Cancel")
+        cancel_btn_bottom.setFixedHeight(30)
+        cancel_btn_bottom.setMinimumWidth(120)
+        # Try to find the main window to connect to show_task_view
+        parent = self.parent()
+        while parent and not hasattr(parent, 'show_task_view'):
+            parent = parent.parent()
+        if parent and hasattr(parent, 'show_task_view'):
+            debug.debug("Found parent with show_task_view method")
+            cancel_btn_bottom.clicked.connect(parent.show_task_view)
+        else:
+            debug.debug("Could not find parent with show_task_view method")
+        
+        bottom_button_layout.addWidget(save_btn_bottom)
+        bottom_button_layout.addWidget(cancel_btn_bottom)
+        bottom_button_layout.addStretch()  # Push buttons to the left
+        
+        main_layout.addLayout(bottom_button_layout)
+        
         self.setLayout(main_layout)
         debug.debug("CategoryManager UI setup complete")
-            
+        
+    def save_settings(self):
+        debug.debug("Saving category settings")
+        # Currently does not need to do anything since categories are saved immediately when added/edited/deleted
+        
+        # Try to find main window to return to task view
+        parent = self.parent()
+        while parent and not hasattr(parent, 'show_task_view'):
+            parent = parent.parent()
+        if parent and hasattr(parent, 'show_task_view'):
+            debug.debug("Returning to task view")
+            parent.show_task_view()
+        else:
+            debug.debug("Could not find parent with show_task_view method")        
+    
     @debug_method
     def pick_color(self):
         debug.debug("Opening color picker dialog")

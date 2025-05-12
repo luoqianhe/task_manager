@@ -43,6 +43,7 @@ from ui.app_settings import AppSettingsWidget, SettingsManager
 from PyQt6.QtGui import QKeySequence, QShortcut, QIcon, QFont
 from PyQt6.QtCore import Qt, QSize
 from pathlib import Path
+from ui.task_dialogs import AddTaskDialog
 import csv
 import sys
 import sqlite3
@@ -277,9 +278,9 @@ class MainWindow(QMainWindow):
     @debug_method
     def show_add_dialog(self, checked=False):
         debug.debug("Opening Add Task dialog")
-        from ui.task_dialogs import AddTaskDialog
-        from PyQt6.QtWidgets import QMessageBox
-        from datetime import datetime
+        # from ui.task_dialogs import AddTaskDialog
+        # from PyQt6.QtWidgets import QMessageBox
+        # from datetime import datetime
         
         # Get the current tab index
         current_tab_index = self.tabs.currentIndex()

@@ -73,14 +73,12 @@ class SettingPillItem(QWidget):
         # Color indicator and edit button
         color_btn = QPushButton("Edit Color")
         color_btn.setFixedSize(80, 30)
-        # color_btn.setStyleSheet("background-color: white; color: #333; border-radius: 5px; border: none;")
         color_btn.clicked.connect(self.change_color)
         layout.addWidget(color_btn)
         
         # Edit button
         edit_btn = QPushButton("Edit Name")
         edit_btn.setFixedSize(80, 30)
-        # edit_btn.setStyleSheet("background-color: white; color: #333; border-radius: 5px; border: none;")
         edit_btn.clicked.connect(self.edit_item)
         layout.addWidget(edit_btn)
         
@@ -356,10 +354,32 @@ class CombinedSettingsManager(QWidget):
         main_layout.setSpacing(10)
         main_layout.setContentsMargins(10, 10, 10, 10)
         
-        # Header
-        header_label = QLabel("Categories, Priorities, and Statuses")
-        header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
-        main_layout.addWidget(header_label)
+        # Add top buttons for Save and Cancel (left-aligned)
+        top_button_layout = QHBoxLayout()
+        
+        save_btn_top = QPushButton("Save Settings")
+        save_btn_top.setFixedHeight(30)
+        save_btn_top.setMinimumWidth(120)
+        save_btn_top.clicked.connect(self.save_settings)
+        
+        cancel_btn_top = QPushButton("Cancel")
+        cancel_btn_top.setFixedHeight(30)
+        cancel_btn_top.setMinimumWidth(120)
+        # Try to find the main window to connect to show_task_view
+        parent = self.parent()
+        while parent and not hasattr(parent, 'show_task_view'):
+            parent = parent.parent()
+        if parent and hasattr(parent, 'show_task_view'):
+            debug.debug("Found parent with show_task_view method")
+            cancel_btn_top.clicked.connect(parent.show_task_view)
+        else:
+            debug.debug("Could not find parent with show_task_view method")
+        
+        top_button_layout.addWidget(save_btn_top)
+        top_button_layout.addWidget(cancel_btn_top)
+        top_button_layout.addStretch()  # Push buttons to the left
+        
+        main_layout.addLayout(top_button_layout)
         
         # Setting type selector
         selector_layout = QHBoxLayout()
@@ -457,10 +477,10 @@ class CombinedSettingsManager(QWidget):
         # Add stretch to push buttons to bottom
         main_layout.addStretch()
         
-        # Add Save and Cancel buttons
+        # Add Save and Cancel buttons at the bottom
         button_layout = QHBoxLayout()
         
-        save_button = QPushButton("Save")
+        save_button = QPushButton("Save Settings")
         save_button.setFixedHeight(30)
         save_button.setMinimumWidth(120)
         save_button.clicked.connect(self.save_settings)
@@ -476,7 +496,7 @@ class CombinedSettingsManager(QWidget):
             debug.debug("Found parent with show_task_view method")
             cancel_button.clicked.connect(parent.show_task_view)
         else:
-            debug.warning("Could not find parent with show_task_view method")
+            debug.debug("Could not find parent with show_task_view method")
         
         button_layout.addWidget(save_button)
         button_layout.addWidget(cancel_button)
