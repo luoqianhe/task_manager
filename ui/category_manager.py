@@ -36,7 +36,7 @@ class CategoryItem(QWidget):
         # This ensures text is visible regardless of background color
         bg_color = QColor(color)
         brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
-        text_color = "black" if brightness > 128 else "white"
+        text_color = "black" #if brightness > 128 else "white"
         
         # Category name with larger font and contrast-based text color
         name_label = QLabel(name)

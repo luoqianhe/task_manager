@@ -39,13 +39,6 @@ class SettingPillItem(QWidget):
         self.color = color  # Store the color for reference
         self.setAcceptDrops(True)  # Enable drops
         
-        # Calculate text color based on background brightness
-        # This ensures text is visible regardless of background color
-        bg_color = QColor(color)
-        brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
-        text_color = "black" if brightness > 128 else "white"
-        debug.debug(f"Setting {item_type} pill text color to {text_color} for background {color}")
-        
         # Create a frame to serve as the colored background
         self.frame = QFrame(self)
         self.frame.setObjectName("coloredFrame")
@@ -56,35 +49,42 @@ class SettingPillItem(QWidget):
         layout.setContentsMargins(15, 17, 15, 17)  # Consistent padding
         layout.setSpacing(10)  # Space between controls
         
-        # Item name with larger font - use dynamic text color
+        # Calculate text color based on background brightness
+        # This ensures text is visible regardless of background color
+        bg_color = QColor(color)
+        brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
+        text_color = "black" if brightness > 128 else "white"
+        debug.debug(f"Setting {item_type} pill text color to {text_color} for background {color}")
+        
+        # Item name with larger font - using calculated text color
         name_label = QLabel(name)
-        name_label.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {text_color};")
+        name_label.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {text_color}; background-color: transparent;")
         layout.addWidget(name_label)
         
         # Add stretch to push buttons to the right
         layout.addStretch()
         
-        # Add grip handle icon to indicate draggable - use dynamic text color
+        # Add grip handle icon to indicate draggable - using calculated text color
         drag_icon = QLabel("☰")  # Unicode hamburger/grip icon
-        drag_icon.setStyleSheet(f"font-size: 16px; color: {text_color};")
+        drag_icon.setStyleSheet(f"font-size: 16px; color: {text_color};background-color: transparent;")
         drag_icon.setToolTip("Drag to reorder")
         layout.addWidget(drag_icon)
         
-        # Color indicator and edit button - white circle with text
+        # Color indicator and edit button
         color_btn = QPushButton("Edit Color")
         color_btn.setFixedSize(80, 30)
-        color_btn.setStyleSheet("background-color: white; color: #333; border-radius: 5px; border: none;")
+        # color_btn.setStyleSheet("background-color: white; color: #333; border-radius: 5px; border: none;")
         color_btn.clicked.connect(self.change_color)
         layout.addWidget(color_btn)
         
-        # Edit button - white background
+        # Edit button
         edit_btn = QPushButton("Edit Name")
         edit_btn.setFixedSize(80, 30)
-        edit_btn.setStyleSheet("background-color: white; color: #333; border-radius: 5px; border: none;")
+        # edit_btn.setStyleSheet("background-color: white; color: #333; border-radius: 5px; border: none;")
         edit_btn.clicked.connect(self.edit_item)
         layout.addWidget(edit_btn)
         
-        # Delete button - white background - disabled for Completed status
+        # Delete button
         delete_btn = QPushButton("Delete")
         delete_btn.setFixedSize(80, 30)
         delete_btn.clicked.connect(self.delete_item)
@@ -94,8 +94,8 @@ class SettingPillItem(QWidget):
             delete_btn.setEnabled(False)
             delete_btn.setToolTip("The Completed status cannot be deleted")
             delete_btn.setStyleSheet("background-color: #e0e0e0; color: #888; border-radius: 5px; border: none;")
-        else:
-            delete_btn.setStyleSheet("background-color: white; color: #333; border-radius: 5px; border: none;")
+        # else:
+            # delete_btn.setStyleSheet("background-color: white; color: #333; border-radius: 5px; border: none;")
         
         layout.addWidget(delete_btn)
         
@@ -1102,7 +1102,7 @@ class EditItemDialog(QDialog):
             QLineEdit {
                 border: 1px solid #D2D2D7;
                 border-radius: 5px;
-                background-color: white;
+                background-color: black;
                 padding: 5px 8px;
                 height: 24px;
                 font-family: -apple-system, '.AppleSystemUIFont';

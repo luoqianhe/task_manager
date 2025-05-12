@@ -193,56 +193,6 @@ class TaskPillDelegate(QStyledItemDelegate):
             debug.debug("Drawing regular task item")
             self._draw_task_item(painter, option, index)
 
-    def _draw_priority_header(self, painter, option, index, user_data):
-            """Draw a priority header item"""
-            # Save painter state
-            painter.save()
-            
-            # Get data
-            priority = user_data.get('priority', 'Medium')
-            color = user_data.get('color', '#FFC107')
-            expanded = user_data.get('expanded', True)
-            
-            # Calculate rect - REDUCE MARGINS HERE
-            rect = option.rect.adjusted(
-                self.item_margin,
-                self.item_margin,  # Reduce top margin
-                -self.item_margin,
-                -self.item_margin  # Reduce bottom margin
-            )
-            
-            # Draw background
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            path = QPainterPath()
-            path.addRoundedRect(QRectF(rect), 5, 5)
-            painter.fillPath(path, QBrush(QColor(color)))
-            
-            # Draw priority text
-            # Get font settings from SettingsManager
-            settings = self.get_settings_manager()
-            font_family = settings.get_setting("font_family", "Segoe UI")
-            font_size = int(settings.get_setting("font_size", 12))
-            
-            header_font = QFont(font_family)
-            header_font.setPointSize(font_size)
-            header_font.setBold(True)
-            
-            painter.setFont(header_font)
-            painter.setPen(QColor("#FFFFFF"))
-            
-            header_text_rect = QRectF(
-                rect.left() + 40,  # Position after arrow
-                rect.top(),
-                rect.width() - 50,
-                rect.height()
-            )
-            
-            painter.drawText(header_text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, 
-                            priority.upper())
-            
-            # Restore painter
-            painter.restore()
-
     def _draw_task_item(self, painter, option, index):
         """Draw a regular task item - modified to support customizable panels"""
         debug.debug(f"Drawing task item at index {index.row()}")
