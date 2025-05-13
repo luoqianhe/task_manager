@@ -305,14 +305,14 @@ class TaskTreeWidget(QTreeWidget):
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(None, "Error", f"Failed to add task: {str(e)}")
             return None
-        
+
     def change_status_with_timestamp(self, item, new_status):
         """Change status with timestamp tracking for Completed tasks"""
         debug.debug(f"Changing task status to: {new_status}")
         try:
             # Import database manager
-            from database.database_manager import get_db_manager
-            db_manager = get_db_manager()
+            from database.memory_db_manager import get_memory_db_manager
+            db_manager = get_memory_db_manager()
             
             # Check if completed_at column exists
             debug.debug("Checking if completed_at column exists")
@@ -459,6 +459,39 @@ class TaskTreeWidget(QTreeWidget):
             QMessageBox.critical(self, "Error", f"Failed to change task status: {str(e)}")
             return False
 
+    def _handle_tab_transition_with_expanded_states(self, parent, expanded_items):
+        """Handle a tab transition while preserving expanded states"""
+        debug.debug("Handling tab transition with expanded states preservation")
+        # Store the expanded states in a way that will survive across tabs
+        # We can use main_window's settings for temporary storage
+        if hasattr(parent, 'main_window') and hasattr(parent.main_window, 'settings'):
+            parent.main_window.settings.set_setting("temp_expanded_states", expanded_items)
+            debug.debug(f"Stored {len(expanded_items)} expanded states in settings")
+        
+        # Trigger the reload_all method
+        parent.reload_all()
+        
+        # After reloading, restore the expanded states
+        QTimer.singleShot(300, self._restore_expanded_states_after_tab_transition)
+
+    def _restore_expanded_states_after_tab_transition(self):
+        """Restore expanded states after a tab transition"""
+        debug.debug("Restoring expanded states after tab transition")
+        # Try to get the stored expanded states from main_window's settings
+        parent = self.parent()
+        while parent and not hasattr(parent, 'main_window'):
+            parent = parent.parent()
+        
+        if parent and hasattr(parent, 'main_window') and hasattr(parent.main_window, 'settings'):
+            expanded_items = parent.main_window.settings.get_setting("temp_expanded_states", [])
+            debug.debug(f"Retrieved {len(expanded_items)} expanded states from settings")
+            
+            # Restore the expanded states
+            self._restore_expanded_states(expanded_items)
+            
+            # Clear the temporary storage
+            parent.main_window.settings.set_setting("temp_expanded_states", [])
+            
     def add_task_item(self, task_id, title, description, link, status, priority, due_date, category, is_compact=0, links=None, files=None):
         debug.debug(f"Adding task item: ID={task_id}, title={title}")
         # Create a single-column item
@@ -538,8 +571,8 @@ class TaskTreeWidget(QTreeWidget):
             
         try:
             # Import database manager
-            from database.database_manager import get_db_manager
-            db_manager = get_db_manager()
+            from database.memory_db_manager import get_memory_db_manager
+            db_manager = get_memory_db_manager()
             
             # Check if this is a status change to or from "Completed"
             data = item.data(0, Qt.ItemDataRole.UserRole)
@@ -598,18 +631,21 @@ class TaskTreeWidget(QTreeWidget):
                 # This is a TabTaskTreeWidget within a TaskTabWidget
                 # Reload all tabs to reflect the status change
                 debug.debug("Requesting tab reload")
-                parent.reload_all()
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(100, parent.reload_all)
                 
         except Exception as e:
             debug.error(f"Error changing task status: {e}")
+            import traceback
+            traceback.print_exc()
             QMessageBox.critical(self, "Error", f"Failed to change task status: {str(e)}")
             
     def change_priority(self, item, new_priority):
         debug.debug(f"Changing priority to: {new_priority}")
         try:
             # Update database
-            from database.database_manager import get_db_manager
-            db_manager = get_db_manager()
+            from database.memory_db_manager import get_memory_db_manager
+            db_manager = get_memory_db_manager()
             
             db_manager.execute_update(
                 "UPDATE tasks SET priority = ? WHERE id = ?", 
@@ -628,18 +664,22 @@ class TaskTreeWidget(QTreeWidget):
             self.viewport().update()
             
             # Notify parent about priority change if we're in a tabbed interface
+            # and force a reload of all tabs
             parent = self.parent()
             while parent and not hasattr(parent, 'reload_all'):
                 parent = parent.parent()
                 
             if parent and hasattr(parent, 'reload_all'):
                 # This is a TabTaskTreeWidget within a TaskTabWidget
-                # Reload all tabs to reflect the priority change
-                debug.debug("Requesting tab reload")
-                parent.reload_all()
+                # Use a short timer to let the current operation complete first
+                debug.debug("Scheduling reload of all tabs")
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(100, parent.reload_all)
                 
         except Exception as e:
             debug.error(f"Error changing task priority: {e}")
+            import traceback
+            traceback.print_exc()
             QMessageBox.critical(self, "Error", f"Failed to change task priority: {str(e)}")
 
     def debug_delegate_setup(self):
@@ -798,13 +838,59 @@ class TaskTreeWidget(QTreeWidget):
         else:
             debug.debug("User canceled task deletion")
 
+    def _scroll_to_task(self, task_id):
+        """Find a task by ID and scroll to it"""
+        debug.debug(f"Attempting to scroll to task: {task_id}")
+        try:
+            # Try to find the task in the tree
+            for i in range(self.topLevelItemCount()):
+                top_item = self.topLevelItem(i)
+                
+                # Check if this is a priority header
+                top_data = top_item.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(top_data, dict) and top_data.get('is_priority_header', False):
+                    # Search in children of this header
+                    debug.debug(f"Searching in priority header: {top_data.get('priority', 'Unknown')}")
+                    for j in range(top_item.childCount()):
+                        child_item = top_item.child(j)
+                        if hasattr(child_item, 'task_id') and child_item.task_id == task_id:
+                            # Found it! Scroll to it
+                            debug.debug(f"Found task in priority header, scrolling to it")
+                            self.scrollToItem(child_item)
+                            self.setCurrentItem(child_item)
+                            return True
+                        
+                        # Check for grandchildren
+                        if self._find_and_scroll_to_child(child_item, task_id):
+                            return True
+                
+                # Could also be a direct top-level task
+                elif hasattr(top_item, 'task_id') and top_item.task_id == task_id:
+                    # Found it! Scroll to it
+                    debug.debug(f"Found task as top-level item, scrolling to it")
+                    self.scrollToItem(top_item)
+                    self.setCurrentItem(top_item)
+                    return True
+                    
+            debug.debug(f"Task {task_id} not found for scrolling")
+            return False
+        except Exception as e:
+            debug.error(f"Error scrolling to task: {e}")
+            return False
+
     def dropEvent(self, event):
         """Handle drag and drop events for tasks and priority headers"""
         debug.debug("Processing drop event")
+        # Save expanded states before the drop
+        expanded_items = self._save_expanded_states()
+        debug.debug(f"Saved expanded states for {len(expanded_items)} items")
+        
         item = self.currentItem()
         if not item:
             debug.debug("No current item, using standard drop handling")
             super().dropEvent(event)
+            # Restore expanded states even for standard handling
+            QTimer.singleShot(200, lambda saved_states=expanded_items: self._restore_expanded_states(saved_states))
             return
         
         debug.debug(f"Current item being dropped: {item.text(0)}")
@@ -813,6 +899,7 @@ class TaskTreeWidget(QTreeWidget):
         if not hasattr(item, 'task_id'):
             debug.debug("Item doesn't have task_id, using standard drop handling")
             super().dropEvent(event)
+            QTimer.singleShot(200, lambda saved_states=expanded_items: self._restore_expanded_states(saved_states))
             return
         
         # Save the drop indicator position and prepare to determine drop target
@@ -941,13 +1028,8 @@ class TaskTreeWidget(QTreeWidget):
             
             # Reload the entire tree to ensure correct display
             debug.debug("Reloading tree...")
-            if hasattr(self, 'filter_type'):
-                self.load_tasks_tab()  # Use the filtered loading method
-            else:
-                self.load_tasks_tree()  # Use the standard loading method
-            
-            # Try to scroll to the task to make it visible
-            self._scroll_to_task(task_id)
+            # Use a timer to delay reloading slightly to ensure all DB updates complete
+            QTimer.singleShot(100, lambda: self._reload_with_expanded_states(expanded_items))
             
         except Exception as e:
             debug.error(f"Error in dropEvent: {e}")
@@ -955,46 +1037,25 @@ class TaskTreeWidget(QTreeWidget):
             traceback.print_exc()
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Error", f"Failed to update task: {str(e)}")
+            # Still try to restore expanded states even after error
+            QTimer.singleShot(200, lambda saved_states=expanded_items: self._restore_expanded_states(saved_states))
 
-    def _scroll_to_task(self, task_id):
-        """Find a task by ID and scroll to it"""
-        debug.debug(f"Attempting to scroll to task: {task_id}")
-        try:
-            # Try to find the task in the tree
-            for i in range(self.topLevelItemCount()):
-                top_item = self.topLevelItem(i)
-                
-                # Check if this is a priority header
-                top_data = top_item.data(0, Qt.ItemDataRole.UserRole)
-                if isinstance(top_data, dict) and top_data.get('is_priority_header', False):
-                    # Search in children of this header
-                    debug.debug(f"Searching in priority header: {top_data.get('priority', 'Unknown')}")
-                    for j in range(top_item.childCount()):
-                        child_item = top_item.child(j)
-                        if hasattr(child_item, 'task_id') and child_item.task_id == task_id:
-                            # Found it! Scroll to it
-                            debug.debug(f"Found task in priority header, scrolling to it")
-                            self.scrollToItem(child_item)
-                            self.setCurrentItem(child_item)
-                            return True
-                        
-                        # Check for grandchildren
-                        if self._find_and_scroll_to_child(child_item, task_id):
-                            return True
-                
-                # Could also be a direct top-level task
-                elif hasattr(top_item, 'task_id') and top_item.task_id == task_id:
-                    # Found it! Scroll to it
-                    debug.debug(f"Found task as top-level item, scrolling to it")
-                    self.scrollToItem(top_item)
-                    self.setCurrentItem(top_item)
-                    return True
-                    
-            debug.debug(f"Task {task_id} not found for scrolling")
-            return False
-        except Exception as e:
-            debug.error(f"Error scrolling to task: {e}")
-            return False
+    def _reload_with_expanded_states(self, expanded_items):
+        """Reload the tree while preserving expanded states"""
+        debug.debug("Reloading tree with preserved expanded states")
+        # Determine which load method to use
+        if hasattr(self, 'filter_type'):
+            self.load_tasks_tab()  # Use the filtered loading method
+        else:
+            self.load_tasks_tree()  # Use the standard loading method
+        
+        # Restore expanded states after a short delay to ensure UI is updated
+        QTimer.singleShot(100, lambda saved_states=expanded_items: self._restore_expanded_states(saved_states))
+        
+        # Try to scroll to the task that was moved to make it visible
+        if hasattr(self, 'currentItem') and self.currentItem() and hasattr(self.currentItem(), 'task_id'):
+            task_id = self.currentItem().task_id
+            QTimer.singleShot(150, lambda tid=task_id: self._scroll_to_task(tid))
 
     def _find_and_scroll_to_child(self, parent_item, task_id):
         """Recursively search for a child and scroll to it if found"""
@@ -1111,6 +1172,10 @@ class TaskTreeWidget(QTreeWidget):
     def edit_task(self, item):
         debug.debug(f"Editing task: {item.text(0)}")
         from .task_dialogs import EditTaskDialog
+        
+        # Save expanded states before changes
+        expanded_items = self._save_expanded_states()
+        debug.debug(f"Saved expanded states for {len(expanded_items)} items")
         
         # Skip if not a task item
         if not hasattr(item, 'task_id'):
@@ -1368,16 +1433,21 @@ class TaskTreeWidget(QTreeWidget):
                 
                 # If status, category or priority changed, reload all tabs
                 if status_changed or category_changed or priority_changed:
-                    debug.debug("Status, category, or priority changed - reloading all tabs")
+                    debug.debug("Status, category, or priority changed - reloading all tabs with expanded states preservation")
                     parent = self.parent()
                     while parent and not hasattr(parent, 'reload_all'):
                         parent = parent.parent()
                         
                     if parent and hasattr(parent, 'reload_all'):
                         # Use a short timer to let the current operation complete first
-                        debug.debug("Scheduling reload of all tabs")
-                        from PyQt6.QtCore import QTimer
-                        QTimer.singleShot(100, parent.reload_all)
+                        debug.debug("Scheduling reload of all tabs with expanded states preservation")
+                        QTimer.singleShot(100, lambda: self._handle_tab_transition_with_expanded_states(parent, expanded_items))
+                    else:
+                        # If no parent with reload_all, still restore expanded states
+                        QTimer.singleShot(200, lambda saved_states=expanded_items: self._restore_expanded_states(saved_states))
+                else:
+                    # Even if no tab transition, still restore expanded states
+                    QTimer.singleShot(200, lambda saved_states=expanded_items: self._restore_expanded_states(saved_states))
             
             except Exception as e:
                 debug.error(f"Error updating task: {e}")
@@ -1897,9 +1967,14 @@ class TaskTreeWidget(QTreeWidget):
             debug.debug("Passing key event to parent")
             super().keyPressEvent(event)
 
+    @debug_method
     def load_tasks_tree(self):
         debug.debug("Loading tasks tree")
         try:
+            # Save the expanded states before clearing
+            expanded_items = self._save_expanded_states()
+            debug.debug(f"Saved expanded states for {len(expanded_items)} items")
+            
             self.clear()
             
             # Import database manager
@@ -2033,6 +2108,8 @@ class TaskTreeWidget(QTreeWidget):
             debug.debug("Synchronizing priority headers")
             self.synchronize_priority_headers()
             debug.debug("Tasks tree loaded successfully")
+            self._restore_expanded_states(expanded_items)
+            debug.debug(f"Restored expanded states for {len(expanded_items)} items")
         
         except Exception as e:
             debug.error(f"Error loading tasks tree: {e}")
@@ -2235,7 +2312,7 @@ class TaskTreeWidget(QTreeWidget):
             # Force a layout update
             debug.debug("Forcing viewport update")
             self.viewport().update()
-            
+
     def show_context_menu(self, position):
         debug.debug("Showing context menu")
         item = self.itemAt(position)
@@ -2243,66 +2320,167 @@ class TaskTreeWidget(QTreeWidget):
             debug.debug("No item at position, skipping context menu")
             return
             
-        debug.debug(f"Context menu for item: {item.text(0)}")
+        # Skip if this is a priority header
+        user_data = item.data(0, Qt.ItemDataRole.UserRole)
+        if isinstance(user_data, dict) and user_data.get('is_priority_header', False):
+            debug.debug("Item is a priority header, skipping context menu")
+            return
+            
+        debug.debug(f"Creating context menu for item: {item.text(0)}")
+        
+        # Get OS style from application
+        app = QApplication.instance()
+        os_style = "Default"
+        if app.property("style_manager"):
+            os_style = app.property("style_manager").current_style
+            debug.debug(f"Detected OS style: {os_style}")
+        
+        # Create menu
         menu = QMenu(self)
+        
+        # Define OS-specific styles from os_style_manager.py patterns
+        if os_style == "macOS":
+            menu.setStyleSheet("""
+                QMenu {
+                    font-family: -apple-system, '.AppleSystemUIFont', 'SF Pro Text';
+                    background-color: #FFFFFF;
+                    border: 1px solid #D2D2D7;
+                    border-radius: 10px;
+                    padding: 5px;
+                }
+                QMenu::item {
+                    padding: 5px 30px 5px 20px;
+                    border-radius: 6px;
+                }
+                QMenu::item:selected {
+                    background-color: #0071E3;
+                    color: white;
+                }
+                QMenu::separator {
+                    height: 1px;
+                    background-color: #D2D2D7;
+                    margin: 5px 0px 5px 0px;
+                }
+            """)
+        elif os_style == "Windows":
+            menu.setStyleSheet("""
+                QMenu {
+                    font-family: 'Segoe UI', sans-serif;
+                    background-color: #FFFFFF;
+                    border: 1px solid #CCCCCC;
+                    padding: 2px;
+                }
+                QMenu::item {
+                    padding: 6px 30px 6px 20px;
+                }
+                QMenu::item:selected {
+                    background-color: #0078D7;
+                    color: white;
+                }
+                QMenu::separator {
+                    height: 1px;
+                    background-color: #CCCCCC;
+                    margin: 4px 0px 4px 0px;
+                }
+            """)
+        else:  # Linux
+            menu.setStyleSheet("""
+                QMenu {
+                    font-family: 'Ubuntu', 'Noto Sans', sans-serif;
+                    background-color: #FFFFFF;
+                    border: 1px solid #C6C6C6;
+                    border-radius: 4px;
+                    padding: 2px;
+                }
+                QMenu::item {
+                    padding: 6px 30px 6px 20px;
+                    border-radius: 3px;
+                }
+                QMenu::item:selected {
+                    background-color: #3584E4;
+                    color: white;
+                }
+                QMenu::separator {
+                    height: 1px;
+                    background-color: #C6C6C6;
+                    margin: 4px 0px 4px 0px;
+                }
+            """)
+        
+        # Create actions
         edit_action = menu.addAction("Edit Task")
         delete_action = menu.addAction("Delete Task")
         
         # Add a separator
         menu.addSeparator()
         
-        # Add status change submenu
-        status_menu = menu.addMenu("Change Status")
-        statuses = ['Not Started', 'In Progress', 'On Hold', 'Completed']
+        # Import database manager
+        from database.memory_db_manager import get_memory_db_manager
+        db_manager = get_memory_db_manager()
+        
+        # Add status change submenu with same styling
+        status_menu = QMenu("Change Status", menu)
+        status_menu.setStyleSheet(menu.styleSheet())  # Apply same style to submenu
+        menu.addMenu(status_menu)
+        
+        # Get statuses from database in display order
+        debug.debug("Getting statuses from database")
+        result = db_manager.execute_query(
+            "SELECT name FROM statuses ORDER BY display_order"
+        )
+        
+        statuses = [row[0] for row in result]
+        debug.debug(f"Adding {len(statuses)} status options to menu")
         status_actions = {}
         
         for status in statuses:
             action = status_menu.addAction(status)
             status_actions[action] = status
-            debug.debug(f"Added status action: {status}")
         
-        # Add priority change submenu with priorities from database
-        priority_menu = menu.addMenu("Change Priority")
+        # Add priority change submenu
+        priority_menu = QMenu("Change Priority", menu)
+        priority_menu.setStyleSheet(menu.styleSheet())  # Apply same style to submenu
+        menu.addMenu(priority_menu)
+        
+        # Get priorities from database
+        debug.debug("Getting priorities from database")
+        results = db_manager.execute_query(
+            "SELECT name FROM priorities ORDER BY display_order"
+        )
+        priorities = [row[0] for row in results]
+        debug.debug(f"Adding {len(priorities)} priority options to menu")
         priority_actions = {}
         
-        try:
-            # Import database manager
-            from database.database_manager import get_db_manager
-            db_manager = get_db_manager()
-            
-            # Get priorities from database
-            debug.debug("Getting priorities from database")
-            results = db_manager.execute_query(
-                "SELECT name FROM priorities ORDER BY display_order"
-            )
-            priorities = [row[0] for row in results]
-            debug.debug(f"Found {len(priorities)} priorities")
-            
-            for priority in priorities:
-                action = priority_menu.addAction(priority)
-                priority_actions[action] = priority
-                debug.debug(f"Added priority action: {priority}")
-        except Exception as e:
-            debug.error(f"Error loading priorities for context menu: {e}")
+        for priority in priorities:
+            action = priority_menu.addAction(priority)
+            priority_actions[action] = priority
         
+        # Execute menu and handle action
         debug.debug("Showing context menu")
         action = menu.exec(self.mapToGlobal(position))
         
         if action == edit_action:
-            debug.debug("Edit action selected")
+            debug.debug(f"Edit action selected for item: {item.text(0)}")
             self.edit_task(item)
         elif action == delete_action:
-            debug.debug("Delete action selected")
+            debug.debug(f"Delete action selected for item: {item.text(0)}")
             self.delete_task(item)
         elif action in status_actions:
-            debug.debug(f"Status change selected: {status_actions[action]}")
-            self.change_status(item, status_actions[action])
+            new_status = status_actions[action]
+            debug.debug(f"Status change selected: {new_status} for item: {item.text(0)}")
+            if hasattr(self, 'change_status_with_timestamp'):
+                debug.debug(f"Using change_status_with_timestamp method")
+                self.change_status_with_timestamp(item, new_status)
+            else:
+                debug.debug(f"Using basic change_status method")
+                self.change_status(item, new_status)
         elif action in priority_actions:
-            debug.debug(f"Priority change selected: {priority_actions[action]}")
-            self.change_priority(item, priority_actions[action])
+            new_priority = priority_actions[action]
+            debug.debug(f"Priority change selected: {new_priority} for item: {item.text(0)}")
+            self.change_priority(item, new_priority)
         else:
             debug.debug("No action selected or menu canceled")
-
+    
     def synchronize_priority_headers(self):
         """Ensure all priority headers have visual states matching their logical states"""
         debug.debug("Synchronizing priority headers")
@@ -2499,6 +2677,10 @@ class TaskTreeWidget(QTreeWidget):
         """Handle dropping a task onto another task or empty area"""
         debug.debug(f"Handling drop of task onto another task")
         try:
+            # Save the expanded state of all items before the drop
+            expanded_items = self._save_expanded_states()
+            debug.debug(f"Saved expanded states for {len(expanded_items)} items")
+            
             # Let the standard QTreeWidget implementation handle the visual aspects
             debug.debug("Using standard drop handling first")
             super().dropEvent(event)
@@ -2532,6 +2714,8 @@ class TaskTreeWidget(QTreeWidget):
             # Recursively update all children
             debug.debug("Updating children hierarchy")
             self._update_children_hierarchy(item)
+            self._restore_expanded_states(expanded_items)
+            debug.debug(f"Restored expanded states for {len(expanded_items)} items")
             
             # Force a reload of all tabs to reflect the change
             debug.debug("Requesting reload of all tabs")
@@ -2543,6 +2727,60 @@ class TaskTreeWidget(QTreeWidget):
             traceback.print_exc()
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Error", f"Failed to update task hierarchy: {str(e)}")
+
+    def _save_expanded_states(self):
+        """Save expanded states of all items"""
+        expanded_items = []
+        # First collect all items
+        all_items = []
+        for i in range(self.topLevelItemCount()):
+            top_item = self.topLevelItem(i)
+            all_items.append(top_item)
+            self._collect_child_items(top_item, all_items)
+        
+        # Now check expanded state for each item that has children
+        for item in all_items:
+            if item.childCount() > 0:
+                index = self.indexFromItem(item)
+                if self.isExpanded(index):
+                    # Store task_id for each expanded item
+                    if hasattr(item, 'task_id'):
+                        expanded_items.append(item.task_id)
+                    elif isinstance(item.data(0, Qt.ItemDataRole.UserRole), dict) and 'priority' in item.data(0, Qt.ItemDataRole.UserRole):
+                        # This is a priority header
+                        expanded_items.append('priority:' + item.data(0, Qt.ItemDataRole.UserRole)['priority'])
+        
+        return expanded_items
+
+    def _restore_expanded_states(self, expanded_items):
+        """Restore expanded states after reload"""
+        # First collect all items
+        all_items = []
+        for i in range(self.topLevelItemCount()):
+            top_item = self.topLevelItem(i)
+            all_items.append(top_item)
+            self._collect_child_items(top_item, all_items)
+        
+        # Now restore expanded state for each item
+        for item in all_items:
+            # Check if this item should be expanded
+            is_priority_header = False
+            item_id = None
+            
+            if hasattr(item, 'task_id'):
+                item_id = item.task_id
+            elif isinstance(item.data(0, Qt.ItemDataRole.UserRole), dict) and 'priority' in item.data(0, Qt.ItemDataRole.UserRole):
+                # Priority header
+                is_priority_header = True
+                item_id = 'priority:' + item.data(0, Qt.ItemDataRole.UserRole)['priority']
+            
+            if item_id in expanded_items:
+                self.expandItem(item)
+                # If this is a priority header, update its data
+                if is_priority_header:
+                    data = item.data(0, Qt.ItemDataRole.UserRole)
+                    data['expanded'] = True
+                    item.setData(0, Qt.ItemDataRole.UserRole, data)
 
     def _reload_all_tabs(self):
         """Find the TaskTabWidget and reload all tabs"""

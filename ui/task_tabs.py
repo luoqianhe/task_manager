@@ -544,9 +544,33 @@ class TabTaskTreeWidget(TaskTreeWidget):
         if isinstance(user_data, dict) and user_data.get('is_priority_header', False):
             debug.debug("Item is a priority header, skipping context menu")
             return
-            
+                
         debug.debug(f"Creating context menu for item: {item.text(0)}")
         menu = QMenu(self)
+        
+        # Force hover highlighting with strong styling
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #FFFFFF;
+                border: 1px solid #D0D0D0;
+                padding: 2px;
+            }
+            QMenu::item {
+                padding: 6px 28px 6px 15px;
+                margin: 2px;
+                min-width: 150px;
+            }
+            QMenu::item:selected, QMenu::item:hover {
+                background-color: #0071E3 !important;
+                color: white !important;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #D0D0D0;
+                margin: 4px 0px;
+            }
+        """)
+        
         edit_action = menu.addAction("Edit Task")
         delete_action = menu.addAction("Delete Task")
         
@@ -554,12 +578,14 @@ class TabTaskTreeWidget(TaskTreeWidget):
         menu.addSeparator()
         
         # Add status change submenu
-        status_menu = menu.addMenu("Change Status")
+        status_menu = QMenu("Change Status", self)
+        status_menu.setStyleSheet(menu.styleSheet())  # Apply same styling to submenu
+        
         statuses = []
         
         # Import database manager
-        from database.database_manager import get_db_manager
-        db_manager = get_db_manager()
+        from database.memory_db_manager import get_memory_db_manager
+        db_manager = get_memory_db_manager()
         
         # Get statuses from database in display order
         debug.debug("Getting statuses from database")
@@ -577,8 +603,11 @@ class TabTaskTreeWidget(TaskTreeWidget):
             action = status_menu.addAction(status)
             status_actions[action] = status
         
+        menu.addMenu(status_menu)
+        
         # Add priority change submenu
-        priority_menu = menu.addMenu("Change Priority")
+        priority_menu = QMenu("Change Priority", self)
+        priority_menu.setStyleSheet(menu.styleSheet())  # Apply same styling to submenu
         priority_actions = {}
         
         # Get priorities from database
@@ -592,6 +621,8 @@ class TabTaskTreeWidget(TaskTreeWidget):
         for priority in priorities:
             action = priority_menu.addAction(priority)
             priority_actions[action] = priority
+        
+        menu.addMenu(priority_menu)
         
         # Execute menu and handle action
         debug.debug("Showing context menu")
