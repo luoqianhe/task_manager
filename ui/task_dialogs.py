@@ -383,23 +383,33 @@ class AddTaskDialog(QDialog):
     @debug_method
     def load_possible_parents(self):
         debug.debug("Loading possible parent tasks")
+        self.parent_combo.clear()
         self.parent_combo.addItem("None", None)
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
+        
+        # Get database manager
+        from database.memory_db_manager import get_memory_db_manager
+        db_manager = get_memory_db_manager()
+        
+        try:
             # Modified query to exclude completed tasks and include priority
-            cursor.execute("""
+            query = """
                 SELECT t.id, t.title, t.priority 
                 FROM tasks t
                 WHERE t.status != 'Completed'
                 ORDER BY t.priority, t.title
-            """)
-            tasks = cursor.fetchall()
+            """
+            
+            tasks = db_manager.execute_query(query)
             debug.debug(f"Loaded {len(tasks)} possible parent tasks")
+            
             for task_id, title, priority in tasks:
                 # Format as [Priority]: Task Title
                 display_text = f"[{priority}]: {title}"
                 self.parent_combo.addItem(display_text, task_id)
-                
+        except Exception as e:
+            debug.error(f"Error loading possible parents: {e}")
+            import traceback
+            traceback.print_exc()            
 class EditTaskDialog(QDialog):
     @staticmethod
     def get_connection():
@@ -823,8 +833,7 @@ class EditTaskDialog(QDialog):
         db_manager = get_memory_db_manager()
         
         try:
-            # Get all potential parent tasks - excluding current task and its descendants
-            # Note: Using a simpler query that doesn't use recursive CTE since SQLite version might not support it
+            # Get all potential parent tasks - excluding current task, its descendants, and any tasks marked as completed
             task_id = self.task_data['id']
             
             # First get IDs of all tasks that can't be parents (current task and descendants)
@@ -849,7 +858,7 @@ class EditTaskDialog(QDialog):
             # Format for SQL query
             exclude_ids_str = ', '.join('?' for _ in exclude_ids)
             
-            # Query for potential parents, excluding the invalid IDs and completed tasks
+            # Query for potential parents, excluding the invalid IDs, completed tasks, and ensuring they exist
             query = f"""
                 SELECT t.id, t.title, t.priority
                 FROM tasks t
@@ -885,6 +894,11 @@ class EditTaskDialog(QDialog):
                 )
                 if parent_info and len(parent_info) > 0:
                     debug.debug(f"Missing parent title: {parent_info[0][0]}")
+                else:
+                    debug.debug(f"Parent task {current_parent_id} does not exist in database!")
+                    # Reset parent to None if parent doesn't exist
+                    debug.debug("Resetting parent to None")
+                    self.parent_combo.setCurrentIndex(0)
         
         except Exception as e:
             debug.error(f"Error loading possible parents: {e}")

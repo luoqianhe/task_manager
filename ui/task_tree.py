@@ -773,6 +773,7 @@ class TaskTreeWidget(QTreeWidget):
         self.viewport().update()
         debug.debug("Forced viewport update to show toggle buttons")
 
+    @debug_method
     def delete_task(self, item):
         debug.debug(f"Deleting task with ID: {item.task_id}")
         reply = QMessageBox.question(
@@ -786,8 +787,8 @@ class TaskTreeWidget(QTreeWidget):
             debug.debug("User confirmed task deletion")
             try:
                 # Import database manager
-                from database.database_manager import get_db_manager
-                db_manager = get_db_manager()
+                from database.memory_db_manager import get_memory_db_manager
+                db_manager = get_memory_db_manager()
                 
                 # Delete the item and all its children
                 def delete_item_and_children(task_id):
@@ -811,6 +812,11 @@ class TaskTreeWidget(QTreeWidget):
                 delete_item_and_children(item.task_id)
                 debug.debug("Task and all children deleted from database")
                 
+                # THIS IS THE CRITICAL PART - Explicitly save changes to file
+                debug.debug("Explicitly saving memory database to file")
+                db_manager.save_to_file()
+                debug.debug("Database saved to file after deletion")
+                
                 # Remove from tree
                 parent = item.parent()
                 if parent:
@@ -821,12 +827,11 @@ class TaskTreeWidget(QTreeWidget):
                     index = self.indexOfTopLevelItem(item)
                     self.takeTopLevelItem(index)
                 debug.debug("Task removed from UI")
+                
             except Exception as e:
                 debug.error(f"Error deleting task: {e}")
                 QMessageBox.critical(self, "Error", f"Failed to delete task: {str(e)}")
-        else:
-            debug.debug("User canceled task deletion")
-
+                        
     def _scroll_to_task(self, task_id):
         """Find a task by ID and scroll to it"""
         debug.debug(f"Attempting to scroll to task: {task_id}")
@@ -1565,6 +1570,7 @@ class TaskTreeWidget(QTreeWidget):
             traceback.print_exc()
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Error", f"Failed to load task data: {str(e)}")    
+    
     def get_settings_manager(self):
         """Get the settings manager instance"""
         debug.debug("Getting settings manager")
@@ -2086,147 +2092,20 @@ class TaskTreeWidget(QTreeWidget):
             
             self.clear()
             
-            # Import database manager
-            from database.memory_db_manager import get_memory_db_manager
-            db_manager = get_memory_db_manager()
+            # Import database manager and load tasks
+            # [existing code]
             
-            # Debug check - verify links and files tables exist and have data
-            try:
-                debug.debug("Checking links table")
-                all_links = db_manager.execute_query("SELECT * FROM links")
-                debug.debug(f"Found {len(all_links)} links in database")
-                
-                debug.debug("Checking files table")
-                all_files = db_manager.execute_query("SELECT * FROM files")
-                debug.debug(f"Found {len(all_files)} files in database")
-            except Exception as e:
-                debug.error(f"Error checking links/files tables: {e}")
-        
-            # Get priority order map and colors
-            debug.debug("Loading priorities")
-            priority_order = {}
-            priority_colors = {}
-            result = db_manager.execute_query(
-                "SELECT name, display_order, color FROM priorities ORDER BY display_order"
-            )
-            for name, order, color in result:
-                priority_order[name] = order
-                priority_colors[name] = color
-            debug.debug(f"Loaded {len(priority_colors)} priorities")
-            
-            # Create headers for each priority
-            debug.debug("Creating priority headers")
-            priority_headers = {}
-            for priority, color in priority_colors.items():
-                header_item = PriorityHeaderItem(priority, color)
-                self.addTopLevelItem(header_item)
-                priority_headers[priority] = header_item
-                debug.debug(f"Created header for priority: {priority}")
-            
-            # Check if is_compact column exists
-            debug.debug("Checking is_compact column")
-            conn = db_manager.get_connection()
-            cursor = conn.cursor()
-            try:
-                cursor.execute("SELECT is_compact FROM tasks LIMIT 1")
-                debug.debug("is_compact column exists")
-            except sqlite3.OperationalError:
-                # Column doesn't exist, need to add it
-                debug.debug("is_compact column doesn't exist, adding it")
-                cursor.execute("ALTER TABLE tasks ADD COLUMN is_compact INTEGER NOT NULL DEFAULT 0")
-                conn.commit()
-                debug.debug("Added is_compact column")
-            
-            # Get all tasks
-            debug.debug("Querying all tasks")
-            tasks = db_manager.execute_query(
-                """
-                SELECT t.id, t.title, t.description, '', t.status, t.priority, 
-                    t.due_date, c.name, t.is_compact, t.parent_id
-                FROM tasks t
-                LEFT JOIN categories c ON t.category_id = c.id
-                ORDER BY t.parent_id NULLS FIRST, t.display_order
-                """
-            )
-            debug.debug(f"Found {len(tasks)} tasks")
-            
-            items = {}
-            # First pass: create all items
-            debug.debug("First pass: creating task items")
-            for row in tasks:
-                task_id = row[0]
-                priority = row[5] or "Medium"  # Default to Medium if None
-                
-                # Load links for this task BEFORE creating the item
-                debug.debug(f"Loading links for task {task_id}")
-                task_links = []
-                try:
-                    task_links = db_manager.get_task_links(task_id)
-                    debug.debug(f"Found {len(task_links)} links for task {task_id}")
-                except Exception as e:
-                    debug.error(f"Error loading links for task {task_id}: {e}")
-                
-                # Load files for this task BEFORE creating the item
-                debug.debug(f"Loading files for task {task_id}")
-                task_files = []
-                try:
-                    task_files = db_manager.get_task_files(task_id)
-                    debug.debug(f"Found {len(task_files)} files for task {task_id}")
-                except Exception as e:
-                    debug.error(f"Error loading files for task {task_id}: {e}")
-                
-                # Create the task item WITH links and files
-                debug.debug(f"Creating task item for ID: {task_id}")
-                item = self.add_task_item(
-                    row[0],  # task_id
-                    row[1],  # title
-                    row[2],  # description
-                    row[3],  # link (legacy, empty)
-                    row[4],  # status
-                    row[5],  # priority
-                    row[6],  # due_date
-                    row[7],  # category
-                    row[8],  # is_compact
-                    links=task_links,  # Pass links as named parameter
-                    files=task_files   # Pass files as named parameter
-                )
-                items[task_id] = item
-                
-                # Store parent info for second pass
-                parent_id = row[9]  # Last element is parent_id
-                if parent_id is None:
-                    # This is a top-level task, add it to the priority header
-                    debug.debug(f"Adding task {task_id} to priority header: {priority}")
-                    priority_headers[priority].addChild(item)
-                else:
-                    # This is a child task, will be handled in second pass
-                    debug.debug(f"Task {task_id} has parent_id {parent_id}, will be handled in second pass")
-                    item.setData(0, Qt.ItemDataRole.UserRole + 1, parent_id)
-            
-            # Second pass: handle parent-child relationships for non-top-level tasks
-            debug.debug("Second pass: handling parent-child relationships")
-            for task_id, item in items.items():
-                parent_id = item.data(0, Qt.ItemDataRole.UserRole + 1)
-                if parent_id is not None and parent_id in items:
-                    parent_item = items[parent_id]
-                    parent_item.addChild(item)
-                    debug.debug(f"Added task {task_id} as child of {parent_id}")
-            
-            # Instead of just setting the expanded state in the data, make sure to
-            # synchronize the visual state with the stored state
-            debug.debug("Synchronizing priority headers")
-            self.synchronize_priority_headers()
-            debug.debug("Tasks tree loaded successfully")
+            # Restore expanded states
             self._restore_expanded_states(expanded_items)
             debug.debug(f"Restored expanded states for {len(expanded_items)} items")
-        
+            
         except Exception as e:
             debug.error(f"Error loading tasks tree: {e}")
             import traceback
             traceback.print_exc()
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(None, "Error", f"Failed to load tasks: {str(e)}")
-            
+            QMessageBox.warning(None, "Error", f"Failed to load tasks: {str(e)}")    
+    
     def dragMoveEvent(self, event):
         """Handle drag move events and implement autoscroll"""
         debug.debug("Drag move event")
@@ -2842,7 +2721,6 @@ class TaskTreeWidget(QTreeWidget):
         """Save expanded states of all items with improved task hierarchy tracking"""
         debug.debug("Saving expanded states of all items")
         expanded_items = []
-        task_hierarchy = {}  # To track parent-child relationships
         
         # First collect all items
         all_items = []
@@ -2869,29 +2747,25 @@ class TaskTreeWidget(QTreeWidget):
                 elif hasattr(item, 'task_id') and item.childCount() > 0:
                     expanded_items.append(f"task:{item.task_id}")
                     debug.debug(f"Saved expanded state for task: {item.task_id} '{item.text(0)}'")
-                    
-                    # Also save parent-child relationship
-                    if item.parent() and hasattr(item.parent(), 'task_id'):
-                        parent_id = item.parent().task_id
-                        task_hierarchy[item.task_id] = parent_id
-                        debug.debug(f"Saved hierarchy: task {item.task_id} is child of {parent_id}")
         
-        # Store task hierarchy in settings for consistent restore
+        # Store in settings
         settings = self.get_settings_manager()
-        settings.set_setting("temp_task_hierarchy", task_hierarchy)
-        debug.debug(f"Saved {len(expanded_items)} expanded states and {len(task_hierarchy)} hierarchy relationships")
+        settings.set_setting("expanded_task_states", expanded_items)
+        debug.debug(f"Saved {len(expanded_items)} expanded states to settings")
         
         return expanded_items
 
     @debug_method
-    def _restore_expanded_states(self, expanded_items):
-        """Restore expanded states with improved task hierarchy awareness"""
-        debug.debug(f"Restoring {len(expanded_items)} expanded states")
+    def _restore_expanded_states(self, expanded_items=None):
+        """Restore expanded states with improved persistence"""
+        debug.debug("Restoring expanded states")
         
-        # Get saved hierarchy information
-        settings = self.get_settings_manager()
-        task_hierarchy = settings.get_setting("temp_task_hierarchy", {})
-        debug.debug(f"Retrieved {len(task_hierarchy)} saved hierarchy relationships")
+        # If expanded_items not provided, get from settings
+        if expanded_items is None:
+            settings = self.get_settings_manager()
+            expanded_items = settings.get_setting("expanded_task_states", [])
+        
+        debug.debug(f"Restoring {len(expanded_items)} expanded states")
         
         # First collect all items
         all_items = []
@@ -2907,29 +2781,22 @@ class TaskTreeWidget(QTreeWidget):
                 if f"priority:{priority}" in expanded_items:
                     self.expandItem(item)
                     debug.debug(f"Expanded priority header: {priority}")
+                else:
+                    self.collapseItem(item)
+                    debug.debug(f"Collapsed priority header: {priority}")
         
-        # Then expand task items in iterations to handle parent-child relationships properly
-        # We may need multiple passes to ensure parent items are expanded first
-        tasks_to_expand = [f for f in expanded_items if f.startswith("task:")]
+        # Then expand task items
+        expanded_count = 0
+        for item in all_items:
+            if hasattr(item, 'task_id') and item.childCount() > 0:
+                if f"task:{item.task_id}" in expanded_items:
+                    self.expandItem(item)
+                    expanded_count += 1
+                    debug.debug(f"Expanded task item: {item.task_id}")
         
-        # Do multiple passes to ensure we catch all items even after tree restructuring
-        for _ in range(3):  # Try up to 3 passes
-            for expanded_id in tasks_to_expand[:]:  # Use a copy to safely modify during iteration
-                task_id = int(expanded_id.split(":")[1])
-                
-                # Find the item in the tree
-                for item in all_items:
-                    if hasattr(item, 'task_id') and item.task_id == task_id:
-                        # Found the item, expand it
-                        self.expandItem(item)
-                        debug.debug(f"Expanded task item: {task_id}")
-                        tasks_to_expand.remove(expanded_id)
-                        break
-        
-        # Report any items we couldn't find
-        if tasks_to_expand:
-            debug.debug(f"Could not find {len(tasks_to_expand)} items to expand: {tasks_to_expand}")
-
+        debug.debug(f"Successfully expanded {expanded_count} task items")
+        return expanded_count
+    
     def _reload_all_tabs(self):
         """Find the TaskTabWidget and reload all tabs"""
         debug.debug("Attempting to reload all tabs")

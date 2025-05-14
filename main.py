@@ -41,7 +41,7 @@ from ui.task_pill_delegate import TaskPillDelegate
 from ui.combined_settings import CombinedSettingsManager
 from ui.app_settings import AppSettingsWidget, SettingsManager
 from PyQt6.QtGui import QKeySequence, QShortcut, QIcon, QFont
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QTimer
 from pathlib import Path
 from ui.task_dialogs import AddTaskDialog
 import csv
@@ -117,7 +117,20 @@ class MainWindow(QMainWindow):
         debug.debug("Showing task view")
         self.show_task_view()
         
+        debug.debug("Scheduling expanded state restoration")
+        QTimer.singleShot(300, self._restore_initial_expanded_states)
+    
         debug.debug(f"MainWindow initialization complete. Settings: left_panel_contents={self.settings.get_setting('left_panel_contents')}, right_panel_contents={self.settings.get_setting('right_panel_contents')}")
+
+
+    @debug_method
+    def _restore_initial_expanded_states(self):
+        """Restore expanded states when application first starts"""
+        debug.debug("Restoring initial expanded states")
+        current_tab = self.tabs.currentWidget()
+        if hasattr(current_tab, 'task_tree'):
+            debug.debug("Restoring expanded states for initial tab")
+            current_tab.task_tree._restore_expanded_states()
 
     @debug_method
     def init_settings_view(self):
@@ -265,14 +278,30 @@ class MainWindow(QMainWindow):
     @debug_method
     def show_task_view(self, checked=False):
         debug.debug("Showing task view")
+        # If coming from settings view, restore expanded states
+        if self.stacked_widget.currentIndex() == 1:  # settings view
+            debug.debug("Switching from settings to task view")
+            
         self.stacked_widget.setCurrentIndex(0)
         # Refresh all tabs when returning from settings
         debug.debug("Reloading all tabs")
         self.tabs.reload_all()
-    
+        
+        # Restore expanded states after reload
+        current_tab = self.tabs.currentWidget()
+        if hasattr(current_tab, 'task_tree'):
+            debug.debug("Restoring expanded states after returning to task view")
+            QTimer.singleShot(100, lambda: current_tab.task_tree._restore_expanded_states())
+
     @debug_method
     def show_settings(self, checked=False):
         debug.debug("Showing settings view")
+        # Save expanded states before switching to settings
+        current_tab = self.tabs.currentWidget()
+        if hasattr(current_tab, 'task_tree'):
+            debug.debug("Saving expanded states before switching to settings")
+            current_tab.task_tree._save_expanded_states()
+            
         self.stacked_widget.setCurrentIndex(1)
     
     @debug_method
@@ -551,6 +580,13 @@ class MainWindow(QMainWindow):
         """Handle application shutdown"""
         debug.debug("Application closing - handling closeEvent")
         try:
+            # Save expanded states for the current tab
+            debug.debug("Saving expanded states for current tab")
+            current_tab = self.tabs.currentWidget()
+            if hasattr(current_tab, 'task_tree'):
+                current_tab.task_tree._save_expanded_states()
+                debug.debug("Expanded states saved for current tab")
+
             # Save the in-memory database back to file
             debug.debug("Saving in-memory database to file")
             from database.memory_db_manager import get_memory_db_manager
@@ -578,7 +614,7 @@ class MainWindow(QMainWindow):
         # Accept the close event
         debug.debug("Application shutdown complete")
         event.accept()
-        
+    
     @debug_method
     def on_settings_tab_changed(self, index):
         debug.debug(f"Settings tab changed to index {index}")

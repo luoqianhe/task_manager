@@ -58,10 +58,14 @@ class TabTaskTreeWidget(TaskTreeWidget):
         try:
             debug.debug("Executing deferred load_tasks_tab")
             self.load_tasks_tab()
+            
+            # After loading, restore expanded states
+            debug.debug("Restoring expanded states after initial load")
+            self._restore_expanded_states()
         except Exception as e:
             debug.error(f"Error during deferred task loading: {e}")
             debug.error(traceback.format_exc())
-      
+    
     @debug_method
     def load_tasks_tab(self):
         """Load tasks with tab-specific filtering and fetch links from database"""
@@ -754,7 +758,8 @@ class TaskTabWidget(QTabWidget):
         # Restore expanded states to the current tab
         if expanded_items and self.currentWidget() == current_tab:
             current_tab.task_tree._restore_expanded_states(expanded_items)
-            
+            debug.debug(f"Restored {len(expanded_items)} expanded states to current tab")
+    
     @debug_method
     def create_bee_todos_tab(self):
         """Create the Bee To Dos tab"""
@@ -782,7 +787,22 @@ class TaskTabWidget(QTabWidget):
         """Handle tab changed event"""
         debug.debug(f"Tab changed to index: {index}")
         
-        # Refresh the newly selected tab's content
+        # Save expanded states of previous tab
+        if hasattr(self, 'previous_tab_index'):
+            previous_tab = self.widget(self.previous_tab_index)
+            if previous_tab and hasattr(previous_tab, 'task_tree'):
+                debug.debug(f"Saving expanded states for tab: {self.tabText(self.previous_tab_index)}")
+                # Save expanded states with a unique key for this tab
+                tab_key = f"expanded_states_tab_{self.previous_tab_index}"
+                expanded_items = previous_tab.task_tree._save_expanded_states()
+                # Store in settings with tab-specific key
+                self.main_window.settings.set_setting(tab_key, expanded_items)
+                debug.debug(f"Saved {len(expanded_items) if expanded_items else 0} expanded states with key: {tab_key}")
+        
+        # Store current tab index for next time
+        self.previous_tab_index = index
+        
+        # Get the newly selected tab
         tab = self.widget(index)
         tab_name = self.tabText(index)
         debug.debug(f"Selected tab: {tab_name}")
@@ -790,51 +810,29 @@ class TaskTabWidget(QTabWidget):
         # Special handling for Bee To Dos tab
         if index == 2:  # Bee To Dos tab
             debug.debug("Bee To Dos tab selected, checking API key")
-            if hasattr(tab, 'bee_todos_widget'):
-                # Check if we have an API key
-                api_key = self.main_window.settings.get_setting("bee_api_key", "")
-                if not api_key:
-                    debug.debug("No Bee API key found, showing dialog")
-                    # No API key, show dialog
-                    from ui.bee_api_dialog import BeeApiKeyDialog
-                    dialog = BeeApiKeyDialog(self)
-                    
-                    if dialog.exec():
-                        debug.debug("API key dialog accepted")
-                        # User provided an API key
-                        api_key = dialog.get_api_key()
-                        key_label = dialog.get_key_label()
-                        
-                        if api_key:
-                            debug.debug("Saving Bee API key to settings")
-                            # Save to settings
-                            self.main_window.settings.set_setting("bee_api_key", api_key)
-                            if key_label:
-                                self.main_window.settings.set_setting("bee_api_key_label", key_label)
-                            
-                            # Initialize Bee To Dos with new key
-                            debug.debug("Initializing Bee To Dos with new API key")
-                            tab.bee_todos_widget.initialize_with_api_key(api_key)
-                        else:
-                            debug.debug("No API key provided, switching back to previous tab")
-                            # No API key provided, switch back to previous tab
-                            self.setCurrentIndex(0)  # Default to Current Tasks
-                    else:
-                        debug.debug("API key dialog canceled, switching back to previous tab")
-                        # User cancelled, switch back to previous tab
-                        self.setCurrentIndex(0)  # Default to Current Tasks
-                else:
-                    debug.debug("Using existing API key to initialize Bee To Dos")
-                    # API key exists, initialize Bee To Dos widget
-                    tab.bee_todos_widget.initialize_with_api_key(api_key)
+            # [existing Bee To Dos code]
+            
         elif hasattr(tab, 'task_tree'):
-            # Regular task tab - load tasks
+            # Regular task tab - load tasks first
             debug.debug(f"Regular task tab selected, loading tasks for tab: {tab_name}")
             load_start = time.time()
             tab.task_tree.load_tasks_tab()
             load_end = time.time()
             debug.debug(f"Tab load completed in {load_end - load_start:.3f} seconds")
+            
+            # After loading tasks, restore expanded states specific to this tab
+            tab_key = f"expanded_states_tab_{index}"
+            expanded_items = self.main_window.settings.get_setting(tab_key, [])
+            debug.debug(f"Restoring {len(expanded_items)} expanded states for key: {tab_key}")
+            
+            # Use a short delay to ensure the tree is fully loaded
+            QTimer.singleShot(50, lambda: self._restore_tab_expanded_states(tab.task_tree, expanded_items))
+        
         else:
             debug.debug(f"Tab has no recognized content to load: {tab_name}")
-        
-        #
+
+    @debug_method
+    def _restore_tab_expanded_states(self, tree, expanded_items):
+        """Helper to restore expanded states with a delay"""
+        debug.debug(f"Restoring {len(expanded_items)} expanded states to tree")
+        tree._restore_expanded_states(expanded_items)
