@@ -98,9 +98,17 @@ class TaskTreeWidget(QTreeWidget):
             debug.error(f"Error during deferred task loading: {e}")
             import traceback
             traceback.print_exc()
-    
+
+    @debug_method
     def add_new_task(self, data):
+        """Add a new task with proper expanded state preservation"""
         debug.debug(f"Adding new task: {data.get('title', 'No Title')}")
+        
+        # Save expanded states before adding
+        expanded_items = self._save_expanded_states()
+        debug.debug(f"Saved {len(expanded_items)} expanded states before adding task")
+        
+        # Original task creation logic
         try:
             # Import database manager
             from database.memory_db_manager import get_memory_db_manager
@@ -243,58 +251,20 @@ class TaskTreeWidget(QTreeWidget):
                 debug.debug("Committing changes to database")
                 conn.commit()
 
-                # Verify links and files were saved
-                cursor.execute("SELECT * FROM links WHERE task_id = ?", (new_id,))
-                saved_links = cursor.fetchall()
-                debug.debug(f"Verified {len(saved_links)} links were saved")
-                
-                cursor.execute("SELECT * FROM files WHERE task_id = ?", (new_id,))
-                saved_files = cursor.fetchall()
-                debug.debug(f"Verified {len(saved_files)} files were saved")
-            
-            # Add to tree UI
-            debug.debug("Adding task to UI tree")
-            new_item = self.add_task_item(
-                new_id, 
-                data.get('title', ''),
-                data.get('description', ''),
-                '',  # Empty legacy link placeholder
-                data.get('status', 'Not Started'),
-                data.get('priority', 'Medium'),
-                data.get('due_date', ''),
-                category_name,
-                is_compact,  # Pass the is_compact value
-                links=links,  # Pass links directly
-                files=data.get('files', [])  # Pass files directly
-            )
-            
-            priority = data.get('priority', 'Medium')
-            
-            # If it has a parent, add it to that parent
-            if parent_id:
-                debug.debug(f"Adding task to parent with ID: {parent_id}")
-                # Find parent item and add as child
-                parent_item = self._find_item_by_id(parent_id)
-                if parent_item:
-                    parent_item.addChild(new_item)
-                    debug.debug("Added task to parent")
-                else:
-                    debug.error(f"Could not find parent with ID: {parent_id}")
+            # Now reload the tree and restore expanded states
+            if hasattr(self, 'load_tasks_tab'):
+                debug.debug("Reloading tasks with filtered method")
+                self.load_tasks_tab()
             else:
-                debug.debug(f"Adding top-level task with priority: {priority}")
-                # Add to appropriate priority header
-                for i in range(self.topLevelItemCount()):
-                    top_item = self.topLevelItem(i)
-                    top_data = top_item.data(0, Qt.ItemDataRole.UserRole)
-                    if isinstance(top_data, dict) and top_data.get('is_priority_header', False):
-                        if top_data.get('priority') == priority:
-                            top_item.addChild(new_item)
-                            debug.debug(f"Added task to priority header: {priority}")
-                            break
+                debug.debug("Reloading tasks with standard method")
+                self.load_tasks_tree()
             
-            # Force a repaint
-            debug.debug("Forcing viewport update")
-            self.viewport().update()
+            # Restore expanded states
+            self._restore_expanded_states(expanded_items)
+            debug.debug(f"Restored {len(expanded_items)} expanded states")
+            
+            # Try to find and highlight the new task
+            self._highlight_task(new_id)
             
             return new_id
         except Exception as e:
@@ -304,7 +274,26 @@ class TaskTreeWidget(QTreeWidget):
             # Show error message to user
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(None, "Error", f"Failed to add task: {str(e)}")
-            return None
+            return None    
+
+    def _highlight_task(self, task_id):
+        """Find and highlight/select a task by its ID"""
+        debug.debug(f"Attempting to highlight task: {task_id}")
+        
+        # Find the task item
+        task_item = self._find_task_item_by_id(task_id)
+        
+        if task_item:
+            # Select the item
+            self.setCurrentItem(task_item)
+            
+            # Make sure it's visible
+            self.scrollToItem(task_item)
+            debug.debug(f"Successfully highlighted task {task_id}")
+            return True
+        
+        debug.debug(f"Could not find task {task_id} to highlight")
+        return False
 
     def change_status_with_timestamp(self, item, new_status):
         """Change status with timestamp tracking for Completed tasks"""
@@ -878,167 +867,333 @@ class TaskTreeWidget(QTreeWidget):
             debug.error(f"Error scrolling to task: {e}")
             return False
 
+    @debug_method
+    def _update_children_priorities(self, parent_id, new_priority, db_manager):
+        """Recursively update priorities of all children to match parent's priority"""
+        debug.debug(f"Updating priorities for children of task {parent_id}")
+        
+        try:
+            # Get all direct children
+            children = db_manager.execute_query(
+                "SELECT id, title FROM tasks WHERE parent_id = ?",
+                (parent_id,)
+            )
+            
+            for child_row in children:
+                child_id = child_row[0]
+                child_title = child_row[1]
+                debug.debug(f"Updating child task {child_id} '{child_title}' to priority: {new_priority}")
+                print('Updaging child task', child_id, child_title, 'to priority:', new_priority)
+                # Update this child's priority
+                db_manager.execute_update(
+                    "UPDATE tasks SET priority = ? WHERE id = ?",
+                    (new_priority, child_id)
+                )
+                
+                # Recursively update this child's children
+                self._update_children_priorities(child_id, new_priority, db_manager)
+            
+            debug.debug(f"Updated priorities for {len(children)} children of task {parent_id}")
+            print('Updated priorities for', len(children), 'children of task', parent_id)
+        except Exception as e:
+            debug.error(f"Error updating children priorities: {e}")
+            import traceback
+            traceback.print_exc()
+
+    @debug_method
     def dropEvent(self, event):
-        """Handle drag and drop events for tasks and priority headers"""
-        debug.debug("Processing drop event")
+        """Handle drag and drop events for tasks with improved database consistency"""
+        debug.debug("=== DRAG & DROP EVENT START ===")
+        debug.debug(f"Drop position: {event.position().x()}, {event.position().y()}")
+
+        # Save the dragged item BEFORE calling super().dropEvent()
+        dragged_item = self.currentItem()
+        if not dragged_item or not hasattr(dragged_item, 'task_id'):
+            debug.debug("No valid dragged item with task_id, canceling drop")
+            event.ignore()
+            return
+
+        dragged_id = dragged_item.task_id
+        dragged_title = dragged_item.text(0)
+        debug.debug(f"Dragged item: ID={dragged_id}, Title='{dragged_title}'")
+
+        # Get the drop target information
+        drop_pos = event.position().toPoint()
+        drop_index = self.indexAt(drop_pos)
+        drop_item = self.itemAt(drop_pos) if drop_index.isValid() else None
+        
+        # Log drop target information
+        drop_is_header = False
+        drop_target_id = None
+        if drop_item:
+            drop_data = drop_item.data(0, Qt.ItemDataRole.UserRole)
+            
+            if isinstance(drop_data, dict) and drop_data.get('is_priority_header', False):
+                drop_is_header = True
+                priority = drop_data.get('priority', 'Unknown')
+                debug.debug(f"Drop target is priority header: '{priority}'")
+            elif hasattr(drop_item, 'task_id'):
+                drop_target_id = drop_item.task_id
+                drop_title = drop_item.text(0)
+                debug.debug(f"Drop target task: ID={drop_target_id}, Title='{drop_title}'")
+            else:
+                debug.debug(f"Drop target is unknown type: {drop_item}")
+        else:
+            debug.debug("Drop target is empty space (no item)")
+        
         # Save expanded states before the drop
         expanded_items = self._save_expanded_states()
         debug.debug(f"Saved expanded states for {len(expanded_items)} items")
         
-        item = self.currentItem()
-        if not item:
-            debug.debug("No current item, using standard drop handling")
-            super().dropEvent(event)
-            # Restore expanded states even for standard handling
-            QTimer.singleShot(200, lambda saved_states=expanded_items: self._restore_expanded_states(saved_states))
+        # Log tree structure before drop
+        debug.debug("--- Tree structure before drop ---")
+        self._debug_tree_structure()
+        
+        # First, let Qt handle the visual drop
+        debug.debug("Letting Qt handle the visual drop")
+        super().dropEvent(event)
+        
+        # Log tree structure after Qt's handling
+        debug.debug("--- Tree structure after Qt handling ---")
+        self._debug_tree_structure()
+        
+        # IMPORTANT: We need to find the dragged item again after Qt's handling
+        # since currentItem() might have changed
+        dragged_item = self._find_task_item_by_id(dragged_id)
+        
+        if not dragged_item:
+            debug.debug(f"ERROR: Could not find dragged item with ID {dragged_id} after drop")
             return
         
-        debug.debug(f"Current item being dropped: {item.text(0)}")
+        debug.debug(f"Found dragged item after drop: {dragged_item.text(0)}")
         
-        # Skip if item doesn't have a task ID (not a task)
-        if not hasattr(item, 'task_id'):
-            debug.debug("Item doesn't have task_id, using standard drop handling")
-            super().dropEvent(event)
-            QTimer.singleShot(200, lambda saved_states=expanded_items: self._restore_expanded_states(saved_states))
-            return
-        
-        # Save the drop indicator position and prepare to determine drop target
-        drop_indicator_pos = self.dropIndicatorPosition()
-        drop_pos = event.position().toPoint()
-        drop_index = self.indexAt(drop_pos)
-        drop_target = self.itemFromIndex(drop_index) if drop_index.isValid() else None
-        
-        # Debug information
-        debug.debug(f"Drop indicator position: {drop_indicator_pos}")
-        debug.debug(f"Drop target: {drop_target.text(0) if drop_target else 'None'}")
-        
-        # Check if dropping on a priority header
-        is_priority_header = False
-        header_priority = None
-        
-        if drop_target:
-            target_data = drop_target.data(0, Qt.ItemDataRole.UserRole)
-            if isinstance(target_data, dict) and target_data.get('is_priority_header', False):
-                is_priority_header = True
-                header_priority = target_data.get('priority')
-                debug.debug(f"Drop target is a priority header with priority: {header_priority}")
-        
-        task_id = item.task_id
-        old_priority = None
-        old_parent_id = None
-        
-        # Get current data before any changes
-        if hasattr(item, 'data'):
-            user_data = item.data(0, Qt.ItemDataRole.UserRole)
-            if isinstance(user_data, dict):
-                old_priority = user_data.get('priority')
-                debug.debug(f"Task's current priority: {old_priority}")
-        
-        # Get original parent ID
-        if item.parent() and hasattr(item.parent(), 'task_id'):
-            old_parent_id = item.parent().task_id
-            debug.debug(f"Task's current parent ID: {old_parent_id}")
-        
-        # Instead of letting Qt handle the visual drop, we'll update the database directly
-        # and then reload the entire tree
+        # Now update database to match the visual state
         try:
+            # Get database manager
             from database.memory_db_manager import get_memory_db_manager
             db_manager = get_memory_db_manager()
             
-            if is_priority_header and header_priority:
-                # Changing priority - dropped onto a priority header
-                debug.debug(f"Changing task priority to: {header_priority}")
-                
-                # Update task priority in database
-                db_manager.execute_update(
-                    "UPDATE tasks SET priority = ?, parent_id = NULL WHERE id = ?",
-                    (header_priority, task_id)
-                )
-                debug.debug(f"Task priority updated in database")
-                
-                # Update children's priorities as well
-                child_task_ids = []
-                self._collect_child_task_ids(item, child_task_ids)
-                
-                if child_task_ids:
-                    debug.debug(f"Updating {len(child_task_ids)} children to priority: {header_priority}")
-                    for child_id in child_task_ids:
-                        db_manager.execute_update(
-                            "UPDATE tasks SET priority = ? WHERE id = ?",
-                            (header_priority, child_id)
-                        )
-                
-                debug.debug(f"Updated priority for task and {len(child_task_ids)} children to: {header_priority}")
-                
-            else:
-                # Standard parent-child handling
-                debug.debug("Handling standard parent-child relationship")
-                
-                # Determine new parent from standard drop handling (simulate the drop)
-                super().dropEvent(event)
-                
-                # Get the new parent after the standard drop
-                new_parent = item.parent()
-                
-                # Determine parent_id for database update
-                parent_id = None
-                parent_priority = None
-                
-                if new_parent:
-                    if hasattr(new_parent, 'task_id'):
-                        parent_id = new_parent.task_id
-                        
-                        # Get parent's priority
-                        parent_data = new_parent.data(0, Qt.ItemDataRole.UserRole)
-                        if isinstance(parent_data, dict) and 'priority' in parent_data:
-                            parent_priority = parent_data.get('priority')
-                    
-                    debug.debug(f"Setting parent_id to: {parent_id}, parent_priority: {parent_priority}")
+            # Get the new parent after the drop
+            new_parent = dragged_item.parent()
+            
+            # Determine parent_id for database update
+            parent_id = None
+            if new_parent:
+                if hasattr(new_parent, 'task_id'):
+                    parent_id = new_parent.task_id
+                    debug.debug(f"New parent has task_id: {parent_id}")
                 else:
-                    debug.debug(f"Setting parent_id to None (top-level item)")
+                    # Check if this is a priority header
+                    new_parent_data = new_parent.data(0, Qt.ItemDataRole.UserRole)
+                    if isinstance(new_parent_data, dict) and new_parent_data.get('is_priority_header', False):
+                        priority = new_parent_data.get('priority', 'Unknown')
+                        debug.debug(f"New parent is priority header: '{priority}'")
+                    else:
+                        debug.debug(f"New parent has no task_id and is not a priority header: {new_parent.text(0)}")
+            else:
+                debug.debug("Task is now a top-level item (no parent)")
+            
+            # If we dropped on a specific task but Qt didn't make it a child, fix it
+            if drop_target_id and not drop_is_header and (not parent_id or parent_id != drop_target_id):
+                debug.debug(f"Qt didn't establish correct parent-child relationship, fixing manually")
                 
-                # Update the database - reset parent_id
-                db_manager.execute_update(
-                    "UPDATE tasks SET parent_id = ? WHERE id = ?", 
-                    (parent_id, task_id)
+                # Remove the item from its current parent
+                if new_parent:
+                    idx = new_parent.indexOfChild(dragged_item)
+                    if idx >= 0:
+                        new_parent.takeChild(idx)
+                else:
+                    idx = self.indexOfTopLevelItem(dragged_item)
+                    if idx >= 0:
+                        self.takeTopLevelItem(idx)
+                
+                # Find the target item again and add as a child
+                target_item = self._find_task_item_by_id(drop_target_id)
+                if target_item:
+                    target_item.addChild(dragged_item)
+                    parent_id = drop_target_id  # Update parent_id for database
+                    debug.debug(f"Manually added item as child of {drop_target_id}")
+                else:
+                    debug.debug(f"ERROR: Could not find target item with ID {drop_target_id}")
+            
+            # Update the database to reflect the new parent-child relationship
+            debug.debug(f"Updating database: task {dragged_id} → parent {parent_id}")
+            db_manager.execute_update(
+                "UPDATE tasks SET parent_id = ? WHERE id = ?", 
+                (parent_id, dragged_id)
+            )
+            
+            # If parent has a priority, update this task's priority to match
+            if parent_id is not None:
+                # Get parent priority from database
+                result = db_manager.execute_query(
+                    "SELECT priority FROM tasks WHERE id = ?", 
+                    (parent_id,)
                 )
-                debug.debug(f"Updated task parent_id in database")
-                
-                # If parent has a different priority, update this task's priority
-                if parent_priority and parent_priority != old_priority:
-                    debug.debug(f"Parent has different priority, updating task priority to: {parent_priority}")
+                if result and len(result) > 0 and result[0][0]:
+                    parent_priority = result[0][0]
+                    debug.debug(f"Updating task priority to match parent: {parent_priority}")
                     db_manager.execute_update(
                         "UPDATE tasks SET priority = ? WHERE id = ?",
-                        (parent_priority, task_id)
+                        (parent_priority, dragged_id)
                     )
                     
-                    # Also update all children
-                    child_task_ids = []
-                    self._collect_child_task_ids(item, child_task_ids)
-                    
-                    if child_task_ids:
-                        debug.debug(f"Updating {len(child_task_ids)} children to priority: {parent_priority}")
-                        for child_id in child_task_ids:
-                            db_manager.execute_update(
-                                "UPDATE tasks SET priority = ? WHERE id = ?",
-                                (parent_priority, child_id)
-                            )
-                    
-                    debug.debug(f"Updated priority for task and {len(child_task_ids)} children to: {parent_priority}")
+                    # Also update all children recursively
+                    self._update_children_priorities(dragged_id, parent_priority, db_manager)
             
-            # Reload the entire tree to ensure correct display
-            debug.debug("Reloading tree...")
-            # Use a timer to delay reloading slightly to ensure all DB updates complete
-            QTimer.singleShot(100, lambda: self._reload_with_expanded_states(expanded_items))
+            # If we're dropping to a priority header (top level), update the priority too
+            elif new_parent and not hasattr(new_parent, 'task_id'):
+                new_parent_data = new_parent.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(new_parent_data, dict) and new_parent_data.get('is_priority_header', False):
+                    new_priority = new_parent_data.get('priority', '')
+                    if new_priority:
+                        debug.debug(f"Setting task priority to match header: {new_priority}")
+                        db_manager.execute_update(
+                            "UPDATE tasks SET priority = ? WHERE id = ?",
+                            (new_priority, dragged_id)
+                        )
+                        
+                        # Also update all children recursively
+                        self._update_children_priorities(dragged_id, new_priority, db_manager)
+            
+            # Force a save to the database file after drag and drop operations
+            debug.debug("Saving memory database to file after drag and drop")
+            db_manager.save_to_file()
+            
+            # Update the display orders in the database
+            if new_parent:
+                debug.debug(f"Updating display orders for parent")
+                self._update_display_orders(new_parent)
+            
+            # Reload all tabs to ensure consistency
+            debug.debug("Scheduling reload of all tabs")
+            parent = self.parent()
+            while parent and not hasattr(parent, 'reload_all'):
+                parent = parent.parent()
+                
+            if parent and hasattr(parent, 'reload_all'):
+                # Use a short timer to let the current operation complete first
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(100, parent.reload_all)
             
         except Exception as e:
-            debug.error(f"Error in dropEvent: {e}")
+            debug.error(f"Error updating database after drop: {e}")
             import traceback
             traceback.print_exc()
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "Error", f"Failed to update task: {str(e)}")
-            # Still try to restore expanded states even after error
-            QTimer.singleShot(200, lambda saved_states=expanded_items: self._restore_expanded_states(saved_states))
+            QMessageBox.critical(self, "Error", f"Failed to update task hierarchy: {str(e)}")
+        
+        debug.debug("=== DRAG & DROP EVENT END ===")
+
+    # Add a method to find a task by its ID
+    @debug_method
+    def _find_task_item_by_id(self, task_id):
+        """Find a task item by its ID anywhere in the tree"""
+        debug.debug(f"Searching for task with ID: {task_id}")
+        
+        # Search in all top-level items
+        for i in range(self.topLevelItemCount()):
+            top_item = self.topLevelItem(i)
+            
+            # Check if this is a priority header (search its children)
+            top_data = top_item.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(top_data, dict) and top_data.get('is_priority_header', False):
+                # Search all children of this header
+                for j in range(top_item.childCount()):
+                    child = top_item.child(j)
+                    
+                    # Check if this is the item we're looking for
+                    if hasattr(child, 'task_id') and child.task_id == task_id:
+                        debug.debug(f"Found task {task_id} under priority header")
+                        return child
+                    
+                    # Check children of this task recursively
+                    found = self._find_child_task_by_id(child, task_id)
+                    if found:
+                        return found
+                        
+            # Check if this is a top-level task
+            elif hasattr(top_item, 'task_id') and top_item.task_id == task_id:
+                debug.debug(f"Found task {task_id} as top-level item")
+                return top_item
+        
+        debug.debug(f"Task {task_id} not found in tree")
+        return None
+
+    @debug_method
+    def _find_child_task_by_id(self, parent_item, task_id):
+        """Recursively search for a child task with the given ID"""
+        # Go through all children
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            
+            # Check if this is the task we're looking for
+            if hasattr(child, 'task_id') and child.task_id == task_id:
+                debug.debug(f"Found task {task_id} as child")
+                return child
+            
+            # Recursively check this child's children
+            found = self._find_child_task_by_id(child, task_id)
+            if found:
+                return found
+        
+        return None
+
+    @debug_method
+    def _debug_tree_structure(self):
+        """Debug print the entire tree structure"""
+        debug.debug("Current tree structure:")
+        print('Current tree structure:')
+        
+        # Process each top-level item
+        for i in range(self.topLevelItemCount()):
+            top_item = self.topLevelItem(i)
+            top_data = top_item.data(0, Qt.ItemDataRole.UserRole)
+            
+            # Check if it's a priority header
+            if isinstance(top_data, dict) and top_data.get('is_priority_header', False):
+                priority = top_data.get('priority', 'Unknown')
+                debug.debug(f"Priority Header: '{priority}' ({top_item.childCount()} children)")
+                print('Priority Header:', priority, '(', top_item.childCount(), 'children)')
+                
+                # Show children
+                self._debug_item_children(top_item, 1)
+            elif hasattr(top_item, 'task_id'):
+                # It's a regular top-level task
+                task_id = top_item.task_id
+                task_title = top_item.text(0)
+                debug.debug(f"Top-level Task: [ID: {task_id}] '{task_title}' ({top_item.childCount()} children)")
+                print('Top-level Task:', '[ID:', task_id, ']', task_title, '(', top_item.childCount(), 'children)')
+                
+                # Show children
+                self._debug_item_children(top_item, 1)
+            else:
+                debug.debug(f"Unknown top-level item: {top_item.text(0)}")
+                print('Unknown top-level item:', top_item.text(0))
+
+    @debug_method
+    def _debug_item_children(self, parent_item, level):
+        """Recursively debug print children with indentation"""
+        indent = "  " * level
+        
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            
+            if hasattr(child, 'task_id'):
+                task_id = child.task_id
+                task_title = child.text(0)
+                task_data = child.data(0, Qt.ItemDataRole.UserRole)
+                priority = task_data.get('priority', 'Unknown') if isinstance(task_data, dict) else 'Unknown'
+                
+                debug.debug(f"{indent}Child Task: [ID: {task_id}] '{task_title}' (Priority: {priority}, {child.childCount()} children)")
+                print('' + indent + 'Child Task:', '[ID:', task_id, ']', task_title, '(Priority:', priority, ',', child.childCount(), 'children)')
+                
+                # Recursively process grandchildren
+                if child.childCount() > 0:
+                    self._debug_item_children(child, level + 1)
+            else:
+                debug.debug(f"{indent}Unknown child item: {child.text(0)}")  
+                print('' + indent + 'Unknown child item:', child.text(0))          
 
     def _reload_with_expanded_states(self, expanded_items):
         """Reload the tree while preserving expanded states"""
@@ -1168,294 +1323,248 @@ class TaskTreeWidget(QTreeWidget):
             debug.error(f"Error reloading tabs: {e}")
             import traceback
             traceback.print_exc()
-    
+
+    @debug_method
     def edit_task(self, item):
+        """Edit a task while preserving expanded states"""
         debug.debug(f"Editing task: {item.text(0)}")
-        from .task_dialogs import EditTaskDialog
         
-        # Save expanded states before changes
+        # Save expanded states before editing
         expanded_items = self._save_expanded_states()
-        debug.debug(f"Saved expanded states for {len(expanded_items)} items")
+        debug.debug(f"Saved {len(expanded_items)} expanded states before editing")
+        
+        # Rest of your original edit_task method...
+        from .task_dialogs import EditTaskDialog
         
         # Skip if not a task item
         if not hasattr(item, 'task_id'):
             debug.debug("Not a task item, skipping edit")
             return
             
-        # Get current data from the item's user role data
-        data = item.data(0, Qt.ItemDataRole.UserRole)
+        # Get the task ID from the item
+        task_id = item.task_id
+        debug.debug(f"Task ID: {task_id}")
         
-        # Get compact state from delegate
-        delegate = self.itemDelegate()
-        is_compact = False
-        if isinstance(delegate, TaskPillDelegate):
-            is_compact = item.task_id in delegate.compact_items
-            debug.debug(f"Task compact state: {is_compact}")
-        
-        # Get links from the database
-        debug.debug("Getting links from database")
+        # Get the memory database manager
         from database.memory_db_manager import get_memory_db_manager
         db_manager = get_memory_db_manager()
-        links = db_manager.get_task_links(item.task_id)
-        debug.debug(f"Found {len(links)} links")
         
-        # Get files from the database
-        debug.debug("Getting files from database")
-        files = db_manager.get_task_files(item.task_id)
-        debug.debug(f"Found {len(files)} files")
-        
-        # Determine the parent ID safely
-        parent_id = None
-        if item.parent():
-            # Only use parent_id if the parent is a regular task item (not a priority header)
-            if hasattr(item.parent(), 'task_id'):
-                parent_id = item.parent().task_id
-                debug.debug(f"Parent ID: {parent_id}")
-            # If parent is a priority header, leave parent_id as None
-            # BUT store the priority from the header
-            elif isinstance(item.parent().data(0, Qt.ItemDataRole.UserRole), dict) and item.parent().data(0, Qt.ItemDataRole.UserRole).get('is_priority_header', False):
-                header_data = item.parent().data(0, Qt.ItemDataRole.UserRole)
-                # Make sure to use the priority from the header rather than the task's stored priority
-                data['priority'] = header_data.get('priority', data['priority'])
-                debug.debug(f"Parent is priority header: {data['priority']}")
-        
-        task_data = {
-            'id': item.task_id,
-            'title': data['title'],
-            'description': data['description'],
-            'links': links,       # Links structure
-            'files': files,       # Files structure
-            'status': data['status'],
-            'priority': data['priority'],  # Now properly preserves the header's priority
-            'due_date': data['due_date'],
-            'category': data['category'],
-            'parent_id': parent_id,
-            'is_compact': is_compact
-        }
-        debug.debug(f"Created task data for edit dialog: {task_data}")
-        
-        # Open edit dialog
-        debug.debug("Opening edit task dialog")
-        dialog = EditTaskDialog(task_data, self)
-        if dialog.exec():
-            try:
-                debug.debug("Edit dialog accepted, saving changes")
-                updated_data = dialog.get_data()
-                
-                # Get category ID
-                category_name = updated_data['category']
-                category_id = None
-                
-                if category_name:
-                    debug.debug(f"Looking up category ID for: {category_name}")
-                    result = db_manager.execute_query(
-                        "SELECT id FROM categories WHERE name = ?", 
-                        (category_name,)
-                    )
-                    if result and result[0]:
-                        category_id = result[0][0]
-                        debug.debug(f"Found category ID: {category_id}")
-                
-                # Update database
-                debug.debug("Updating task in database")
-                db_manager.execute_update(
-                    """
-                    UPDATE tasks 
-                    SET title = ?, description = ?, status = ?, 
-                        priority = ?, due_date = ?, category_id = ?, parent_id = ?
-                    WHERE id = ?
-                    """, 
-                    (
-                        updated_data['title'], 
-                        updated_data['description'], 
-                        updated_data['status'], 
-                        updated_data['priority'],
-                        updated_data['due_date'],
-                        category_id,
-                        updated_data['parent_id'],
-                        updated_data['id']
-                    )
-                )
-                
-                # Update links
-                # First, get existing links to identify which ones to remove
-                debug.debug("Updating links")
-                existing_links = db_manager.get_task_links(updated_data['id'])
-                existing_ids = set(link_id for link_id, _, _ in existing_links if link_id is not None)
-                
-                # Get new links
-                new_links = updated_data.get('links', [])
-                new_link_ids = set(link_id for link_id, _, _ in new_links if link_id is not None)
-                
-                # Delete links that no longer exist
-                links_to_delete = existing_ids - new_link_ids
-                if links_to_delete:
-                    debug.debug(f"Deleting {len(links_to_delete)} links that no longer exist")
-                    for link_id in links_to_delete:
-                        db_manager.delete_task_link(link_id)
-                
-                # Add or update links
-                debug.debug(f"Adding or updating {len(new_links)} links")
-                for i, (link_id, url, label) in enumerate(new_links):
-                    if url and url.strip():
-                        if link_id is None:
-                            # New link - add it
-                            debug.debug(f"Adding new link: {url}")
-                            db_manager.add_task_link(updated_data['id'], url, label)
-                        else:
-                            # Existing link - update it
-                            debug.debug(f"Updating existing link ID: {link_id}")
-                            db_manager.update_task_link(link_id, url, label)
-                            
-                            # Also update its display order
-                            db_manager.execute_update(
-                                "UPDATE links SET display_order = ? WHERE id = ?",
-                                (i, link_id)
-                            )
-                
-                # Update files
-                # First, get existing files to identify which ones to remove
-                debug.debug("Updating files")
-                existing_files = db_manager.get_task_files(updated_data['id'])
-                existing_file_ids = set(file_id for file_id, _, _ in existing_files if file_id is not None)
-                
-                # Get new files
-                new_files = updated_data.get('files', [])
-                new_file_ids = set(file_id for file_id, _, _ in new_files if file_id is not None)
-                
-                # Delete files that no longer exist
-                files_to_delete = existing_file_ids - new_file_ids
-                if files_to_delete:
-                    debug.debug(f"Deleting {len(files_to_delete)} files that no longer exist")
-                    for file_id in files_to_delete:
-                        db_manager.delete_task_file(file_id)
-                
-                # Add or update files
-                debug.debug(f"Adding or updating {len(new_files)} files")
-                for i, (file_id, file_path, file_name) in enumerate(new_files):
-                    if file_path and file_path.strip():
-                        if file_id is None:
-                            # New file - add it
-                            debug.debug(f"Adding new file: {file_path}")
-                            db_manager.add_task_file(updated_data['id'], file_path, file_name)
-                        else:
-                            # Existing file - update it
-                            debug.debug(f"Updating existing file ID: {file_id}")
-                            db_manager.update_task_file(file_id, file_path, file_name)
-                            
-                            # Also update its display order
-                            db_manager.execute_update(
-                                "UPDATE files SET display_order = ? WHERE id = ?",
-                                (i, file_id)
-                            )
-                
-                # Check if status, category, or priority changed
-                status_changed = task_data['status'] != updated_data['status']
-                category_changed = task_data['category'] != updated_data['category']
-                priority_changed = task_data['priority'] != updated_data['priority']
-                debug.debug(f"Changes detected - status: {status_changed}, category: {category_changed}, priority: {priority_changed}")
-                
-                # Update item directly
-                item.setText(0, updated_data['title'])
-                
-                # Update item data
-                new_item_data = {
-                    'id': updated_data['id'],
-                    'title': updated_data['title'],
-                    'description': updated_data['description'],
-                    'links': new_links,  # Store new links structure
-                    'files': new_files,  # Store new files structure
-                    'status': updated_data['status'],
-                    'priority': updated_data['priority'],
-                    'due_date': updated_data['due_date'],
-                    'category': updated_data['category']
-                }
-                item.setData(0, Qt.ItemDataRole.UserRole, new_item_data)
-                debug.debug("Updated item data in UI")
-                
-                # Handle parent change if needed
-                old_parent_id = task_data['parent_id']
-                new_parent_id = updated_data['parent_id']
-                
-                if old_parent_id != new_parent_id:
-                    debug.debug(f"Parent changed from {old_parent_id} to {new_parent_id}")
-                    # Remove from old parent
-                    old_parent = item.parent()
-                    if old_parent:
-                        debug.debug("Removing from old parent")
-                        index = old_parent.indexOfChild(item)
-                        old_parent.takeChild(index)
-                    else:
-                        debug.debug("Removing from top level")
-                        index = self.indexOfTopLevelItem(item)
-                        self.takeTopLevelItem(index)
-                    
-                    # Add to new parent
-                    if new_parent_id:
-                        debug.debug(f"Adding to new parent ID: {new_parent_id}")
-                        # Find new parent and add as child
-                        new_parent_found = False
-                        for i in range(self.topLevelItemCount()):
-                            top_item = self.topLevelItem(i)
-                            if hasattr(top_item, 'task_id') and top_item.task_id == new_parent_id:
-                                top_item.addChild(item)
-                                new_parent_found = True
-                                debug.debug("Added to new parent at top level")
-                                break
-                            # Search in children
-                            if not new_parent_found:
-                                self._find_parent_and_add_child(top_item, new_parent_id, item)
-                    else:
-                        # Move to top level
-                        debug.debug("Adding as top-level item")
-                        self.addTopLevelItem(item)
-                
-                # If category changed, update background color
-                if task_data['category'] != updated_data['category']:
-                    debug.debug("Category changed, updating background color")
-                    if updated_data['category']:
-                        result = db_manager.execute_query(
-                            "SELECT color FROM categories WHERE name = ?", 
-                            (updated_data['category'],)
-                        )
-                        if result and result[0]:
-                            color = QColor(result[0][0])
-                            item.setBackground(0, QBrush(color))
-                            debug.debug(f"Set background color to: {result[0][0]}")
-                    else:
-                        # Remove background color
-                        debug.debug("Removed background color")
-                        item.setBackground(0, QBrush())
-                
-                # Force a repaint
-                debug.debug("Forcing viewport update")
-                self.viewport().update()
-                
-                # If status, category or priority changed, reload all tabs
-                if status_changed or category_changed or priority_changed:
-                    debug.debug("Status, category, or priority changed - reloading all tabs with expanded states preservation")
-                    parent = self.parent()
-                    while parent and not hasattr(parent, 'reload_all'):
-                        parent = parent.parent()
-                        
-                    if parent and hasattr(parent, 'reload_all'):
-                        # Use a short timer to let the current operation complete first
-                        debug.debug("Scheduling reload of all tabs with expanded states preservation")
-                        QTimer.singleShot(100, lambda: self._handle_tab_transition_with_expanded_states(parent, expanded_items))
-                    else:
-                        # If no parent with reload_all, still restore expanded states
-                        QTimer.singleShot(200, lambda saved_states=expanded_items: self._restore_expanded_states(saved_states))
-                else:
-                    # Even if no tab transition, still restore expanded states
-                    QTimer.singleShot(200, lambda saved_states=expanded_items: self._restore_expanded_states(saved_states))
+        try:
+            # Get the complete task data directly from the database
+            debug.debug("Querying database for complete task data")
             
-            except Exception as e:
-                debug.error(f"Error updating task: {e}")
-                import traceback
-                traceback.print_exc()
-                from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.critical(self, "Error", f"Failed to update task: {str(e)}")
-                                
+            # Use the execute_query method from memory_db_manager
+            result = db_manager.execute_query("""
+                SELECT 
+                    t.id, t.title, t.description, t.status, t.priority, 
+                    t.due_date, c.name AS category_name, t.parent_id, t.is_compact,
+                    p.title AS parent_title, p.priority AS parent_priority
+                FROM tasks t
+                LEFT JOIN categories c ON t.category_id = c.id
+                LEFT JOIN tasks p ON t.parent_id = p.id
+                WHERE t.id = ?
+            """, (task_id,))
+            
+            if not result or len(result) == 0:
+                debug.error(f"Task with ID {task_id} not found in database")
+                return
+                
+            # First row of results
+            row = result[0]
+                
+            # Create structured task data with debug info
+            db_task_data = {
+                'id': row[0],
+                'title': row[1],
+                'description': row[2],
+                'status': row[3],
+                'priority': row[4],
+                'due_date': row[5],
+                'category': row[6],
+                'parent_id': row[7],
+                'is_compact': bool(row[8]),
+                'parent_title': row[9],  # For debugging
+                'parent_priority': row[10]  # For debugging
+            }
+            
+            debug.debug(f"Retrieved task data from database: {db_task_data}")
+            debug.debug(f"Parent information - ID: {db_task_data['parent_id']}, " 
+                    f"Title: {db_task_data['parent_title']}, "
+                    f"Priority: {db_task_data['parent_priority']}")
+            
+            # Get links using the specialized method from memory_db_manager
+            debug.debug("Getting links from database")
+            links = db_manager.get_task_links(task_id)
+            debug.debug(f"Found {len(links)} links")
+            
+            # Get files using the specialized method from memory_db_manager
+            debug.debug("Getting files from database")
+            files = db_manager.get_task_files(task_id)
+            debug.debug(f"Found {len(files)} files")
+            
+            # Get compact state from delegate
+            delegate = self.itemDelegate()
+            is_compact = False
+            if isinstance(delegate, TaskPillDelegate):
+                is_compact = task_id in delegate.compact_items
+                debug.debug(f"Task compact state: {is_compact}")
+                
+                # Override the is_compact from the database with the delegate's state
+                # since that's what's currently displayed
+                db_task_data['is_compact'] = is_compact
+            
+            # Create the final task data structure for the dialog
+            task_data = {
+                'id': db_task_data['id'],
+                'title': db_task_data['title'],
+                'description': db_task_data['description'],
+                'links': links,
+                'files': files,
+                'status': db_task_data['status'],
+                'priority': db_task_data['priority'],
+                'due_date': db_task_data['due_date'],
+                'category': db_task_data['category'],
+                'parent_id': db_task_data['parent_id'],
+                'is_compact': db_task_data['is_compact']
+            }
+            
+            debug.debug(f"Created task data for edit dialog: {task_data}")
+            
+            # Open edit dialog
+            debug.debug("Opening edit task dialog")
+            dialog = EditTaskDialog(task_data, self)
+            
+            if dialog.exec():
+                # Process dialog results and save changes
+                try:
+                    debug.debug("Edit dialog accepted, saving changes")
+                    updated_data = dialog.get_data()
+                    
+                    # Get category ID
+                    category_name = updated_data['category']
+                    category_id = None
+                    
+                    if category_name:
+                        debug.debug(f"Looking up category ID for: {category_name}")
+                        result = db_manager.execute_query(
+                            "SELECT id FROM categories WHERE name = ?", 
+                            (category_name,)
+                        )
+                        if result and len(result) > 0:
+                            category_id = result[0][0]
+                            debug.debug(f"Found category ID: {category_id}")
+                    
+                    # Update database using execute_update from memory_db_manager
+                    debug.debug("Updating task in database")
+                    db_manager.execute_update(
+                        """
+                        UPDATE tasks 
+                        SET title = ?, description = ?, status = ?, 
+                            priority = ?, due_date = ?, category_id = ?, parent_id = ?
+                        WHERE id = ?
+                        """, 
+                        (
+                            updated_data['title'], 
+                            updated_data['description'], 
+                            updated_data['status'], 
+                            updated_data['priority'],
+                            updated_data['due_date'],
+                            category_id,
+                            updated_data['parent_id'],
+                            updated_data['id']
+                        )
+                    )
+                    
+                    # Update links - use specialized methods from memory_db_manager
+                    debug.debug("Updating links")
+                    new_links = updated_data.get('links', [])
+                    existing_links = db_manager.get_task_links(updated_data['id'])
+                    
+                    # Track existing link IDs for deletion
+                    existing_ids = set(link_id for link_id, _, _ in existing_links if link_id is not None)
+                    new_link_ids = set(link_id for link_id, _, _ in new_links if link_id is not None)
+                    
+                    # Delete links that no longer exist
+                    links_to_delete = existing_ids - new_link_ids
+                    if links_to_delete:
+                        debug.debug(f"Deleting {len(links_to_delete)} links")
+                        for link_id in links_to_delete:
+                            db_manager.delete_task_link(link_id)
+                    
+                    # Add or update links
+                    debug.debug(f"Adding/updating {len(new_links)} links")
+                    for i, (link_id, url, label) in enumerate(new_links):
+                        if url and url.strip():
+                            if link_id is None:
+                                # New link - add it
+                                debug.debug(f"Adding new link: {url}")
+                                db_manager.add_task_link(updated_data['id'], url, label)
+                            else:
+                                # Existing link - update it
+                                debug.debug(f"Updating existing link: {link_id}")
+                                db_manager.update_task_link(link_id, url, label)
+                    
+                    # Update files - use specialized methods from memory_db_manager
+                    debug.debug("Updating files")
+                    new_files = updated_data.get('files', [])
+                    existing_files = db_manager.get_task_files(updated_data['id'])
+                    
+                    # Track existing file IDs for deletion
+                    existing_file_ids = set(file_id for file_id, _, _ in existing_files if file_id is not None)
+                    new_file_ids = set(file_id for file_id, _, _ in new_files if file_id is not None)
+                    
+                    # Delete files that no longer exist
+                    files_to_delete = existing_file_ids - new_file_ids
+                    if files_to_delete:
+                        debug.debug(f"Deleting {len(files_to_delete)} files")
+                        for file_id in files_to_delete:
+                            db_manager.delete_task_file(file_id)
+                    
+                    # Add or update files
+                    debug.debug(f"Adding/updating {len(new_files)} files")
+                    for i, (file_id, file_path, file_name) in enumerate(new_files):
+                        if file_path and file_path.strip():
+                            if file_id is None:
+                                # New file - add it
+                                debug.debug(f"Adding new file: {file_path}")
+                                db_manager.add_task_file(updated_data['id'], file_path, file_name)
+                            else:
+                                # Existing file - update it
+                                debug.debug(f"Updating existing file: {file_id}")
+                                db_manager.update_task_file(file_id, file_path, file_name)
+                    
+                    # Explicitly save to file after editing task
+                    debug.debug("Saving memory database to file after task edit")
+                    db_manager.save_to_file()
+                    
+                    # Reload the tree and restore expanded states
+                    if hasattr(self, 'load_tasks_tab'):
+                        debug.debug("Reloading tasks with filtered method")
+                        self.load_tasks_tab()
+                    else:
+                        debug.debug("Reloading tasks with standard method")
+                        self.load_tasks_tree()
+                    
+                    # Restore expanded states
+                    self._restore_expanded_states(expanded_items)
+                    debug.debug(f"Restored {len(expanded_items)} expanded states")
+                    
+                    # Highlight the edited task
+                    self._highlight_task(task_id)
+                    
+                except Exception as e:
+                    debug.error(f"Error updating task: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    from PyQt6.QtWidgets import QMessageBox
+                    QMessageBox.critical(self, "Error", f"Failed to update task: {str(e)}")
+                    
+        except Exception as e:
+            debug.error(f"Error preparing task data for editing: {e}")
+            import traceback
+            traceback.print_exc()
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Failed to load task data: {str(e)}")    
     def get_settings_manager(self):
         """Get the settings manager instance"""
         debug.debug("Getting settings manager")
@@ -2728,9 +2837,13 @@ class TaskTreeWidget(QTreeWidget):
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Error", f"Failed to update task hierarchy: {str(e)}")
 
+    @debug_method
     def _save_expanded_states(self):
-        """Save expanded states of all items"""
+        """Save expanded states of all items with improved task hierarchy tracking"""
+        debug.debug("Saving expanded states of all items")
         expanded_items = []
+        task_hierarchy = {}  # To track parent-child relationships
+        
         # First collect all items
         all_items = []
         for i in range(self.topLevelItemCount()):
@@ -2738,22 +2851,48 @@ class TaskTreeWidget(QTreeWidget):
             all_items.append(top_item)
             self._collect_child_items(top_item, all_items)
         
-        # Now check expanded state for each item that has children
+        # Now check expanded state for each item
         for item in all_items:
-            if item.childCount() > 0:
-                index = self.indexFromItem(item)
-                if self.isExpanded(index):
-                    # Store task_id for each expanded item
-                    if hasattr(item, 'task_id'):
-                        expanded_items.append(item.task_id)
-                    elif isinstance(item.data(0, Qt.ItemDataRole.UserRole), dict) and 'priority' in item.data(0, Qt.ItemDataRole.UserRole):
-                        # This is a priority header
-                        expanded_items.append('priority:' + item.data(0, Qt.ItemDataRole.UserRole)['priority'])
+            index = self.indexFromItem(item)
+            
+            # Skip invalid items
+            if not index.isValid():
+                continue
+                
+            if self.isExpanded(index):
+                # For priority headers
+                if isinstance(item.data(0, Qt.ItemDataRole.UserRole), dict) and 'priority' in item.data(0, Qt.ItemDataRole.UserRole):
+                    priority = item.data(0, Qt.ItemDataRole.UserRole)['priority']
+                    expanded_items.append(f"priority:{priority}")
+                    debug.debug(f"Saved expanded state for priority header: {priority}")
+                # For regular task items with children
+                elif hasattr(item, 'task_id') and item.childCount() > 0:
+                    expanded_items.append(f"task:{item.task_id}")
+                    debug.debug(f"Saved expanded state for task: {item.task_id} '{item.text(0)}'")
+                    
+                    # Also save parent-child relationship
+                    if item.parent() and hasattr(item.parent(), 'task_id'):
+                        parent_id = item.parent().task_id
+                        task_hierarchy[item.task_id] = parent_id
+                        debug.debug(f"Saved hierarchy: task {item.task_id} is child of {parent_id}")
+        
+        # Store task hierarchy in settings for consistent restore
+        settings = self.get_settings_manager()
+        settings.set_setting("temp_task_hierarchy", task_hierarchy)
+        debug.debug(f"Saved {len(expanded_items)} expanded states and {len(task_hierarchy)} hierarchy relationships")
         
         return expanded_items
 
+    @debug_method
     def _restore_expanded_states(self, expanded_items):
-        """Restore expanded states after reload"""
+        """Restore expanded states with improved task hierarchy awareness"""
+        debug.debug(f"Restoring {len(expanded_items)} expanded states")
+        
+        # Get saved hierarchy information
+        settings = self.get_settings_manager()
+        task_hierarchy = settings.get_setting("temp_task_hierarchy", {})
+        debug.debug(f"Retrieved {len(task_hierarchy)} saved hierarchy relationships")
+        
         # First collect all items
         all_items = []
         for i in range(self.topLevelItemCount()):
@@ -2761,26 +2900,35 @@ class TaskTreeWidget(QTreeWidget):
             all_items.append(top_item)
             self._collect_child_items(top_item, all_items)
         
-        # Now restore expanded state for each item
+        # First expand priority headers (they're at the top level)
         for item in all_items:
-            # Check if this item should be expanded
-            is_priority_header = False
-            item_id = None
-            
-            if hasattr(item, 'task_id'):
-                item_id = item.task_id
-            elif isinstance(item.data(0, Qt.ItemDataRole.UserRole), dict) and 'priority' in item.data(0, Qt.ItemDataRole.UserRole):
-                # Priority header
-                is_priority_header = True
-                item_id = 'priority:' + item.data(0, Qt.ItemDataRole.UserRole)['priority']
-            
-            if item_id in expanded_items:
-                self.expandItem(item)
-                # If this is a priority header, update its data
-                if is_priority_header:
-                    data = item.data(0, Qt.ItemDataRole.UserRole)
-                    data['expanded'] = True
-                    item.setData(0, Qt.ItemDataRole.UserRole, data)
+            if isinstance(item.data(0, Qt.ItemDataRole.UserRole), dict) and 'priority' in item.data(0, Qt.ItemDataRole.UserRole):
+                priority = item.data(0, Qt.ItemDataRole.UserRole)['priority']
+                if f"priority:{priority}" in expanded_items:
+                    self.expandItem(item)
+                    debug.debug(f"Expanded priority header: {priority}")
+        
+        # Then expand task items in iterations to handle parent-child relationships properly
+        # We may need multiple passes to ensure parent items are expanded first
+        tasks_to_expand = [f for f in expanded_items if f.startswith("task:")]
+        
+        # Do multiple passes to ensure we catch all items even after tree restructuring
+        for _ in range(3):  # Try up to 3 passes
+            for expanded_id in tasks_to_expand[:]:  # Use a copy to safely modify during iteration
+                task_id = int(expanded_id.split(":")[1])
+                
+                # Find the item in the tree
+                for item in all_items:
+                    if hasattr(item, 'task_id') and item.task_id == task_id:
+                        # Found the item, expand it
+                        self.expandItem(item)
+                        debug.debug(f"Expanded task item: {task_id}")
+                        tasks_to_expand.remove(expanded_id)
+                        break
+        
+        # Report any items we couldn't find
+        if tasks_to_expand:
+            debug.debug(f"Could not find {len(tasks_to_expand)} items to expand: {tasks_to_expand}")
 
     def _reload_all_tabs(self):
         """Find the TaskTabWidget and reload all tabs"""

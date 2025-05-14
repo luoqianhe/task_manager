@@ -735,26 +735,26 @@ class TaskTabWidget(QTabWidget):
     
     @debug_method
     def reload_all(self):
-        """Reload all task trees"""
-        debug.debug("Reloading all task trees")
-        reload_start = time.time()
+        """Reload all task trees while preserving expanded states"""
+        debug.debug("Reloading all task trees with expanded state preservation")
         
+        # Get the current tab's tree and save its expanded states
+        current_tab = self.currentWidget()
+        expanded_items = None
+        if hasattr(current_tab, 'task_tree'):
+            expanded_items = current_tab.task_tree._save_expanded_states()
+            debug.debug(f"Saved {len(expanded_items)} expanded states from current tab")
+        
+        # Reload all tabs
         for i in range(self.count()):
-            tab_name = self.tabText(i)
-            debug.debug(f"Reloading tab {i}: {tab_name}")
             tab = self.widget(i)
             if hasattr(tab, 'task_tree'):
-                tab_reload_start = time.time()
-                debug.debug(f"Reloading task tree for tab {i}: {tab_name}")
                 tab.task_tree.load_tasks_tab()
-                tab_reload_end = time.time()
-                debug.debug(f"Reload of tab {i} completed in {tab_reload_end - tab_reload_start:.3f} seconds")
-            else:
-                debug.debug(f"Tab {i} has no task tree attribute, skipping reload")
         
-        reload_end = time.time()
-        debug.debug(f"All tabs reloaded in {reload_end - reload_start:.3f} seconds")
-    
+        # Restore expanded states to the current tab
+        if expanded_items and self.currentWidget() == current_tab:
+            current_tab.task_tree._restore_expanded_states(expanded_items)
+            
     @debug_method
     def create_bee_todos_tab(self):
         """Create the Bee To Dos tab"""

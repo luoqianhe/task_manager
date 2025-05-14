@@ -588,32 +588,62 @@ class EditTaskDialog(QDialog):
 
     @debug_method
     def load_priorities(self):
-        """Load priorities for editing a task"""
+        """Load priorities for editing a task with improved selection logic"""
         debug.debug("Loading priorities")
         self.priority_combo.clear()
         
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, name FROM priorities ORDER BY display_order")
-            priorities = cursor.fetchall()
+        # Store current priority value for selection
+        current_priority = self.task_data.get('priority', 'Medium')
+        debug.debug(f"Current priority value: {current_priority}")
+        
+        # Get database manager
+        from database.memory_db_manager import get_memory_db_manager
+        db_manager = get_memory_db_manager()
+        
+        try:
+            # Get all priorities from database
+            priorities = db_manager.execute_query(
+                "SELECT id, name FROM priorities ORDER BY display_order"
+            )
             debug.debug(f"Loaded {len(priorities)} priorities from database")
             
+            # Flag to track if we found the current priority
+            priority_found = False
+            
             # Add all priorities to the combo box
-            for pri_id, name in priorities:
+            for i, (pri_id, name) in enumerate(priorities):
                 self.priority_combo.addItem(name, pri_id)
                 
-                # If this is the current priority of the task, select it
-                if name == self.task_data['priority']:
-                    debug.debug(f"Setting current priority: {name}")
-                    self.priority_combo.setCurrentIndex(self.priority_combo.count() - 1)
+                # If this is the current priority, select it
+                if name == current_priority:
+                    debug.debug(f"Found matching priority at index {i}: {name}")
+                    self.priority_combo.setCurrentIndex(i)
+                    priority_found = True
+            
+            # If priority wasn't found, use Unprioritized or Medium as fallback
+            if not priority_found:
+                debug.debug(f"Priority '{current_priority}' not found in combo box items")
+                
+                # Try "Unprioritized" first
+                unprioritized_index = self.priority_combo.findText("Unprioritized")
+                if unprioritized_index >= 0:
+                    debug.debug(f"Using fallback priority: Unprioritized at index {unprioritized_index}")
+                    self.priority_combo.setCurrentIndex(unprioritized_index)
+                else:
+                    # If no "Unprioritized", try "Medium"
+                    medium_index = self.priority_combo.findText("Medium")
+                    if medium_index >= 0:
+                        debug.debug(f"Using fallback priority: Medium at index {medium_index}")
+                        self.priority_combo.setCurrentIndex(medium_index)
+                    else:
+                        # Last resort: just use the first item
+                        debug.debug("Using first priority item as last resort")
+                        self.priority_combo.setCurrentIndex(0)
         
-        # If no matching priority was found (or priority is None),
-        # look for the "Unprioritized" option
-        if self.task_data['priority'] is None or self.priority_combo.currentText() != self.task_data['priority']:
-            unprioritized_index = self.priority_combo.findText("Unprioritized")
-            if unprioritized_index >= 0:
-                debug.debug("Setting default priority to 'Unprioritized'")
-                self.priority_combo.setCurrentIndex(unprioritized_index)        
+        except Exception as e:
+            debug.error(f"Error loading priorities: {e}")
+            import traceback
+            traceback.print_exc()
 
     @debug_method
     def load_statuses(self):
@@ -770,31 +800,97 @@ class EditTaskDialog(QDialog):
                 if name == self.task_data['category']:
                     debug.debug(f"Setting current category: {name}")
                     self.category_combo.setCurrentIndex(self.category_combo.count() - 1)
-                    
+
     @debug_method
     def load_possible_parents(self):
         debug.debug(f"Loading possible parent tasks for task {self.task_data['id']}")
+        
+        # First add "None" option
+        self.parent_combo.clear()
         self.parent_combo.addItem("None", None)
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            # Modified query to exclude completed tasks and this task itself, and include priority
-            cursor.execute("""
+        
+        # Store current parent_id for selection
+        current_parent_id = self.task_data.get('parent_id')
+        debug.debug(f"Current parent_id: {current_parent_id}")
+        
+        # If we have no parent, select the None option
+        if current_parent_id is None:
+            debug.debug("Task has no parent, selecting 'None' option")
+            self.parent_combo.setCurrentIndex(0)
+        
+        # Get database manager
+        from database.memory_db_manager import get_memory_db_manager
+        db_manager = get_memory_db_manager()
+        
+        try:
+            # Get all potential parent tasks - excluding current task and its descendants
+            # Note: Using a simpler query that doesn't use recursive CTE since SQLite version might not support it
+            task_id = self.task_data['id']
+            
+            # First get IDs of all tasks that can't be parents (current task and descendants)
+            exclude_ids = [task_id]  # Start with current task
+            
+            # Find all direct children
+            children = db_manager.execute_query(
+                "SELECT id FROM tasks WHERE parent_id = ?", 
+                (task_id,)
+            )
+            
+            for child_id, in children:
+                exclude_ids.append(child_id)
+                # Get grandchildren (simple 2-level hierarchy for now)
+                grandchildren = db_manager.execute_query(
+                    "SELECT id FROM tasks WHERE parent_id = ?", 
+                    (child_id,)
+                )
+                for grandchild_id, in grandchildren:
+                    exclude_ids.append(grandchild_id)
+            
+            # Format for SQL query
+            exclude_ids_str = ', '.join('?' for _ in exclude_ids)
+            
+            # Query for potential parents, excluding the invalid IDs and completed tasks
+            query = f"""
                 SELECT t.id, t.title, t.priority
                 FROM tasks t
-                WHERE t.id != ? AND t.status != 'Completed'
-                AND t.id NOT IN (SELECT id FROM tasks WHERE parent_id = ?)
+                WHERE t.id NOT IN ({exclude_ids_str})
+                AND t.status != 'Completed'
                 ORDER BY t.priority, t.title
-            """, (self.task_data['id'], self.task_data['id']))
+            """
             
-            tasks = cursor.fetchall()
+            tasks = db_manager.execute_query(query, exclude_ids)
             debug.debug(f"Loaded {len(tasks)} possible parent tasks")
             
-            current_parent = self.task_data.get('parent_id')
+            # Set initial values
+            parent_index_found = False
+            
             for task_id, title, priority in tasks:
                 # Format as [Priority]: Task Title
                 display_text = f"[{priority}]: {title}"
                 self.parent_combo.addItem(display_text, task_id)
                 
+                # If this is the current parent, select it
+                if task_id == current_parent_id:
+                    debug.debug(f"Found current parent task at index {self.parent_combo.count() - 1}")
+                    self.parent_combo.setCurrentIndex(self.parent_combo.count() - 1)
+                    parent_index_found = True
+            
+            # Diagnostics for parent selection
+            if current_parent_id is not None and not parent_index_found:
+                debug.debug(f"WARNING: Parent task {current_parent_id} not found in available list!")
+                # Try to get more information about the missing parent
+                parent_info = db_manager.execute_query(
+                    "SELECT title FROM tasks WHERE id = ?", 
+                    (current_parent_id,)
+                )
+                if parent_info and len(parent_info) > 0:
+                    debug.debug(f"Missing parent title: {parent_info[0][0]}")
+        
+        except Exception as e:
+            debug.error(f"Error loading possible parents: {e}")
+            import traceback
+            traceback.print_exc()
+    
     @debug_method
     def load_files(self):
         """Load existing files for the task"""
