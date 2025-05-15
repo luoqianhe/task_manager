@@ -48,6 +48,7 @@ import csv
 import sys
 import sqlite3
 from datetime import datetime
+import traceback
 import os
 from ui.combined_display_settings import CombinedDisplaySettingsWidget
 
@@ -122,16 +123,39 @@ class MainWindow(QMainWindow):
     
         debug.debug(f"MainWindow initialization complete. Settings: left_panel_contents={self.settings.get_setting('left_panel_contents')}, right_panel_contents={self.settings.get_setting('right_panel_contents')}")
 
-
     @debug_method
     def _restore_initial_expanded_states(self):
         """Restore expanded states when application first starts"""
         debug.debug("Restoring initial expanded states")
-        current_tab = self.tabs.currentWidget()
-        if hasattr(current_tab, 'task_tree'):
-            debug.debug("Restoring expanded states for initial tab")
-            current_tab.task_tree._restore_expanded_states()
-
+        
+        # Restore for each tab with progressively increasing delays
+        for i in range(self.tabs.count()):
+            tab = self.tabs.widget(i)
+            if hasattr(tab, 'task_tree'):
+                # Get tab-specific expanded states from settings
+                tab_key = f"expanded_states_tab_{i}"
+                expanded_items = self.settings.get_setting(tab_key, [])
+                
+                if expanded_items:
+                    debug.debug(f"Scheduling restoration of {len(expanded_items)} expanded states for tab {i}")
+                    # Use a longer delay for later tabs
+                    delay = 800 + (i * 200)  # Increasing delay for each tab
+                    QTimer.singleShot(delay, lambda t=tab.task_tree, items=expanded_items: 
+                        self._delayed_restore_states(t, items))
+                else:
+                    debug.debug(f"No saved expanded states for tab {i}, skipping")
+                    
+    @debug_method
+    def _delayed_restore_states(self, tree, expanded_items):
+        """Helper method for delayed state restoration with better error handling"""
+        debug.debug(f"Executing delayed state restoration with {len(expanded_items)} items")
+        try:
+            tree._restore_expanded_states(expanded_items)
+            debug.debug("Delayed state restoration completed successfully")
+        except Exception as e:
+            debug.error(f"Error during delayed state restoration: {e}")
+            debug.error(traceback.format_exc())
+    
     @debug_method
     def init_settings_view(self):
         debug.debug('Creating settings view')
@@ -300,6 +324,7 @@ class MainWindow(QMainWindow):
         current_tab = self.tabs.currentWidget()
         if hasattr(current_tab, 'task_tree'):
             debug.debug("Saving expanded states before switching to settings")
+            print('show_settings save_expanded_states called')
             current_tab.task_tree._save_expanded_states()
             
         self.stacked_widget.setCurrentIndex(1)
@@ -580,13 +605,53 @@ class MainWindow(QMainWindow):
         """Handle application shutdown"""
         debug.debug("Application closing - handling closeEvent")
         try:
-            # Save expanded states for the current tab
-            debug.debug("Saving expanded states for current tab")
-            current_tab = self.tabs.currentWidget()
-            if hasattr(current_tab, 'task_tree'):
-                current_tab.task_tree._save_expanded_states()
-                debug.debug("Expanded states saved for current tab")
-
+            # Save expanded states for tabs with either expanded priority headers or tasks
+            debug.debug("Saving expanded states for all relevant tabs")
+            
+            # Loop through tabs and check for any expanded items
+            for i in range(self.tabs.count()):
+                tab = self.tabs.widget(i)
+                if hasattr(tab, 'task_tree'):
+                    debug.debug(f"Checking tab {i} for expanded items")
+                    
+                    # Count expanded items (both priority headers and tasks)
+                    tree = tab.task_tree
+                    all_items = []
+                    for j in range(tree.topLevelItemCount()):
+                        top_item = tree.topLevelItem(j)
+                        all_items.append(top_item)
+                        if hasattr(tree, '_collect_child_items'):
+                            tree._collect_child_items(top_item, all_items)
+                    
+                    # Check for any expanded items (priority headers or tasks)
+                    expanded_items = []
+                    for item in all_items:
+                        index = tree.indexFromItem(item)
+                        if index.isValid() and tree.isExpanded(index):
+                            # Check if it's a priority header
+                            data = item.data(0, Qt.ItemDataRole.UserRole)
+                            if isinstance(data, dict) and data.get('is_priority_header', False):
+                                priority = data.get('priority', 'Unknown')
+                                expanded_items.append(f"priority:{priority}")
+                                debug.debug(f"Found expanded priority header: {priority}")
+                            # Check if it's a task with children
+                            elif hasattr(item, 'task_id') and item.childCount() > 0:
+                                expanded_items.append(f"task:{item.task_id}")
+                                debug.debug(f"Found expanded task: {item.task_id}")
+                    
+                    # Save if we have any expanded items (priority headers or tasks)
+                    if expanded_items:
+                        tab_key = f"expanded_states_tab_{i}"
+                        self.settings.set_setting(tab_key, expanded_items)
+                        debug.debug(f"Saved {len(expanded_items)} expanded states for tab {i}")
+                        
+                        # Also save to the common key if it's the current tab
+                        if i == self.tabs.currentIndex():
+                            self.settings.set_setting("expanded_task_states", expanded_items)
+                            debug.debug("Saved to common expanded_task_states key (current tab)")
+                    else:
+                        debug.debug(f"No expanded items in tab {i}, not saving")
+            
             # Save the in-memory database back to file
             debug.debug("Saving in-memory database to file")
             from database.memory_db_manager import get_memory_db_manager
@@ -597,7 +662,7 @@ class MainWindow(QMainWindow):
             # Explicitly save settings before exit
             debug.debug("Saving application settings")
             self.settings.save_settings(self.settings.settings)
-            debug.debug(f"Settings saved successfully. Config: left_panel_contents={self.settings.get_setting('left_panel_contents')}, right_panel_contents={self.settings.get_setting('right_panel_contents')}")
+            debug.debug(f"Settings saved successfully.")
 
         except Exception as e:
             debug.error(f"Error saving data on exit: {e}")
@@ -614,7 +679,7 @@ class MainWindow(QMainWindow):
         # Accept the close event
         debug.debug("Application shutdown complete")
         event.accept()
-    
+       
     @debug_method
     def on_settings_tab_changed(self, index):
         debug.debug(f"Settings tab changed to index {index}")

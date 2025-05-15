@@ -500,7 +500,8 @@ class TaskTreeWidget(QTreeWidget):
             'due_date': due_date or "",
             'category': category or "",
             'links': links if links is not None else [],
-            'files': files if files is not None else []
+            'files': files if files is not None else [],
+            'expanded': False
         }
         
         debug.debug(f"Setting user data with links: {user_data.get('links', [])}")
@@ -2245,6 +2246,17 @@ class TaskTreeWidget(QTreeWidget):
             # Save to settings
             debug.debug("Saving to settings")
             self._save_priority_expanded_states()
+        
+        # Handle regular task items with children
+        elif isinstance(data, dict) and 'id' in data and hasattr(item, 'task_id') and item.childCount() > 0:
+            # Update data
+            task_id = data['id']
+            debug.debug(f"Task item expanded: {task_id}")
+            data['expanded'] = False
+            item.setData(0, Qt.ItemDataRole.UserRole, data)
+            
+            # Save to settings
+            self._save_expanded_states()
 
     def onItemExpanded(self, item):
         """Keep data in sync when item is expanded by the tree widget"""
@@ -2260,6 +2272,17 @@ class TaskTreeWidget(QTreeWidget):
             # Save to settings
             debug.debug("Saving expanded states to settings")
             self._save_priority_expanded_states()
+        
+        # Handle regular task items with children
+        elif isinstance(data, dict) and 'id' in data and hasattr(item, 'task_id') and item.childCount() > 0:
+            # Update data
+            task_id = data['id']
+            debug.debug(f"Task item expanded: {task_id}")
+            data['expanded'] = True
+            item.setData(0, Qt.ItemDataRole.UserRole, data)
+            
+            # Save to settings
+            self._save_expanded_states()
 
     def onItemDoubleClicked(self, item, column):
         """Route double-clicks to appropriate handlers based on item type"""
@@ -2728,6 +2751,14 @@ class TaskTreeWidget(QTreeWidget):
             top_item = self.topLevelItem(i)
             all_items.append(top_item)
             self._collect_child_items(top_item, all_items)
+            
+        debug.debug(f"Collected {len(all_items)} total items")
+        print(f"Collected {len(all_items)} total items")
+        
+        # Count items with children
+        items_with_children = [item for item in all_items if item.childCount() > 0]
+        debug.debug(f"Found {len(items_with_children)} items with children")
+        print(f"Found {len(items_with_children)} items with children")
         
         # Now check expanded state for each item
         for item in all_items:
@@ -2738,20 +2769,45 @@ class TaskTreeWidget(QTreeWidget):
                 continue
                 
             if self.isExpanded(index):
+                # Get the item's data dictionary
+                data = item.data(0, Qt.ItemDataRole.UserRole)
+                
                 # For priority headers
-                if isinstance(item.data(0, Qt.ItemDataRole.UserRole), dict) and 'priority' in item.data(0, Qt.ItemDataRole.UserRole):
-                    priority = item.data(0, Qt.ItemDataRole.UserRole)['priority']
+                if isinstance(data, dict) and data.get('is_priority_header', False):
+                    priority = data.get('priority', 'Unknown')
                     expanded_items.append(f"priority:{priority}")
                     debug.debug(f"Saved expanded state for priority header: {priority}")
+                    print(f"Saved expanded state for priority header: {priority}")
+                
                 # For regular task items with children
                 elif hasattr(item, 'task_id') and item.childCount() > 0:
+                    # Only save items that actually have children
                     expanded_items.append(f"task:{item.task_id}")
                     debug.debug(f"Saved expanded state for task: {item.task_id} '{item.text(0)}'")
+                    print(f"Saved expanded state for task: {item.task_id} '{item.text(0)}'")
         
         # Store in settings
         settings = self.get_settings_manager()
         settings.set_setting("expanded_task_states", expanded_items)
         debug.debug(f"Saved {len(expanded_items)} expanded states to settings")
+        print(f"Saved {len(expanded_items)} expanded states to settings")
+                
+        # Also store in tab-specific setting
+        parent = self.parent()
+        while parent and not hasattr(parent, 'main_window'):
+            parent = parent.parent()
+        
+        if parent and hasattr(parent, 'main_window'):
+            
+            # Get the tab widget
+            tabs = parent.main_window.tabs
+            for i in range(tabs.count()):
+                tab = tabs.widget(i)
+                if hasattr(tab, 'task_tree') and tab.task_tree == self:
+                    tab_key = f"expanded_states_tab_{i}"
+                    settings.set_setting(tab_key, expanded_items)
+                    debug.debug(f"Saved expanded states to tab-specific key: {tab_key}")
+                    break
         
         return expanded_items
 
@@ -2764,38 +2820,106 @@ class TaskTreeWidget(QTreeWidget):
         if expanded_items is None:
             settings = self.get_settings_manager()
             expanded_items = settings.get_setting("expanded_task_states", [])
+            print('EXPANDED ITEMS:', expanded_items)
+        
+        # If no items to restore, just return
+        if not expanded_items:
+            debug.debug("No expanded states to restore")
+            return 0
         
         debug.debug(f"Restoring {len(expanded_items)} expanded states")
         
-        # First collect all items
-        all_items = []
-        for i in range(self.topLevelItemCount()):
-            top_item = self.topLevelItem(i)
-            all_items.append(top_item)
-            self._collect_child_items(top_item, all_items)
+        # Temporarily block signals to prevent interference
+        original_state = self.signalsBlocked()
+        self.blockSignals(True)
         
-        # First expand priority headers (they're at the top level)
-        for item in all_items:
-            if isinstance(item.data(0, Qt.ItemDataRole.UserRole), dict) and 'priority' in item.data(0, Qt.ItemDataRole.UserRole):
-                priority = item.data(0, Qt.ItemDataRole.UserRole)['priority']
-                if f"priority:{priority}" in expanded_items:
-                    self.expandItem(item)
-                    debug.debug(f"Expanded priority header: {priority}")
-                else:
-                    self.collapseItem(item)
-                    debug.debug(f"Collapsed priority header: {priority}")
-        
-        # Then expand task items
-        expanded_count = 0
-        for item in all_items:
-            if hasattr(item, 'task_id') and item.childCount() > 0:
-                if f"task:{item.task_id}" in expanded_items:
-                    self.expandItem(item)
-                    expanded_count += 1
-                    debug.debug(f"Expanded task item: {item.task_id}")
-        
-        debug.debug(f"Successfully expanded {expanded_count} task items")
-        return expanded_count
+        try:
+            # FIRST STEP: Collapse everything first
+            debug.debug("First collapsing all items")
+            for i in range(self.topLevelItemCount()):
+                item = self.topLevelItem(i)
+                self.collapseItem(item)
+                
+                # Recursively collapse all children
+                self._collapse_children_recursive(item)
+            
+            # SECOND STEP: Now expand only specified items
+            # Collect all items for restoration
+            all_items = []
+            for i in range(self.topLevelItemCount()):
+                top_item = self.topLevelItem(i)
+                all_items.append(top_item)
+                self._collect_child_items(top_item, all_items)
+            
+            # First expand priority headers
+            priority_headers_expanded = 0
+            for item in all_items:
+                data = item.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(data, dict) and data.get('is_priority_header', False):
+                    priority = data.get('priority', 'Unknown')
+                    if f"priority:{priority}" in expanded_items:
+                        debug.debug(f"Expanding priority header: {priority}")
+                        self.expandItem(item)
+                        # Also update the data state
+                        data['expanded'] = True
+                        item.setData(0, Qt.ItemDataRole.UserRole, data)
+                        priority_headers_expanded += 1
+            
+            # Then expand task items
+            task_items_expanded = 0
+            for item in all_items:
+                if hasattr(item, 'task_id') and item.childCount() > 0:
+                    if f"task:{item.task_id}" in expanded_items:
+                        debug.debug(f"Expanding task item: {item.task_id}")
+                        self.expandItem(item)
+                        task_items_expanded += 1
+                        # Update the data state if possible
+                        data = item.data(0, Qt.ItemDataRole.UserRole)
+                        if isinstance(data, dict):
+                            data['expanded'] = True
+                            item.setData(0, Qt.ItemDataRole.UserRole, data)
+            
+            debug.debug(f"Successfully expanded {priority_headers_expanded} priority headers and {task_items_expanded} task items")
+            return priority_headers_expanded + task_items_expanded
+        finally:
+            # Restore original signal blocking state
+            self.blockSignals(original_state)
+  
+    @debug_method
+    def _collapse_children_recursive(self, parent_item):
+        """Helper method to collapse all children of an item recursively"""
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            self.collapseItem(child)
+            
+            # Update the expanded state in the data if possible
+            data = child.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(data, dict):
+                data['expanded'] = False
+                child.setData(0, Qt.ItemDataRole.UserRole, data)
+            
+            # Process this child's children recursively
+            if child.childCount() > 0:
+                self._collapse_children_recursive(child)
+                      
+    @debug_method
+    def _collapse_all_children(self, parent_item):
+        """Recursively collapse all children and update their data state"""
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            
+            # Collapse the child
+            self.collapseItem(child)
+            
+            # Update data state
+            data = child.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(data, dict) and 'id' in data:
+                data['expanded'] = False
+                child.setData(0, Qt.ItemDataRole.UserRole, data)
+            
+            # Recursively process grandchildren
+            if child.childCount() > 0:
+                self._collapse_all_children(child)
     
     def _reload_all_tabs(self):
         """Find the TaskTabWidget and reload all tabs"""
