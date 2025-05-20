@@ -236,7 +236,7 @@ class MainWindow(QMainWindow):
                     debug.debug("No task selected to edit")
             else:
                 debug.debug("No current tree available")
-    
+
     @debug_method
     def init_task_view(self):
         debug.debug("Initializing task view")
@@ -262,17 +262,27 @@ class MainWindow(QMainWindow):
         add_button.clicked.connect(self.show_add_dialog)
         button_layout.addWidget(add_button)
         
-        # Export button
-        export_button = QPushButton("Export to CSV")
-        export_button.setFixedHeight(40)
-        export_button.clicked.connect(self.export_to_csv)
-        button_layout.addWidget(export_button)
-        
-        # Import button
-        import_button = QPushButton("Import from CSV")
-        import_button.setFixedHeight(40)
-        import_button.clicked.connect(self.import_from_csv)
-        button_layout.addWidget(import_button)
+        # Donate button
+        donate_button = QPushButton("Donate")
+        donate_button.setFixedHeight(40)
+        donate_button.clicked.connect(self.show_donate_dialog)
+        # Make the donate button green
+        donate_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:pressed {
+                background-color: #3d8b40;
+            }
+        """)
+        button_layout.addWidget(donate_button)
         
         # Settings button
         settings_button = QPushButton("Settings")
@@ -285,8 +295,7 @@ class MainWindow(QMainWindow):
 
         # Add tooltips for keyboard shortcuts
         add_button.setToolTip("Add New Task (Ctrl+N)")
-        export_button.setToolTip("Export to CSV (Ctrl+X)")
-        import_button.setToolTip("Import from CSV (Ctrl+I)")
+        donate_button.setToolTip("Support the development")
         settings_button.setToolTip("Settings (Ctrl+S)")
         
         # Tab shortcuts
@@ -298,7 +307,42 @@ class MainWindow(QMainWindow):
         debug.debug("Debugging priority headers")
         self.tabs.current_tasks_tab.task_tree.debug_priority_headers()
         debug.debug("Task view initialization complete")
-    
+
+    @debug_method
+    def show_donate_dialog(self, checked=False):
+        debug.debug("Opening donate dialog")
+        try:
+            message = QMessageBox(self)
+            message.setWindowTitle("Support Development")
+            message.setText("Thank you for considering supporting the development of this application!")
+            message.setInformativeText("Click 'Visit Website' to visit Paypal\n"
+                                "and make a donation.\n"
+                                "Click 'Copy URL' to copy my Paypal donation URL.")
+           #  QMessageBox.information(self, "Copied", "blarp")
+            message.setIcon(QMessageBox.Icon.Information)
+            message.addButton(QMessageBox.StandardButton.Ok)
+            
+            # Add a button to copy information
+            copy_button = message.addButton("Copy Info", QMessageBox.ButtonRole.ActionRole)
+            
+            # Add a button to visit website
+            website_button = message.addButton("Visit Website", QMessageBox.ButtonRole.ActionRole)
+            
+            result = message.exec()
+            
+            if message.clickedButton() == copy_button:
+                # Copy donation info to clipboard
+                clipboard = QApplication.clipboard()
+                clipboard.setText("https://www.paypal.com/donate/?business=YYKCLVPVTKSP6&no_recurring=0&item_name=I+make+software+that%27s+useful+for+myself.+Maybe+it%27s+useful+for+you%2C+too.&currency_code=USD")
+                QMessageBox.information(self, "Copied", "Donation information copied to clipboard!")
+            elif message.clickedButton() == website_button:
+                # Open donation website
+                import webbrowser
+                webbrowser.open("https://www.paypal.com/donate/?business=YYKCLVPVTKSP6&no_recurring=0&item_name=I+make+software+that%27s+useful+for+myself.+Maybe+it%27s+useful+for+you%2C+too.&currency_code=USD")
+        except Exception as e:
+            debug.error(f"Error showing donate dialog: {e}")
+            QMessageBox.critical(self, "Error", f"Error showing donate dialog: {str(e)}")    
+
     @debug_method
     def show_task_view(self, checked=False):
         debug.debug("Showing task view")

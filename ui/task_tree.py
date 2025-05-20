@@ -1,6 +1,6 @@
 # src/ui/task_tree.py
 
-from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem, QMenu, QHeaderView, QMessageBox, QDateEdit
+from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem, QMenu, QHeaderView, QMessageBox, QDateEdit, QApplication
 from PyQt6.QtCore import Qt, QDate, QSize, QTimer
 from PyQt6.QtGui import QBrush, QColor
 import sqlite3
@@ -2349,7 +2349,7 @@ class TaskTreeWidget(QTreeWidget):
         # Create menu
         menu = QMenu(self)
         
-        # Define OS-specific styles from os_style_manager.py patterns
+        # Apply OS-specific styles (existing code)
         if os_style == "macOS":
             menu.setStyleSheet("""
                 QMenu {
@@ -2366,6 +2366,9 @@ class TaskTreeWidget(QTreeWidget):
                 QMenu::item:selected {
                     background-color: #0071E3;
                     color: white;
+                }
+                QMenu::item:disabled {
+                    color: #8E8E93;
                 }
                 QMenu::separator {
                     height: 1px;
@@ -2387,6 +2390,9 @@ class TaskTreeWidget(QTreeWidget):
                 QMenu::item:selected {
                     background-color: #0078D7;
                     color: white;
+                }
+                QMenu::item:disabled {
+                    color: #999999;
                 }
                 QMenu::separator {
                     height: 1px;
@@ -2411,6 +2417,9 @@ class TaskTreeWidget(QTreeWidget):
                     background-color: #3584E4;
                     color: white;
                 }
+                QMenu::item:disabled {
+                    color: #999999;
+                }
                 QMenu::separator {
                     height: 1px;
                     background-color: #C6C6C6;
@@ -2422,16 +2431,72 @@ class TaskTreeWidget(QTreeWidget):
         edit_action = menu.addAction("Edit Task")
         delete_action = menu.addAction("Delete Task")
         
-        # Add a separator
+        # Add separator
+        menu.addSeparator()
+        
+        # NEW: Add Task Creation submenu
+        new_task_menu = QMenu("New Task", menu)
+        new_task_menu.setStyleSheet(menu.styleSheet())
+        
+        new_child_action = new_task_menu.addAction("New Task under this task")
+        new_sibling_action = new_task_menu.addAction("New Task under this header")
+        
+        menu.addMenu(new_task_menu)
+        
+        # Add separator
+        menu.addSeparator()
+        
+        # Check if task has links or files
+        task_data = item.data(0, Qt.ItemDataRole.UserRole)
+        has_links = False
+        has_files = False
+
+        if isinstance(task_data, dict):
+            links = task_data.get('links', [])
+            files = task_data.get('files', [])
+            legacy_link = task_data.get('link', '')
+            
+            # Ensure we're working with proper data types
+            if links and isinstance(links, list) and len(links) > 0:
+                has_links = True
+                debug.debug(f"Task has {len(links)} modern links")
+            elif legacy_link and isinstance(legacy_link, str) and legacy_link.strip():
+                has_links = True
+                debug.debug(f"Task has legacy link: {legacy_link}")
+            
+            if files and isinstance(files, list) and len(files) > 0:
+                has_files = True
+                debug.debug(f"Task has {len(files)} files")
+
+        debug.debug(f"has_links={has_links} (type: {type(has_links)}), has_files={has_files} (type: {type(has_files)})")
+        
+        # Add link action (enabled/disabled based on availability)
+        open_links_action = menu.addAction("Open all links in new browser window")
+        open_links_action.setEnabled(has_links)
+        
+        # Add file location action (enabled/disabled based on availability)
+        open_file_locations_action = menu.addAction("Open all file locations")
+        open_file_locations_action.setEnabled(has_files)
+        
+        # Add separator
+        menu.addSeparator()
+        
+        # NEW: Add quick complete action
+        mark_complete_action = menu.addAction("Mark task as complete")
+        # Disable if already completed
+        current_status = task_data.get('status', '') if isinstance(task_data, dict) else ''
+        mark_complete_action.setEnabled(current_status != "Completed")
+        
+        # Add separator
         menu.addSeparator()
         
         # Import database manager
         from database.memory_db_manager import get_memory_db_manager
         db_manager = get_memory_db_manager()
         
-        # Add status change submenu with same styling
+        # Existing status change submenu
         status_menu = QMenu("Change Status", menu)
-        status_menu.setStyleSheet(menu.styleSheet())  # Apply same style to submenu
+        status_menu.setStyleSheet(menu.styleSheet())
         menu.addMenu(status_menu)
         
         # Get statuses from database in display order
@@ -2448,9 +2513,9 @@ class TaskTreeWidget(QTreeWidget):
             action = status_menu.addAction(status)
             status_actions[action] = status
         
-        # Add priority change submenu
+        # Existing priority change submenu
         priority_menu = QMenu("Change Priority", menu)
-        priority_menu.setStyleSheet(menu.styleSheet())  # Apply same style to submenu
+        priority_menu.setStyleSheet(menu.styleSheet())
         menu.addMenu(priority_menu)
         
         # Get priorities from database
@@ -2466,31 +2531,273 @@ class TaskTreeWidget(QTreeWidget):
             action = priority_menu.addAction(priority)
             priority_actions[action] = priority
         
+        # NEW: Add category change submenu
+        category_menu = QMenu("Change Category", menu)
+        category_menu.setStyleSheet(menu.styleSheet())
+        menu.addMenu(category_menu)
+        
+        # Get categories from database
+        debug.debug("Getting categories from database")
+        category_results = db_manager.execute_query(
+            "SELECT name FROM categories ORDER BY name"
+        )
+        categories = [row[0] for row in category_results]
+        debug.debug(f"Adding {len(categories)} category options to menu")
+        category_actions = {}
+        
+        # Add "None" option first
+        none_category_action = category_menu.addAction("None")
+        category_actions[none_category_action] = None
+        
+        # Add separator if there are categories
+        if categories:
+            category_menu.addSeparator()
+        
+        # Add all categories
+        for category in categories:
+            action = category_menu.addAction(category)
+            category_actions[action] = category
+        
         # Execute menu and handle action
         debug.debug("Showing context menu")
         action = menu.exec(self.mapToGlobal(position))
         
+        # Handle actions
         if action == edit_action:
             debug.debug(f"Edit action selected for item: {item.text(0)}")
             self.edit_task(item)
         elif action == delete_action:
             debug.debug(f"Delete action selected for item: {item.text(0)}")
             self.delete_task(item)
+        elif action == new_child_action:
+            debug.debug(f"New child task action selected for item: {item.text(0)}")
+            self.create_child_task(item)
+        elif action == new_sibling_action:
+            debug.debug(f"New sibling task action selected for item: {item.text(0)}")
+            self.create_sibling_task(item)
+        elif action == open_links_action:
+            debug.debug(f"Open all links action selected for item: {item.text(0)}")
+            self.open_all_task_links(item)
+        elif action == open_file_locations_action:
+            debug.debug(f"Open all file locations action selected for item: {item.text(0)}")
+            self.open_all_task_file_locations(item)
+        elif action == mark_complete_action:
+            debug.debug(f"Mark complete action selected for item: {item.text(0)}")
+            if hasattr(self, 'change_status_with_timestamp'):
+                self.change_status_with_timestamp(item, "Completed")
+            else:
+                self.change_status(item, "Completed")
         elif action in status_actions:
             new_status = status_actions[action]
             debug.debug(f"Status change selected: {new_status} for item: {item.text(0)}")
             if hasattr(self, 'change_status_with_timestamp'):
-                debug.debug(f"Using change_status_with_timestamp method")
                 self.change_status_with_timestamp(item, new_status)
             else:
-                debug.debug(f"Using basic change_status method")
                 self.change_status(item, new_status)
         elif action in priority_actions:
             new_priority = priority_actions[action]
             debug.debug(f"Priority change selected: {new_priority} for item: {item.text(0)}")
             self.change_priority(item, new_priority)
+        elif action in category_actions:
+            new_category = category_actions[action]
+            debug.debug(f"Category change selected: {new_category} for item: {item.text(0)}")
+            self.change_category(item, new_category)
         else:
             debug.debug("No action selected or menu canceled")
+    
+    @debug_method
+    def create_child_task(self, parent_item):
+        """Create a new task as a child of the selected task"""
+        debug.debug(f"Creating child task for parent: {parent_item.text(0)}")
+        
+        # Get parent task data
+        parent_data = parent_item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(parent_data, dict) or 'id' not in parent_data:
+            debug.error("Parent item doesn't have valid task data")
+            return
+        
+        parent_id = parent_data['id']
+        parent_priority = parent_data.get('priority', 'Medium')
+        parent_category = parent_data.get('category', '')
+        
+        debug.debug(f"Parent task ID: {parent_id}, priority: {parent_priority}")
+        
+        # Open add task dialog
+        from ui.task_dialogs import AddTaskDialog
+        dialog = AddTaskDialog(self)
+        
+        # Set the parent
+        for i in range(dialog.parent_combo.count()):
+            if dialog.parent_combo.itemData(i) == parent_id:
+                dialog.parent_combo.setCurrentIndex(i)
+                debug.debug(f"Set parent combo to index {i}")
+                break
+        
+        # Set priority to match parent
+        priority_index = dialog.priority_combo.findText(parent_priority)
+        if priority_index >= 0:
+            dialog.priority_combo.setCurrentIndex(priority_index)
+            debug.debug(f"Set priority to match parent: {parent_priority}")
+        
+        # Set category to match parent if available
+        if parent_category:
+            category_index = dialog.category_combo.findText(parent_category)
+            if category_index >= 0:
+                dialog.category_combo.setCurrentIndex(category_index)
+                debug.debug(f"Set category to match parent: {parent_category}")
+        
+        if dialog.exec():
+            debug.debug("Child task dialog accepted")
+            data = dialog.get_data()
+            
+            # Ensure parent_id is set correctly
+            data['parent_id'] = parent_id
+            
+            # Add the task
+            task_id = self.add_new_task(data)
+            if task_id:
+                debug.debug(f"Added child task with ID: {task_id}")
+                # Reload to reflect changes
+                self._reload_all_tabs()
+
+    @debug_method
+    def create_sibling_task(self, sibling_item):
+        """Create a new task under the same priority header as the selected task"""
+        debug.debug(f"Creating sibling task for: {sibling_item.text(0)}")
+        
+        # Get sibling task data
+        sibling_data = sibling_item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(sibling_data, dict):
+            debug.error("Sibling item doesn't have valid task data")
+            return
+        
+        sibling_priority = sibling_data.get('priority', 'Medium')
+        debug.debug(f"Sibling priority: {sibling_priority}")
+        
+        # Open add task dialog
+        from ui.task_dialogs import AddTaskDialog
+        dialog = AddTaskDialog(self)
+        
+        # Set priority to match sibling (this determines which header it goes under)
+        priority_index = dialog.priority_combo.findText(sibling_priority)
+        if priority_index >= 0:
+            dialog.priority_combo.setCurrentIndex(priority_index)
+            debug.debug(f"Set priority to match sibling: {sibling_priority}")
+        
+        # Leave parent as "None" so it's a root-level task under the header
+        dialog.parent_combo.setCurrentIndex(0)  # "None" is always first
+        
+        if dialog.exec():
+            debug.debug("Sibling task dialog accepted")
+            data = dialog.get_data()
+            
+            # Ensure it's a root-level task with the correct priority
+            data['parent_id'] = None
+            data['priority'] = sibling_priority
+            
+            # Add the task
+            task_id = self.add_new_task(data)
+            if task_id:
+                debug.debug(f"Added sibling task with ID: {task_id}")
+                # Reload to reflect changes
+                self._reload_all_tabs()
+
+    @debug_method
+    def open_all_task_links(self, item):
+        """Open all links for a task in new browser window"""
+        debug.debug(f"Opening all links for task: {item.text(0)}")
+        
+        # Get task data
+        task_data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(task_data, dict):
+            debug.error("Task item doesn't have valid data")
+            return
+        
+        # Get links
+        links = task_data.get('links', [])
+        legacy_link = task_data.get('link', '')
+        
+        # Convert legacy link if it exists and no modern links
+        if not links and legacy_link and legacy_link.strip():
+            links = [(None, legacy_link, None)]
+            debug.debug(f"Using legacy link: {legacy_link}")
+        
+        if not links:
+            debug.debug("No links found to open")
+            return
+        
+        # Use existing method from task tree
+        self.open_links_in_new_window(links)
+
+    @debug_method
+    def open_all_task_file_locations(self, item):
+        """Open file explorer windows for all files attached to a task"""
+        debug.debug(f"Opening all file locations for task: {item.text(0)}")
+        
+        # Get task data
+        task_data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(task_data, dict):
+            debug.error("Task item doesn't have valid data")
+            return
+        
+        # Get files
+        files = task_data.get('files', [])
+        
+        if not files:
+            debug.debug("No files found to open locations for")
+            return
+        
+        # Use existing method from task tree
+        self.open_all_file_locations(files)
+
+    @debug_method
+    def change_category(self, item, new_category):
+        """Change the category of a task"""
+        debug.debug(f"Changing category to: {new_category}")
+        try:
+            # Import database manager
+            from database.memory_db_manager import get_memory_db_manager
+            db_manager = get_memory_db_manager()
+            
+            # Get category ID if not None
+            category_id = None
+            if new_category:
+                debug.debug(f"Looking up category ID for: {new_category}")
+                result = db_manager.execute_query(
+                    "SELECT id FROM categories WHERE name = ?", 
+                    (new_category,)
+                )
+                if result and len(result) > 0:
+                    category_id = result[0][0]
+                    debug.debug(f"Found category ID: {category_id}")
+            
+            # Update database
+            debug.debug(f"Updating task {item.task_id} with category_id: {category_id}")
+            db_manager.execute_update(
+                "UPDATE tasks SET category_id = ? WHERE id = ?", 
+                (category_id, item.task_id)
+            )
+            
+            # Update item data
+            data = item.data(0, Qt.ItemDataRole.UserRole)
+            data['category'] = new_category
+            item.setData(0, Qt.ItemDataRole.UserRole, data)
+            debug.debug("Updated category in item data")
+            
+            # Force a repaint
+            debug.debug("Forcing viewport update")
+            self.viewport().update()
+            
+            # Reload tabs to reflect changes
+            debug.debug("Scheduling reload of all tabs")
+            self._reload_all_tabs()
+            
+        except Exception as e:
+            debug.error(f"Error changing task category: {e}")
+            import traceback
+            traceback.print_exc()
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Failed to change task category: {str(e)}")
     
     def synchronize_priority_headers(self):
         """Ensure all priority headers have visual states matching their logical states"""

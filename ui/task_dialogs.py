@@ -285,7 +285,7 @@ class AddTaskDialog(QDialog):
         debug.debug("AddTaskDialog UI setup complete")
     
     @debug_method
-    def add_link(self):
+    def add_link(self, check = False):
         """Add a new link to the list"""
         debug.debug("Adding new link")
         link_dialog = LinkDialog(self)
@@ -301,7 +301,7 @@ class AddTaskDialog(QDialog):
             self.links_list.addItem(item)
 
     @debug_method
-    def edit_link(self):
+    def edit_link(self, check = False):
         """Edit the selected link"""
         debug.debug("Editing selected link")
         selected_items = self.links_list.selectedItems()
@@ -325,7 +325,7 @@ class AddTaskDialog(QDialog):
             item.setData(Qt.ItemDataRole.UserRole, {"url": url, "label": label})
 
     @debug_method
-    def remove_link(self):
+    def remove_link(self, check = False):
         """Remove the selected link"""
         debug.debug("Removing selected link")
         selected_items = self.links_list.selectedItems()
@@ -690,7 +690,7 @@ class EditTaskDialog(QDialog):
             traceback.print_exc()
 
     @debug_method
-    def add_link(self):
+    def add_link(self, check = False):
         """Add a new link to the list"""
         debug.debug("Adding new link")
         link_dialog = LinkDialog(self)
@@ -706,7 +706,7 @@ class EditTaskDialog(QDialog):
             self.links_list.addItem(item)
 
     @debug_method
-    def edit_link(self):
+    def edit_link(self, check = False):
         """Edit the selected link"""
         debug.debug("Editing selected link")
         selected_items = self.links_list.selectedItems()
@@ -736,7 +736,7 @@ class EditTaskDialog(QDialog):
             })
 
     @debug_method
-    def remove_link(self):
+    def remove_link(self, check = False):
         """Remove the selected link"""
         debug.debug("Removing selected link")
         selected_items = self.links_list.selectedItems()
@@ -906,7 +906,7 @@ class EditTaskDialog(QDialog):
             traceback.print_exc()
     
     @debug_method
-    def load_files(self):
+    def load_files(self, check = False):
         """Load existing files for the task"""
         debug.debug(f"Loading files for task: {self.task_data['id']}")
         try:
@@ -1220,7 +1220,6 @@ class EditStatusDialog(QDialog):
         self.layout().setContentsMargins(18, 18, 18, 18)
         self.layout().setSpacing(10)
         
-# New component for task_dialogs.py
 class LinkListWidget(QWidget):
     """Widget for managing multiple links for a task"""
     
@@ -1262,7 +1261,7 @@ class LinkListWidget(QWidget):
         debug.debug("LinkListWidget UI setup complete")
     
     @debug_method
-    def add_link(self):
+    def add_link(self, check = False):
         """Open dialog to add a new link"""
         debug.debug("Adding new link")
         dialog = LinkDialog(self)
@@ -1278,7 +1277,7 @@ class LinkListWidget(QWidget):
             self.refresh_links()
     
     @debug_method
-    def edit_link(self, index):
+    def edit_link(self, index, check = False):
         """Edit a link at the specified index"""
         debug.debug(f"Editing link at index {index}")
         link_id, url, label = self.links[index]
@@ -1296,7 +1295,7 @@ class LinkListWidget(QWidget):
             self.refresh_links()
     
     @debug_method
-    def remove_link(self, index):
+    def remove_link(self, index, check = False):
         """Remove a link at the specified index"""
         debug.debug(f"Removing link at index {index}")
         # Ask for confirmation
@@ -1315,7 +1314,7 @@ class LinkListWidget(QWidget):
             self.refresh_links()
     
     @debug_method
-    def set_links(self, links):
+    def set_links(self, links, check = False):
         """Set the list of links (id, url, label) tuples"""
         debug.debug(f"Setting {len(links)} links")
         self.links = list(links)  # Create a copy
@@ -1326,7 +1325,7 @@ class LinkListWidget(QWidget):
         """Get the current list of links"""
         debug.debug(f"Getting {len(self.links)} links")
         return list(self.links)  # Return a copy
-    
+
     @debug_method
     def refresh_links(self):
         """Refresh the links display"""
@@ -1343,24 +1342,62 @@ class LinkListWidget(QWidget):
             item_layout = QHBoxLayout(link_item)
             item_layout.setContentsMargins(0, 0, 0, 0)
             
-            # Link display label - show label (if exists) and URL
-            display_text = f"{label}: {url}" if label else url
-            link_label = QLabel(display_text)
+            # Link display label - show only URL, label on tooltip
+            link_label = QLabel(url)
             link_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            
+            # Set tooltip to show label if it exists
+            if label and label.strip():
+                link_label.setToolTip(f"{label}")
+            else:
+                link_label.setToolTip(url)
+                
             item_layout.addWidget(link_label)
             
             # Spacer to push buttons to the right
             item_layout.addStretch()
             
-            # Edit button
-            edit_button = QPushButton("Edit")
-            edit_button.setFixedWidth(60)
+            # Edit button - narrow with light grey background
+            edit_button = QPushButton("✏️")
+            edit_button.setObjectName("linkEditButton")  # Give it a unique name
+            edit_button.setFixedSize(20, 24)
+            edit_button.setStyleSheet("""
+                QPushButton#linkEditButton {
+                    background-color: #F0F0F0 !important;
+                    border: 1px solid #D0D0D0 !important;
+                    border-radius: 3px !important;
+                    font-size: 12px !important;
+                }
+                QPushButton#linkEditButton:hover {
+                    background-color: #E8E8E8 !important;
+                }
+                QPushButton#linkEditButton:pressed {
+                    background-color: #D8D8D8 !important;
+                }
+            """)
+            edit_button.setToolTip("Edit link")
             edit_button.clicked.connect(lambda checked, idx=i: self.edit_link(idx))
             item_layout.addWidget(edit_button)
             
-            # Remove button
-            remove_button = QPushButton("Remove")
-            remove_button.setFixedWidth(60)
+            # Remove button - narrow with light grey background
+            remove_button = QPushButton("🗑️")
+            remove_button.setObjectName("linkRemoveButton")  # Give it a unique name
+            remove_button.setFixedSize(20, 24)
+            remove_button.setStyleSheet("""
+                QPushButton#linkRemoveButton {
+                    background-color: #F0F0F0 !important;
+                    border: 1px solid #D0D0D0 !important;
+                    border-radius: 3px !important;
+                    font-size: 12px !important;
+                }
+                QPushButton#linkRemoveButton:hover {
+                    background-color: #E8E8E8 !important;
+                }
+                QPushButton#linkRemoveButton:pressed {
+                    background-color: #D8D8D8 !important;
+                }
+            """)
+            remove_button.setToolTip("Remove link")
             remove_button.clicked.connect(lambda checked, idx=i: self.remove_link(idx))
             item_layout.addWidget(remove_button)
             
@@ -1383,7 +1420,7 @@ class LinkDialog(QDialog):
         self.setup_ui(url, label)
         
         # Apply OS-specific styling
-        self.apply_os_style()
+        # self.apply_os_style()
         
         debug.debug("LinkDialog initialization complete")
     
@@ -1444,13 +1481,12 @@ class LinkDialog(QDialog):
             if reply == QMessageBox.StandardButton.Yes:
                 debug.debug(f"Adding https:// to URL: {url}")
                 self.url_input.setText(f"https://{url}")
+            # If No, continue without adding protocol - don't return early
             else:
-                debug.debug("User declined to add protocol, returning without accepting")
-                return
+                debug.debug("User declined to add protocol, continuing without it")
         
         debug.debug("URL validation passed, accepting dialog")
-        self.accept()
-        
+        self.accept()  
 class FileListWidget(QWidget):
     """Widget for managing multiple file attachments for a task"""
     
@@ -1492,7 +1528,7 @@ class FileListWidget(QWidget):
         debug.debug("FileListWidget UI setup complete")
     
     @debug_method
-    def add_file(self):
+    def add_file(self, check = False):
         """Open dialog to select a new file"""
         debug.debug("Opening file selection dialog")
         from PyQt6.QtWidgets import QFileDialog
@@ -1515,7 +1551,7 @@ class FileListWidget(QWidget):
             self.refresh_files()
     
     @debug_method
-    def edit_file(self, index):
+    def edit_file(self, index, check = False):
         """Edit a file path at the specified index"""
         debug.debug(f"Editing file at index {index}")
         file_id, old_path, old_name = self.files[index]
@@ -1544,7 +1580,7 @@ class FileListWidget(QWidget):
             self.refresh_files()
     
     @debug_method
-    def remove_file(self, index):
+    def remove_file(self, index, check = False):
         """Remove a file at the specified index"""
         debug.debug(f"Removing file at index {index}")
         # Ask for confirmation
@@ -1602,21 +1638,69 @@ class FileListWidget(QWidget):
             # Spacer to push buttons to the right
             item_layout.addStretch()
             
-            # Open button
-            open_button = QPushButton("Open")
-            open_button.setFixedWidth(60)
+            # Open button - narrow with light grey background
+            open_button = QPushButton("📂")
+            open_button.setObjectName("fileOpenButton")
+            open_button.setFixedSize(20, 24)
+            open_button.setStyleSheet("""
+                QPushButton#fileOpenButton {
+                    background-color: #F0F0F0 !important;
+                    border: 1px solid #D0D0D0 !important;
+                    border-radius: 3px !important;
+                    font-size: 12px !important;
+                }
+                QPushButton#fileOpenButton:hover {
+                    background-color: #E8E8E8 !important;
+                }
+                QPushButton#fileOpenButton:pressed {
+                    background-color: #D8D8D8 !important;
+                }
+            """)
+            open_button.setToolTip("Open file")
             open_button.clicked.connect(lambda checked, path=file_path: self.open_file(path))
             item_layout.addWidget(open_button)
             
-            # Edit button
-            edit_button = QPushButton("Change")
-            edit_button.setFixedWidth(60)
+            # Edit button - narrow with light grey background
+            edit_button = QPushButton("✏️")
+            edit_button.setObjectName("fileEditButton")
+            edit_button.setFixedSize(20, 24)
+            edit_button.setStyleSheet("""
+                QPushButton#fileEditButton {
+                    background-color: #F0F0F0 !important;
+                    border: 1px solid #D0D0D0 !important;
+                    border-radius: 3px !important;
+                    font-size: 12px !important;
+                }
+                QPushButton#fileEditButton:hover {
+                    background-color: #E8E8E8 !important;
+                }
+                QPushButton#fileEditButton:pressed {
+                    background-color: #D8D8D8 !important;
+                }
+            """)
+            edit_button.setToolTip("Change file")
             edit_button.clicked.connect(lambda checked, idx=i: self.edit_file(idx))
             item_layout.addWidget(edit_button)
             
-            # Remove button
-            remove_button = QPushButton("Remove")
-            remove_button.setFixedWidth(60)
+            # Remove button - narrow with light grey background
+            remove_button = QPushButton("🗑️")
+            remove_button.setObjectName("fileRemoveButton")
+            remove_button.setFixedSize(20, 24)
+            remove_button.setStyleSheet("""
+                QPushButton#fileRemoveButton {
+                    background-color: #F0F0F0 !important;
+                    border: 1px solid #D0D0D0 !important;
+                    border-radius: 3px !important;
+                    font-size: 12px !important;
+                }
+                QPushButton#fileRemoveButton:hover {
+                    background-color: #E8E8E8 !important;
+                }
+                QPushButton#fileRemoveButton:pressed {
+                    background-color: #D8D8D8 !important;
+                }
+            """)
+            remove_button.setToolTip("Remove file")
             remove_button.clicked.connect(lambda checked, idx=i: self.remove_file(idx))
             item_layout.addWidget(remove_button)
             

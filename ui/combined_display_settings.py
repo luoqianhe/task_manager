@@ -772,7 +772,7 @@ class CombinedDisplaySettingsWidget(QWidget):
             debug.warning(f"Invalid hex format for {color_type}: {hex_value}")
     
     @debug_method
-    def save_settings(self):
+    def save_settings(self, check = False):
         """Save all display settings to the settings manager and apply changes immediately"""
         debug.debug("Saving all display settings")
         # Save font family and size

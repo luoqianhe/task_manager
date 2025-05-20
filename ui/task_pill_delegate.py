@@ -35,7 +35,7 @@ class TaskPillDelegate(QStyledItemDelegate):
             # Adjust sizes based on OS
             if self.os_style == "macOS":
                 self.pill_height = 80
-                self.compact_height = 40
+                self.compact_height = 35
                 self.pill_radius = 15
             elif self.os_style == "Windows":
                 self.pill_height = 70

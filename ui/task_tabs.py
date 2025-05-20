@@ -534,120 +534,120 @@ class TabTaskTreeWidget(TaskTreeWidget):
             
         return expanded_count
 
-    @debug_method
-    def show_context_menu(self, position):
-        """Override to customize the context menu based on tab type"""
-        debug.debug(f"Showing context menu at position {position.x()}, {position.y()}")
-        item = self.itemAt(position)
-        if not item:
-            debug.debug("No item at position, skipping context menu")
-            return
+    # @debug_method
+    # def show_context_menu(self, position):
+    #     """Override to customize the context menu based on tab type"""
+    #     debug.debug(f"Showing context menu at position {position.x()}, {position.y()}")
+    #     item = self.itemAt(position)
+    #     if not item:
+    #         debug.debug("No item at position, skipping context menu")
+    #         return
             
-        # Skip if this is a priority header
-        user_data = item.data(0, Qt.ItemDataRole.UserRole)
-        if isinstance(user_data, dict) and user_data.get('is_priority_header', False):
-            debug.debug("Item is a priority header, skipping context menu")
-            return
+    #     # Skip if this is a priority header
+    #     user_data = item.data(0, Qt.ItemDataRole.UserRole)
+    #     if isinstance(user_data, dict) and user_data.get('is_priority_header', False):
+    #         debug.debug("Item is a priority header, skipping context menu")
+    #         return
                 
-        debug.debug(f"Creating context menu for item: {item.text(0)}")
-        menu = QMenu(self)
+    #     debug.debug(f"Creating context menu for item: {item.text(0)}")
+    #     menu = QMenu(self)
         
-        # Force hover highlighting with strong styling
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #FFFFFF;
-                border: 1px solid #D0D0D0;
-                padding: 2px;
-            }
-            QMenu::item {
-                padding: 6px 28px 6px 15px;
-                margin: 2px;
-                min-width: 150px;
-            }
-            QMenu::item:selected, QMenu::item:hover {
-                background-color: #0071E3 !important;
-                color: white !important;
-            }
-            QMenu::separator {
-                height: 1px;
-                background-color: #D0D0D0;
-                margin: 4px 0px;
-            }
-        """)
+    #     # Force hover highlighting with strong styling
+    #     menu.setStyleSheet("""
+    #         QMenu {
+    #             background-color: #FFFFFF;
+    #             border: 1px solid #D0D0D0;
+    #             padding: 2px;
+    #         }
+    #         QMenu::item {
+    #             padding: 6px 28px 6px 15px;
+    #             margin: 2px;
+    #             min-width: 150px;
+    #         }
+    #         QMenu::item:selected, QMenu::item:hover {
+    #             background-color: #0071E3 !important;
+    #             color: white !important;
+    #         }
+    #         QMenu::separator {
+    #             height: 1px;
+    #             background-color: #D0D0D0;
+    #             margin: 4px 0px;
+    #         }
+    #     """)
         
-        edit_action = menu.addAction("Edit Task")
-        delete_action = menu.addAction("Delete Task")
+    #     edit_action = menu.addAction("Edit Task")
+    #     delete_action = menu.addAction("Delete Task")
         
-        # Add a separator
-        menu.addSeparator()
+    #     # Add a separator
+    #     menu.addSeparator()
         
-        # Add status change submenu
-        status_menu = QMenu("Change Status", self)
-        status_menu.setStyleSheet(menu.styleSheet())  # Apply same styling to submenu
+    #     # Add status change submenu
+    #     status_menu = QMenu("Change Status", self)
+    #     status_menu.setStyleSheet(menu.styleSheet())  # Apply same styling to submenu
         
-        statuses = []
+    #     statuses = []
         
-        # Import database manager
-        from database.memory_db_manager import get_memory_db_manager
-        db_manager = get_memory_db_manager()
+    #     # Import database manager
+    #     from database.memory_db_manager import get_memory_db_manager
+    #     db_manager = get_memory_db_manager()
         
-        # Get statuses from database in display order
-        debug.debug("Getting statuses from database")
-        result = db_manager.execute_query(
-            "SELECT name FROM statuses ORDER BY display_order"
-        )
+    #     # Get statuses from database in display order
+    #     debug.debug("Getting statuses from database")
+    #     result = db_manager.execute_query(
+    #         "SELECT name FROM statuses ORDER BY display_order"
+    #     )
         
-        for row in result:
-            statuses.append(row[0])
+    #     for row in result:
+    #         statuses.append(row[0])
         
-        debug.debug(f"Adding {len(statuses)} status options to menu")
-        status_actions = {}
+    #     debug.debug(f"Adding {len(statuses)} status options to menu")
+    #     status_actions = {}
         
-        for status in statuses:
-            action = status_menu.addAction(status)
-            status_actions[action] = status
+    #     for status in statuses:
+    #         action = status_menu.addAction(status)
+    #         status_actions[action] = status
         
-        menu.addMenu(status_menu)
+    #     menu.addMenu(status_menu)
         
-        # Add priority change submenu
-        priority_menu = QMenu("Change Priority", self)
-        priority_menu.setStyleSheet(menu.styleSheet())  # Apply same styling to submenu
-        priority_actions = {}
+    #     # Add priority change submenu
+    #     priority_menu = QMenu("Change Priority", self)
+    #     priority_menu.setStyleSheet(menu.styleSheet())  # Apply same styling to submenu
+    #     priority_actions = {}
         
-        # Get priorities from database
-        debug.debug("Getting priorities from database")
-        results = db_manager.execute_query(
-            "SELECT name FROM priorities ORDER BY display_order"
-        )
-        priorities = [row[0] for row in results]
-        debug.debug(f"Adding {len(priorities)} priority options to menu")
+    #     # Get priorities from database
+    #     debug.debug("Getting priorities from database")
+    #     results = db_manager.execute_query(
+    #         "SELECT name FROM priorities ORDER BY display_order"
+    #     )
+    #     priorities = [row[0] for row in results]
+    #     debug.debug(f"Adding {len(priorities)} priority options to menu")
         
-        for priority in priorities:
-            action = priority_menu.addAction(priority)
-            priority_actions[action] = priority
+    #     for priority in priorities:
+    #         action = priority_menu.addAction(priority)
+    #         priority_actions[action] = priority
         
-        menu.addMenu(priority_menu)
+    #     menu.addMenu(priority_menu)
         
-        # Execute menu and handle action
-        debug.debug("Showing context menu")
-        action = menu.exec(self.mapToGlobal(position))
+    #     # Execute menu and handle action
+    #     debug.debug("Showing context menu")
+    #     action = menu.exec(self.mapToGlobal(position))
         
-        if action == edit_action:
-            debug.debug(f"Edit action selected for item: {item.text(0)}")
-            self.edit_task(item)
-        elif action == delete_action:
-            debug.debug(f"Delete action selected for item: {item.text(0)}")
-            self.delete_task(item)
-        elif action in status_actions:
-            new_status = status_actions[action]
-            debug.debug(f"Status change selected: {new_status} for item: {item.text(0)}")
-            self.change_status_with_timestamp(item, new_status)
-        elif action in priority_actions:
-            new_priority = priority_actions[action]
-            debug.debug(f"Priority change selected: {new_priority} for item: {item.text(0)}")
-            self.change_priority(item, new_priority)
-        else:
-            debug.debug("No action selected or menu canceled")
+    #     if action == edit_action:
+    #         debug.debug(f"Edit action selected for item: {item.text(0)}")
+    #         self.edit_task(item)
+    #     elif action == delete_action:
+    #         debug.debug(f"Delete action selected for item: {item.text(0)}")
+    #         self.delete_task(item)
+    #     elif action in status_actions:
+    #         new_status = status_actions[action]
+    #         debug.debug(f"Status change selected: {new_status} for item: {item.text(0)}")
+    #         self.change_status_with_timestamp(item, new_status)
+    #     elif action in priority_actions:
+    #         new_priority = priority_actions[action]
+    #         debug.debug(f"Priority change selected: {new_priority} for item: {item.text(0)}")
+    #         self.change_priority(item, new_priority)
+    #     else:
+    #         debug.debug("No action selected or menu canceled")
     
     @debug_method
     def change_status(self, item, new_status):
