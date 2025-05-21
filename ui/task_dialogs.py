@@ -1225,15 +1225,15 @@ class LinkListWidget(QWidget):
     
     @debug_method
     def __init__(self, parent=None):
-        debug.debug("Initializing LinkListWidget")
-        super().__init__(parent)
-        self.links = []  # List of (id, url, label) tuples, id can be None for new links
-        self.setup_ui()
-        debug.debug("LinkListWidget initialization complete")
-    
-    @debug_method
+            debug.debug("Initializing LinkListWidget")
+            super().__init__(parent)
+            self.links = []  # List of (id, url, label) tuples, id can be None for new links
+            self.setup_ui()
+            debug.debug("LinkListWidget initialization complete")
+        
     def setup_ui(self):
         debug.debug("Setting up LinkListWidget UI")
+        
         # Main layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1253,11 +1253,20 @@ class LinkListWidget(QWidget):
         # Add scroll area to main layout
         layout.addWidget(scroll_area)
         
-        # Add link button
+        # Add link button with centering
+        button_container = QHBoxLayout()  # Create a horizontal layout for the button
+        button_container.addStretch()     # Add stretch before the button
+        
         add_link_button = QPushButton("Add Link")
+        add_link_button.setFixedWidth(120)  # Set fixed width to match other buttons (in style methods)
+        add_link_button.setFixedHeight(32)  # Set fixed height to match other buttons (in style methods)
         add_link_button.setIcon(QIcon.fromTheme("list-add"))
         add_link_button.clicked.connect(self.add_link)
-        layout.addWidget(add_link_button)
+        
+        button_container.addWidget(add_link_button)  # Add button to container
+        button_container.addStretch()     # Add stretch after the button
+        
+        layout.addLayout(button_container)  # Add container to main layout
         debug.debug("LinkListWidget UI setup complete")
     
     @debug_method
@@ -1328,7 +1337,7 @@ class LinkListWidget(QWidget):
 
     @debug_method
     def refresh_links(self):
-        """Refresh the links display"""
+        """Refresh the links display with hover-to-show buttons"""
         debug.debug("Refreshing links display")
         # Clear existing widgets
         while self.links_layout.count():
@@ -1338,76 +1347,13 @@ class LinkListWidget(QWidget):
         
         # Add link items
         for i, (link_id, url, label) in enumerate(self.links):
-            link_item = QWidget()
-            item_layout = QHBoxLayout(link_item)
-            item_layout.setContentsMargins(0, 0, 0, 0)
-            
-            # Link display label - show only URL, label on tooltip
-            link_label = QLabel(url)
-            link_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            
-            # Set tooltip to show label if it exists
-            if label and label.strip():
-                link_label.setToolTip(f"{label}")
-            else:
-                link_label.setToolTip(url)
-                
-            item_layout.addWidget(link_label)
-            
-            # Spacer to push buttons to the right
-            item_layout.addStretch()
-            
-            # Edit button - narrow with light grey background
-            edit_button = QPushButton("✏️")
-            edit_button.setObjectName("linkEditButton")  # Give it a unique name
-            edit_button.setFixedSize(20, 24)
-            edit_button.setStyleSheet("""
-                QPushButton#linkEditButton {
-                    background-color: #F0F0F0 !important;
-                    border: 1px solid #D0D0D0 !important;
-                    border-radius: 3px !important;
-                    font-size: 12px !important;
-                }
-                QPushButton#linkEditButton:hover {
-                    background-color: #E8E8E8 !important;
-                }
-                QPushButton#linkEditButton:pressed {
-                    background-color: #D8D8D8 !important;
-                }
-            """)
-            edit_button.setToolTip("Edit link")
-            edit_button.clicked.connect(lambda checked, idx=i: self.edit_link(idx))
-            item_layout.addWidget(edit_button)
-            
-            # Remove button - narrow with light grey background
-            remove_button = QPushButton("🗑️")
-            remove_button.setObjectName("linkRemoveButton")  # Give it a unique name
-            remove_button.setFixedSize(20, 24)
-            remove_button.setStyleSheet("""
-                QPushButton#linkRemoveButton {
-                    background-color: #F0F0F0 !important;
-                    border: 1px solid #D0D0D0 !important;
-                    border-radius: 3px !important;
-                    font-size: 12px !important;
-                }
-                QPushButton#linkRemoveButton:hover {
-                    background-color: #E8E8E8 !important;
-                }
-                QPushButton#linkRemoveButton:pressed {
-                    background-color: #D8D8D8 !important;
-                }
-            """)
-            remove_button.setToolTip("Remove link")
-            remove_button.clicked.connect(lambda checked, idx=i: self.remove_link(idx))
-            item_layout.addWidget(remove_button)
-            
-            # Add to links layout
+            # Create a custom widget that handles hover events
+            link_item = LinkItemWidget(i, link_id, url, label, self)
             self.links_layout.addWidget(link_item)
         
         # Add a stretch at the end
         self.links_layout.addStretch()
         debug.debug(f"Refreshed display with {len(self.links)} links")
-
 class LinkDialog(QDialog):
     """Dialog for adding or editing a link"""
     
@@ -1520,11 +1466,20 @@ class FileListWidget(QWidget):
         # Add scroll area to main layout
         layout.addWidget(scroll_area)
         
-        # Add file button
+        # Add file button with centering
+        button_container = QHBoxLayout()  # Create a horizontal layout for the button
+        button_container.addStretch()     # Add stretch before the button
+        
         add_file_button = QPushButton("Add File")
+        add_file_button.setFixedWidth(120)  # Set fixed width to match other buttons
+        add_file_button.setFixedHeight(32)  # Set fixed height to match other buttons
         add_file_button.setIcon(QIcon.fromTheme("list-add"))
         add_file_button.clicked.connect(self.add_file)
-        layout.addWidget(add_file_button)
+        
+        button_container.addWidget(add_file_button)  # Add button to container
+        button_container.addStretch()     # Add stretch after the button
+        
+        layout.addLayout(button_container)  # Add container to main layout
         debug.debug("FileListWidget UI setup complete")
     
     @debug_method
@@ -1615,7 +1570,7 @@ class FileListWidget(QWidget):
     
     @debug_method
     def refresh_files(self):
-        """Refresh the files display"""
+        """Refresh the files display with hover-to-show buttons"""
         debug.debug("Refreshing files display")
         # Clear existing widgets
         while self.files_layout.count():
@@ -1625,86 +1580,8 @@ class FileListWidget(QWidget):
         
         # Add file items
         for i, (file_id, file_path, file_name) in enumerate(self.files):
-            file_item = QWidget()
-            item_layout = QHBoxLayout(file_item)
-            item_layout.setContentsMargins(0, 0, 0, 0)
-            
-            # File display label - show filename
-            file_label = QLabel(file_name)
-            file_label.setToolTip(file_path)  # Show full path on hover
-            file_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            item_layout.addWidget(file_label)
-            
-            # Spacer to push buttons to the right
-            item_layout.addStretch()
-            
-            # Open button - narrow with light grey background
-            open_button = QPushButton("📂")
-            open_button.setObjectName("fileOpenButton")
-            open_button.setFixedSize(20, 24)
-            open_button.setStyleSheet("""
-                QPushButton#fileOpenButton {
-                    background-color: #F0F0F0 !important;
-                    border: 1px solid #D0D0D0 !important;
-                    border-radius: 3px !important;
-                    font-size: 12px !important;
-                }
-                QPushButton#fileOpenButton:hover {
-                    background-color: #E8E8E8 !important;
-                }
-                QPushButton#fileOpenButton:pressed {
-                    background-color: #D8D8D8 !important;
-                }
-            """)
-            open_button.setToolTip("Open file")
-            open_button.clicked.connect(lambda checked, path=file_path: self.open_file(path))
-            item_layout.addWidget(open_button)
-            
-            # Edit button - narrow with light grey background
-            edit_button = QPushButton("✏️")
-            edit_button.setObjectName("fileEditButton")
-            edit_button.setFixedSize(20, 24)
-            edit_button.setStyleSheet("""
-                QPushButton#fileEditButton {
-                    background-color: #F0F0F0 !important;
-                    border: 1px solid #D0D0D0 !important;
-                    border-radius: 3px !important;
-                    font-size: 12px !important;
-                }
-                QPushButton#fileEditButton:hover {
-                    background-color: #E8E8E8 !important;
-                }
-                QPushButton#fileEditButton:pressed {
-                    background-color: #D8D8D8 !important;
-                }
-            """)
-            edit_button.setToolTip("Change file")
-            edit_button.clicked.connect(lambda checked, idx=i: self.edit_file(idx))
-            item_layout.addWidget(edit_button)
-            
-            # Remove button - narrow with light grey background
-            remove_button = QPushButton("🗑️")
-            remove_button.setObjectName("fileRemoveButton")
-            remove_button.setFixedSize(20, 24)
-            remove_button.setStyleSheet("""
-                QPushButton#fileRemoveButton {
-                    background-color: #F0F0F0 !important;
-                    border: 1px solid #D0D0D0 !important;
-                    border-radius: 3px !important;
-                    font-size: 12px !important;
-                }
-                QPushButton#fileRemoveButton:hover {
-                    background-color: #E8E8E8 !important;
-                }
-                QPushButton#fileRemoveButton:pressed {
-                    background-color: #D8D8D8 !important;
-                }
-            """)
-            remove_button.setToolTip("Remove file")
-            remove_button.clicked.connect(lambda checked, idx=i: self.remove_file(idx))
-            item_layout.addWidget(remove_button)
-            
-            # Add to files layout
+            # Create a custom widget that handles hover events
+            file_item = FileItemWidget(i, file_id, file_path, file_name, self)
             self.files_layout.addWidget(file_item)
         
         # Add a stretch at the end
@@ -1935,3 +1812,281 @@ class FileListWidget(QWidget):
         
         self.layout().setContentsMargins(18, 18, 18, 18)
         self.layout().setSpacing(10)
+
+class LinkItemWidget(QWidget):
+    """Custom widget for link items with hover-to-show buttons"""
+    
+    def __init__(self, index, link_id, url, label, parent_widget):
+        super().__init__()
+        self.index = index
+        self.link_id = link_id
+        self.url = url
+        self.label = label
+        self.parent_widget = parent_widget
+        
+        # Enable mouse tracking
+        self.setMouseTracking(True)
+        
+        # Create layout
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(4)  # Tighter spacing between buttons
+        
+        # Link display label
+        self.link_label = QLabel(url)
+        self.link_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        
+        # Set tooltip
+        if label and label.strip():
+            self.link_label.setToolTip(f"{label}")
+        else:
+            self.link_label.setToolTip(url)
+            
+        self.layout.addWidget(self.link_label)
+        
+        # Spacer
+        self.layout.addStretch()
+        
+        # Create buttons but hide them initially
+        self.edit_button = QPushButton("✏️")
+        self.edit_button.setProperty("emojiButton", True)  # Special property for styling
+        self.edit_button.setFixedSize(24, 24)
+        self.edit_button.setToolTip("Edit link")
+        self.edit_button.clicked.connect(self.edit_link)
+        self.edit_button.hide()  # Initially hidden
+        self.layout.addWidget(self.edit_button)
+        
+        self.remove_button = QPushButton("🗑️")
+        self.remove_button.setProperty("emojiButton", True)  # Special property for styling
+        self.remove_button.setFixedSize(24, 24)
+        self.remove_button.setToolTip("Remove link")
+        self.remove_button.clicked.connect(self.remove_link)
+        self.remove_button.hide()  # Initially hidden
+        self.layout.addWidget(self.remove_button)
+    
+    def enterEvent(self, event):
+        """Show buttons when mouse enters the widget"""
+        self.edit_button.show()
+        self.remove_button.show()
+        super().enterEvent(event)
+    
+    def leaveEvent(self, event):
+        """Hide buttons when mouse leaves the widget"""
+        self.edit_button.hide()
+        self.remove_button.hide()
+        super().leaveEvent(event)
+    
+    def edit_link(self):
+        """Handle edit button click"""
+        self.parent_widget.edit_link(self.index)
+    
+    def remove_link(self):
+        """Handle remove button click"""
+        self.parent_widget.remove_link(self.index)
+
+class FileItemWidget(QWidget):
+    """Custom widget for file items with hover-to-show buttons"""
+    
+    def __init__(self, index, file_id, file_path, file_name, parent_widget):
+        super().__init__()
+        self.index = index
+        self.file_id = file_id
+        self.file_path = file_path
+        self.file_name = file_name
+        self.parent_widget = parent_widget
+        
+        # Enable mouse tracking
+        self.setMouseTracking(True)
+        
+        # Create layout
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(4)  # Tighter spacing between buttons
+        
+        # File display label
+        self.file_label = QLabel(file_name)
+        self.file_label.setToolTip(file_path)  # Show full path on hover
+        self.file_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.layout.addWidget(self.file_label)
+        
+        # Spacer
+        self.layout.addStretch()
+        
+        # Create buttons but hide them initially
+        self.open_button = QPushButton("📂")
+        self.open_button.setProperty("emojiButton", True)  # Special property for styling
+        self.open_button.setFixedSize(24, 24)
+        self.open_button.setToolTip("Open file")
+        self.open_button.clicked.connect(self.open_file)
+        self.open_button.hide()  # Initially hidden
+        self.layout.addWidget(self.open_button)
+        
+        self.edit_button = QPushButton("✏️")
+        self.edit_button.setProperty("emojiButton", True)  # Special property for styling
+        self.edit_button.setFixedSize(24, 24)
+        self.edit_button.setToolTip("Change file")
+        self.edit_button.clicked.connect(self.edit_file)
+        self.edit_button.hide()  # Initially hidden
+        self.layout.addWidget(self.edit_button)
+        
+        self.remove_button = QPushButton("🗑️")
+        self.remove_button.setProperty("emojiButton", True)  # Special property for styling
+        self.remove_button.setFixedSize(24, 24)
+        self.remove_button.setToolTip("Remove file")
+        self.remove_button.clicked.connect(self.remove_file)
+        self.remove_button.hide()  # Initially hidden
+        self.layout.addWidget(self.remove_button)
+    
+    def enterEvent(self, event):
+        """Show buttons when mouse enters the widget"""
+        self.open_button.show()
+        self.edit_button.show()
+        self.remove_button.show()
+        super().enterEvent(event)
+    
+    def leaveEvent(self, event):
+        """Hide buttons when mouse leaves the widget"""
+        self.open_button.hide()
+        self.edit_button.hide()
+        self.remove_button.hide()
+        super().leaveEvent(event)
+    
+    def open_file(self):
+        """Handle open button click"""
+        self.parent_widget.open_file(self.file_path)
+    
+    def edit_file(self):
+        """Handle edit button click"""
+        self.parent_widget.edit_file(self.index)
+    
+    def remove_file(self):
+        """Handle remove button click"""
+        self.parent_widget.remove_file(self.index)
+
+class AnimatedLinkItemWidget(QWidget):
+    """Link item widget with fade animation on hover"""
+    
+    def __init__(self, index, link_id, url, label, parent_widget):
+        super().__init__()
+        self.index = index
+        self.link_id = link_id
+        self.url = url
+        self.label = label
+        self.parent_widget = parent_widget
+        
+        # Enable mouse tracking
+        self.setMouseTracking(True)
+        
+        # Create layout
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Link display label
+        self.link_label = QLabel(url)
+        self.link_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        
+        if label and label.strip():
+            self.link_label.setToolTip(f"{label}")
+        else:
+            self.link_label.setToolTip(url)
+            
+        self.layout.addWidget(self.link_label)
+        self.layout.addStretch()
+        
+        # Create buttons
+        self.edit_button = QPushButton("✏️")
+        self.edit_button.setFixedSize(12, 16)  # Smaller size
+        self.edit_button.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                border: 1px solid #cccccc;
+                border-radius: 3px;
+                font-size: 10px;
+                color: #333333;
+            }
+            QPushButton:hover {
+                background-color: #f0f0f0;
+                border-color: #999999;
+            }
+            QPushButton:pressed {
+                background-color: #e0e0e0;
+            }
+        """)
+        self.edit_button.setToolTip("Edit link")
+        self.edit_button.clicked.connect(self.edit_link)
+        self.layout.addWidget(self.edit_button)
+        
+        self.remove_button = QPushButton("🗑️")
+        self.remove_button.setFixedSize(12, 16)  # Smaller size
+        self.remove_button.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                border: 1px solid #cccccc;
+                border-radius: 3px;
+                font-size: 6px !important;
+                color: #333333;
+            }
+            QPushButton:hover {
+                background-color: #f0f0f0;
+                border-color: #999999;
+            }
+            QPushButton:pressed {
+                background-color: #e0e0e0;
+            }
+        """)
+        self.remove_button.setToolTip("Remove link")
+        self.remove_button.clicked.connect(self.remove_link)
+        self.layout.addWidget(self.remove_button)
+        
+        # Create fade animations
+        from PyQt6.QtCore import QPropertyAnimation, QEasingCurve
+        from PyQt6.QtWidgets import QGraphicsOpacityEffect
+        
+        # Opacity effects
+        self.edit_effect = QGraphicsOpacityEffect()
+        self.remove_effect = QGraphicsOpacityEffect()
+        self.edit_button.setGraphicsEffect(self.edit_effect)
+        self.remove_button.setGraphicsEffect(self.remove_effect)
+        
+        # Animations
+        self.edit_animation = QPropertyAnimation(self.edit_effect, b"opacity")
+        self.edit_animation.setDuration(200)  # 200ms animation
+        self.edit_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        
+        self.remove_animation = QPropertyAnimation(self.remove_effect, b"opacity")
+        self.remove_animation.setDuration(200)
+        self.remove_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        
+        # Start hidden
+        self.edit_effect.setOpacity(0)
+        self.remove_effect.setOpacity(0)
+    
+    def enterEvent(self, event):
+        """Fade in buttons when mouse enters"""
+        self.edit_animation.setStartValue(0)
+        self.edit_animation.setEndValue(1)
+        self.edit_animation.start()
+        
+        self.remove_animation.setStartValue(0)
+        self.remove_animation.setEndValue(1)
+        self.remove_animation.start()
+        
+        super().enterEvent(event)
+    
+    def leaveEvent(self, event):
+        """Fade out buttons when mouse leaves"""
+        self.edit_animation.setStartValue(1)
+        self.edit_animation.setEndValue(0)
+        self.edit_animation.start()
+        
+        self.remove_animation.setStartValue(1)
+        self.remove_animation.setEndValue(0)
+        self.remove_animation.start()
+        
+        super().leaveEvent(event)
+    
+    def edit_link(self):
+        self.parent_widget.edit_link(self.index)
+    
+    def remove_link(self):
+        self.parent_widget.remove_link(self.index)
