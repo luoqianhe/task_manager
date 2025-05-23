@@ -154,17 +154,25 @@ class AddTaskDialog(QDialog):
         
         form_layout = QFormLayout()
         form_layout.setSpacing(10)
+        # Set the form layout to expand horizontally
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         
         # Title
         self.title_input = QLineEdit()
         self.title_input.setFixedHeight(30)
         self.title_input.setMinimumWidth(400)  # Make title wider
+        # Set title to expand horizontally too
+        from PyQt6.QtWidgets import QSizePolicy
+        self.title_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         form_layout.addRow("Title:", self.title_input)
         
         # Description
         self.description_input = QTextEdit()
         self.description_input.setMinimumHeight(80)
         self.description_input.setMinimumWidth(400)  # Make description wider
+        # Set size policy to expand horizontally with window
+        from PyQt6.QtWidgets import QSizePolicy
+        self.description_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         form_layout.addRow("Description:", self.description_input)
         
         # Parent Task
@@ -181,10 +189,14 @@ class AddTaskDialog(QDialog):
         # Left column: Status and Priority
         left_column = QFormLayout()
         left_column.setSpacing(10)
+        # Set field growth policy to allow fields to grow
+        left_column.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         
         # Status
         self.status_combo = QComboBox()
         self.status_combo.setFixedHeight(30)
+        # Load statuses and auto-size immediately after creation
+        self.load_statuses()
         left_column.addRow("Status:", self.status_combo)
         
         # Priority
@@ -196,6 +208,8 @@ class AddTaskDialog(QDialog):
         # Right column: Category and Due Date
         right_column = QFormLayout()
         right_column.setSpacing(10)
+        # Set field growth policy to allow fields to grow
+        right_column.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         
         # Category
         self.category_combo = QComboBox()
@@ -241,10 +255,10 @@ class AddTaskDialog(QDialog):
         # Widget containers
         widgets_layout = QHBoxLayout()
         
-        # Links widget - using existing LinkListWidget
+        # Links widget - using existing LinkListWidget (now without internal button)
         self.links_widget = LinkListWidget(self)
         
-        # Files widget - using existing FileListWidget
+        # Files widget - using existing FileListWidget (now without internal button)
         self.files_widget = FileListWidget(self)
         
         # Add both widgets to horizontal layout
@@ -254,10 +268,32 @@ class AddTaskDialog(QDialog):
         # Add widgets layout to attachments layout
         attachments_layout.addLayout(widgets_layout)
         
+        # Add left-aligned buttons for Links and Files (matching Save/Cancel style)
+        buttons_container = QHBoxLayout()
+        
+        # Add Link button
+        add_link_button = QPushButton("Add Link")
+        add_link_button.setFixedWidth(120)
+        add_link_button.setFixedHeight(32)
+        add_link_button.setIcon(QIcon.fromTheme("list-add"))
+        add_link_button.clicked.connect(self.links_widget.add_link)
+        buttons_container.addWidget(add_link_button)
+        
+        # Add File button
+        add_file_button = QPushButton("Add File")
+        add_file_button.setFixedWidth(120)
+        add_file_button.setFixedHeight(32)
+        add_file_button.setIcon(QIcon.fromTheme("list-add"))
+        add_file_button.clicked.connect(self.files_widget.add_file)
+        buttons_container.addWidget(add_file_button)
+        
+        # Add buttons container to attachments layout
+        attachments_layout.addLayout(buttons_container)
+        
         # Add attachments layout to main layout
         layout.addLayout(attachments_layout)
         
-        # Buttons
+        # Dialog control buttons (Save/Cancel)
         button_layout = QHBoxLayout()
         save_btn = QPushButton("Save")
         save_btn.setFixedHeight(30)
@@ -280,10 +316,12 @@ class AddTaskDialog(QDialog):
         self.setTabOrder(self.status_combo, self.priority_combo)
         self.setTabOrder(self.priority_combo, self.category_combo)
         self.setTabOrder(self.category_combo, self.due_date_edit)
-        self.setTabOrder(self.due_date_edit, save_btn)
+        self.setTabOrder(self.due_date_edit, add_link_button)
+        self.setTabOrder(add_link_button, add_file_button)
+        self.setTabOrder(add_file_button, save_btn)
         self.setTabOrder(save_btn, cancel_btn)
         debug.debug("AddTaskDialog UI setup complete")
-    
+        
     @debug_method
     def add_link(self, check = False):
         """Add a new link to the list"""
@@ -436,34 +474,43 @@ class EditTaskDialog(QDialog):
         self.setup_ui()
         # Apply OS-specific styling
         self.apply_os_specific_adjustments()
-        self.load_statuses()
+        # self.load_statuses()
         debug.debug("EditTaskDialog initialization complete")
         
     @debug_method
     def setup_ui(self):
         debug.debug("Setting up EditTaskDialog UI")
+        # Import QSizePolicy at the top for use throughout the method
+        from PyQt6.QtWidgets import QSizePolicy
+        
         layout = QVBoxLayout(self)
         
         form_layout = QFormLayout()
         form_layout.setSpacing(10)
+        # Set the form layout to expand horizontally
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         
         # Title
-        self.title_input = QLineEdit(self.task_data['title'])
+        self.title_input = QLineEdit(self.task_data['title'])  # Load existing title
         self.title_input.setFixedHeight(30)
         self.title_input.setMinimumWidth(400)  # Make title wider
+        # Set title to expand horizontally too
+        self.title_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         form_layout.addRow("Title:", self.title_input)
         
         # Description
         self.description_input = QTextEdit()
         self.description_input.setMinimumHeight(80)
         self.description_input.setMinimumWidth(400)  # Make description wider
-        self.description_input.setText(self.task_data['description'] or "")
+        # Set size policy to expand horizontally with window
+        self.description_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.description_input.setText(self.task_data['description'] or "")  # Load existing description
         form_layout.addRow("Description:", self.description_input)
         
         # Parent Task
         self.parent_combo = QComboBox()
         self.parent_combo.setFixedHeight(30)
-        self.load_possible_parents()
+        self.load_possible_parents()  # This will set current parent
         form_layout.addRow("Parent Task:", self.parent_combo)
         
         layout.addLayout(form_layout)
@@ -474,27 +521,32 @@ class EditTaskDialog(QDialog):
         # Left column: Status and Priority
         left_column = QFormLayout()
         left_column.setSpacing(10)
+        # Set field growth policy to allow fields to grow
+        left_column.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         
         # Status
         self.status_combo = QComboBox()
         self.status_combo.setFixedHeight(30)
-        self.status_combo.setCurrentText(self.task_data['status'] or "Not Started")
+        # Load statuses and auto-size immediately after creation
+        self.load_statuses()  # This will set current status
         left_column.addRow("Status:", self.status_combo)
         
         # Priority
         self.priority_combo = QComboBox()
         self.priority_combo.setFixedHeight(30)
-        self.load_priorities()
+        self.load_priorities()  # This will set current priority
         left_column.addRow("Priority:", self.priority_combo)
         
         # Right column: Category and Due Date
         right_column = QFormLayout()
         right_column.setSpacing(10)
+        # Set field growth policy to allow fields to grow
+        right_column.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         
         # Category
         self.category_combo = QComboBox()
         self.category_combo.setFixedHeight(30)
-        self.load_categories()
+        self.load_categories()  # This will set current category
         right_column.addRow("Category:", self.category_combo)
         
         # Due Date
@@ -548,11 +600,11 @@ class EditTaskDialog(QDialog):
         # Widget containers
         widgets_layout = QHBoxLayout()
         
-        # Links widget - using existing LinkListWidget
+        # Links widget - using existing LinkListWidget (now without internal button)
         self.links_widget = LinkListWidget(self)
         self.load_links()  # Load existing links
         
-        # Files widget - using existing FileListWidget
+        # Files widget - using existing FileListWidget (now without internal button)
         self.files_widget = FileListWidget(self)
         self.load_files()  # Load existing files
         
@@ -563,10 +615,32 @@ class EditTaskDialog(QDialog):
         # Add widgets layout to attachments layout
         attachments_layout.addLayout(widgets_layout)
         
+        # Add left-aligned buttons for Links and Files (matching Save/Cancel style)
+        buttons_container = QHBoxLayout()
+        
+        # Add Link button
+        add_link_button = QPushButton("Add Link")
+        add_link_button.setFixedWidth(120)
+        add_link_button.setFixedHeight(32)
+        add_link_button.setIcon(QIcon.fromTheme("list-add"))
+        add_link_button.clicked.connect(self.links_widget.add_link)
+        buttons_container.addWidget(add_link_button)
+        
+        # Add File button
+        add_file_button = QPushButton("Add File")
+        add_file_button.setFixedWidth(120)
+        add_file_button.setFixedHeight(32)
+        add_file_button.setIcon(QIcon.fromTheme("list-add"))
+        add_file_button.clicked.connect(self.files_widget.add_file)
+        buttons_container.addWidget(add_file_button)
+        
+        # Add buttons container to attachments layout
+        attachments_layout.addLayout(buttons_container)
+        
         # Add attachments layout to main layout
         layout.addLayout(attachments_layout)
         
-        # Buttons
+        # Dialog control buttons (Save/Cancel)
         button_layout = QHBoxLayout()
         save_btn = QPushButton("Save")
         save_btn.setFixedHeight(30)
@@ -589,10 +663,12 @@ class EditTaskDialog(QDialog):
         self.setTabOrder(self.status_combo, self.priority_combo)
         self.setTabOrder(self.priority_combo, self.category_combo)
         self.setTabOrder(self.category_combo, self.due_date_edit)
-        self.setTabOrder(self.due_date_edit, save_btn)
+        self.setTabOrder(self.due_date_edit, add_link_button)
+        self.setTabOrder(add_link_button, add_file_button)
+        self.setTabOrder(add_file_button, save_btn)
         self.setTabOrder(save_btn, cancel_btn)
-        debug.debug("EditTaskDialog UI setup complete")
-
+        debug.debug("EditTaskDialog UI setup complete")           
+    
     def get_data(self):
         return self.data
 
@@ -1253,20 +1329,6 @@ class LinkListWidget(QWidget):
         # Add scroll area to main layout
         layout.addWidget(scroll_area)
         
-        # Add link button with centering
-        button_container = QHBoxLayout()  # Create a horizontal layout for the button
-        button_container.addStretch()     # Add stretch before the button
-        
-        add_link_button = QPushButton("Add Link")
-        add_link_button.setFixedWidth(120)  # Set fixed width to match other buttons (in style methods)
-        add_link_button.setFixedHeight(32)  # Set fixed height to match other buttons (in style methods)
-        add_link_button.setIcon(QIcon.fromTheme("list-add"))
-        add_link_button.clicked.connect(self.add_link)
-        
-        button_container.addWidget(add_link_button)  # Add button to container
-        button_container.addStretch()     # Add stretch after the button
-        
-        layout.addLayout(button_container)  # Add container to main layout
         debug.debug("LinkListWidget UI setup complete")
     
     @debug_method
@@ -1466,20 +1528,6 @@ class FileListWidget(QWidget):
         # Add scroll area to main layout
         layout.addWidget(scroll_area)
         
-        # Add file button with centering
-        button_container = QHBoxLayout()  # Create a horizontal layout for the button
-        button_container.addStretch()     # Add stretch before the button
-        
-        add_file_button = QPushButton("Add File")
-        add_file_button.setFixedWidth(120)  # Set fixed width to match other buttons
-        add_file_button.setFixedHeight(32)  # Set fixed height to match other buttons
-        add_file_button.setIcon(QIcon.fromTheme("list-add"))
-        add_file_button.clicked.connect(self.add_file)
-        
-        button_container.addWidget(add_file_button)  # Add button to container
-        button_container.addStretch()     # Add stretch after the button
-        
-        layout.addLayout(button_container)  # Add container to main layout
         debug.debug("FileListWidget UI setup complete")
     
     @debug_method
