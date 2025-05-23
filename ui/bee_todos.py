@@ -482,18 +482,39 @@ class BeeToDoWidget(QWidget):
             todo_ids = [todo.get('id') for todo in selected_todos]
             debug.debug(f"To-do IDs to delete: {todo_ids}")
             
-            # Show progress dialog
-            progress_dialog = QMessageBox(self)
-            progress_dialog.setWindowTitle("Deleting To-Dos")
-            progress_dialog.setText(f"Deleting {len(todo_ids)} to-do items...")
-            progress_dialog.setStandardButtons(QMessageBox.StandardButton.NoButton)
-            progress_dialog.show()
+            # Create a better progress dialog with Cancel button
+            from PyQt6.QtWidgets import QProgressDialog
+            from PyQt6.QtCore import QTimer
+            
+            self.progress_dialog = QProgressDialog(
+                f"Deleting {len(todo_ids)} to-do items...", 
+                "Cancel", 
+                0, 
+                len(todo_ids), 
+                self
+            )
+            self.progress_dialog.setWindowTitle("Deleting To-Dos")
+            self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+            self.progress_dialog.setMinimumDuration(0)  # Show immediately
+            self.progress_dialog.setValue(0)
+            
+            # Add a timeout timer as safety measure
+            self.timeout_timer = QTimer()
+            self.timeout_timer.timeout.connect(self.on_delete_timeout)
+            self.timeout_timer.setSingleShot(True)
+            self.timeout_timer.start(30000)  # 30 second timeout
+            
+            # Handle cancel button
+            self.progress_dialog.canceled.connect(self.on_delete_canceled)
+            
+            # Show the progress dialog
+            self.progress_dialog.show()
             
             # Create worker to delete todos in background
             debug.debug("Creating worker to delete to-dos in background")
             worker = Worker(self.bee_manager.delete_multiple_todos, todo_ids)
-            worker.signals.finished.connect(lambda results: self.on_delete_completed(results, progress_dialog))
-            worker.signals.error.connect(lambda error: self.on_delete_error(error, progress_dialog))
+            worker.signals.finished.connect(lambda results: self.on_delete_completed(results))
+            worker.signals.error.connect(lambda error: self.on_delete_error(error))
             
             # Execute the worker
             debug.debug("Starting worker to delete to-dos")
@@ -502,11 +523,20 @@ class BeeToDoWidget(QWidget):
             debug.debug("User canceled deletion")
 
     @debug_method
-    def on_delete_completed(self, results, progress_dialog):
+    def on_delete_completed(self, results):
         """Handle completion of to-do deletion"""
         debug.debug(f"Deletion completed, results: {results}")
+        
+        # Stop timeout timer
+        if hasattr(self, 'timeout_timer'):
+            self.timeout_timer.stop()
+        
         # Close progress dialog
-        progress_dialog.close()
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            # Disconnect the canceled signal to prevent false cancellation message
+            self.progress_dialog.canceled.disconnect()
+            self.progress_dialog.close()
+            self.progress_dialog = None
         
         # Count successes and failures
         successes = sum(1 for _, success in results if success)
@@ -535,11 +565,20 @@ class BeeToDoWidget(QWidget):
         self.load_todos()
 
     @debug_method
-    def on_delete_error(self, error, progress_dialog):
+    def on_delete_error(self, error):
         """Handle error during to-do deletion"""
         debug.error(f"Deletion error: {error}")
+        
+        # Stop timeout timer
+        if hasattr(self, 'timeout_timer'):
+            self.timeout_timer.stop()
+        
         # Close progress dialog
-        progress_dialog.close()
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            # Disconnect the canceled signal to prevent false cancellation message
+            self.progress_dialog.canceled.disconnect()
+            self.progress_dialog.close()
+            self.progress_dialog = None
         
         # Show error message
         QMessageBox.critical(
@@ -548,6 +587,50 @@ class BeeToDoWidget(QWidget):
             f"An error occurred while deleting to-do items: {error}"
         )
 
+    @debug_method
+    def on_delete_canceled(self):
+        """Handle user canceling the deletion"""
+        debug.debug("User canceled deletion operation")
+        
+        # Stop timeout timer
+        if hasattr(self, 'timeout_timer'):
+            self.timeout_timer.stop()
+        
+        # Close progress dialog
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            # Disconnect the canceled signal to prevent false cancellation message
+            self.progress_dialog.canceled.disconnect()
+            self.progress_dialog.close()
+            self.progress_dialog = None
+        
+        # Show cancellation message
+        QMessageBox.information(
+            self,
+            "Deletion Canceled",
+            "Deletion operation was canceled by user."
+        )
+
+    @debug_method
+    def on_delete_timeout(self):
+        """Handle deletion timeout"""
+        debug.warning("Deletion operation timed out")
+        
+        # Close progress dialog
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog = None
+        
+        # Show timeout message
+        QMessageBox.warning(
+            self,
+            "Deletion Timeout",
+            "The deletion operation took too long and was canceled.\n"
+            "Some items may have been deleted. Please refresh to see the current state."
+        )
+        
+        # Refresh to see current state
+        self.load_todos()    
+    
     @debug_method
     def get_categories(self):
         """Get list of categories from database"""

@@ -3,7 +3,7 @@
 # Import the debug utilities
 from utils.debug_logger import get_debug_logger
 from utils.debug_decorator import debug_method
-from os_style_manager import OSStyleManager
+from ui.os_style_manager import OSStyleManager
 
 # Initialize the debugger
 debug = get_debug_logger()

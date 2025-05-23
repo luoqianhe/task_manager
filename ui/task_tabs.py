@@ -799,7 +799,7 @@ class TaskTabWidget(QTabWidget):
                 self.main_window.settings.set_setting(tab_key, expanded_items)
                 debug.debug(f"Saved {len(expanded_items) if expanded_items else 0} expanded states with key: {tab_key}")
         
-        # Store current tab index for next time
+        # Store current tab index for reference
         self.previous_tab_index = index
         
         # Get the newly selected tab
@@ -810,8 +810,53 @@ class TaskTabWidget(QTabWidget):
         # Special handling for Bee To Dos tab
         if index == 2:  # Bee To Dos tab
             debug.debug("Bee To Dos tab selected, checking API key")
-            # [existing Bee To Dos code]
             
+            # Get the bee_todos_widget from the tab
+            if hasattr(tab, 'bee_todos_widget'):
+                bee_todos_widget = tab.bee_todos_widget
+                debug.debug("Found bee_todos_widget")
+                
+                # Check if we have an API key
+                api_key = self.main_window.settings.get_setting("bee_api_key", "")
+                if not api_key:
+                    debug.debug("No Bee API key found, showing API key dialog")
+                    # No API key, show dialog
+                    from ui.bee_api_dialog import BeeApiKeyDialog
+                    dialog = BeeApiKeyDialog(self.main_window)
+                    
+                    if dialog.exec():
+                        debug.debug("User provided API key")
+                        # User provided an API key
+                        api_key = dialog.get_api_key()
+                        key_label = dialog.get_key_label()
+                        
+                        if api_key:
+                            debug.debug("Saving API key to settings")
+                            # Save to settings
+                            self.main_window.settings.set_setting("bee_api_key", api_key)
+                            if key_label:
+                                self.main_window.settings.set_setting("bee_api_key_label", key_label)
+                            
+                            # Initialize Bee To Dos with new key
+                            debug.debug("Initializing Bee To Dos with new API key")
+                            bee_todos_widget.initialize_with_api_key(api_key)
+                        else:
+                            debug.debug("No API key provided, switching back to previous tab")
+                            # No API key provided, switch back to previous tab
+                            if hasattr(self, 'previous_tab_index'):
+                                self.setCurrentIndex(self.previous_tab_index)
+                    else:
+                        debug.debug("User canceled API key dialog, switching back to previous tab")
+                        # User cancelled, switch back to previous tab
+                        if hasattr(self, 'previous_tab_index'):
+                            self.setCurrentIndex(self.previous_tab_index)
+                else:
+                    debug.debug("Using existing Bee API key")
+                    # API key exists, make sure Bee To Dos widget is initialized
+                    bee_todos_widget.initialize_with_api_key(api_key)
+            else:
+                debug.debug("ERROR: bee_todos_widget not found in tab")
+                
         elif hasattr(tab, 'task_tree'):
             # Regular task tab - load tasks first
             debug.debug(f"Regular task tab selected, loading tasks for tab: {tab_name}")
