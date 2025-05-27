@@ -289,7 +289,7 @@ class CombinedDisplaySettingsWidget(QWidget):
 
     @debug_method
     def _setup_color_settings(self, parent_layout):
-        """Set up the color settings section"""
+        """Set up the color settings section with separate groups"""
         debug.debug("Setting up color settings section")
         
         # Create all color buttons and hex fields FIRST (including Files/Links/Due Date)
@@ -345,20 +345,14 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.links_bg_color_btn.clicked.connect(lambda: self.pick_color_and_update_preview("links_background"))
         self.due_date_bg_color_btn.clicked.connect(lambda: self.pick_color_and_update_preview("due_date_background"))
 
-
-        
         # NEW: Connect signals for Files, Links, and Due Date background colors
         self.files_bg_color_hex.textChanged.connect(lambda: self.update_color_and_preview("files_background"))
         self.links_bg_color_hex.textChanged.connect(lambda: self.update_color_and_preview("links_background"))
         self.due_date_bg_color_hex.textChanged.connect(lambda: self.update_color_and_preview("due_date_background"))
 
-        
-        # Create the group with updated title
-        colors_group = QGroupBox("Colors")
-        colors_layout = QVBoxLayout()
-        
-        # First row: Text Colors
-        text_colors_row = QHBoxLayout()
+        # ===== FIRST GROUP: Text Colors =====
+        text_colors_group = QGroupBox("Text Colors")
+        text_colors_layout = QHBoxLayout()
         
         # Title color layout
         title_layout = QVBoxLayout()
@@ -396,21 +390,17 @@ class CombinedDisplaySettingsWidget(QWidget):
         panel_color_row.addStretch()
         panel_layout.addLayout(panel_color_row)
         
-        text_colors_row.addLayout(title_layout)
-        text_colors_row.addLayout(desc_layout)
-        text_colors_row.addLayout(due_layout)
-        text_colors_row.addLayout(panel_layout)
+        text_colors_layout.addLayout(title_layout)
+        text_colors_layout.addLayout(desc_layout)
+        text_colors_layout.addLayout(due_layout)
+        text_colors_layout.addLayout(panel_layout)
         
-        # Add some spacing between text and background colors
-        colors_layout.addLayout(text_colors_row)
-        colors_layout.addSpacing(15)  # Visual separator
+        text_colors_group.setLayout(text_colors_layout)
+        parent_layout.addWidget(text_colors_group)
         
-        # Second row: Background Colors with subtitle
-        bg_colors_label = QLabel("Pill Background Colors:")
-        bg_colors_label.setStyleSheet("font-weight: bold; color: #666666; font-size: 12px;")
-        colors_layout.addWidget(bg_colors_label)
-        
-        bg_colors_row = QHBoxLayout()
+        # ===== SECOND GROUP: Pill Background Colors =====
+        pill_bg_colors_group = QGroupBox("Pill Background Colors")
+        pill_bg_colors_layout = QHBoxLayout()
         
         # Files background color layout
         files_bg_layout = QVBoxLayout()
@@ -440,18 +430,16 @@ class CombinedDisplaySettingsWidget(QWidget):
         due_date_bg_layout.addLayout(due_date_bg_color_row)
         
         # Add background color layouts to row
-        bg_colors_row.addLayout(files_bg_layout)
-        bg_colors_row.addLayout(links_bg_layout)
-        bg_colors_row.addLayout(due_date_bg_layout)  # Now this variable is defined!
-        bg_colors_row.addStretch()  # Push to left
+        pill_bg_colors_layout.addLayout(files_bg_layout)
+        pill_bg_colors_layout.addLayout(links_bg_layout)
+        pill_bg_colors_layout.addLayout(due_date_bg_layout)
+        pill_bg_colors_layout.addStretch()  # Push to left
         
-        # Add background colors row to main layout
-        colors_layout.addLayout(bg_colors_row)
+        pill_bg_colors_group.setLayout(pill_bg_colors_layout)
+        parent_layout.addWidget(pill_bg_colors_group)
         
-        colors_group.setLayout(colors_layout)
-        parent_layout.addWidget(colors_group)
-        debug.debug("Color settings section setup complete")
-        
+        debug.debug("Color settings section setup complete")    
+    
     @debug_method
     def _create_color_picker_compact(self, label_text, color_type, default_color):
         """Helper method to create a compact color picker column"""
@@ -546,10 +534,10 @@ class CombinedDisplaySettingsWidget(QWidget):
 
     @debug_method
     def _setup_panel_layout(self, parent_layout):
-        """Set up the panel layout section"""
+        """Set up the panel layout section with auto-sized dropdowns like the task dialogs"""
         debug.debug("Setting up panel layout section")
         panel_layout_group = QGroupBox("Task Pill Layout")
-        panel_layout = QHBoxLayout()
+        main_layout = QHBoxLayout()
         
         # Create all combo boxes first
         self.top_left_combo = QComboBox()
@@ -566,6 +554,9 @@ class CombinedDisplaySettingsWidget(QWidget):
         for combo in [self.top_left_combo, self.bottom_left_combo, 
                     self.top_right_combo, self.bottom_right_combo]:
             combo.addItems(panel_options)
+            # Set auto-sizing policy exactly like in the dialogs
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+            combo.setFixedHeight(30)  # Match dialog height
         
         # Connect combo box signals to update preview directly
         self.top_left_combo.currentTextChanged.connect(self.force_preview_update)
@@ -573,60 +564,33 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.top_right_combo.currentTextChanged.connect(self.force_preview_update)
         self.bottom_right_combo.currentTextChanged.connect(self.force_preview_update)
             
-        # Left Panel Configuration
-        left_panel_layout = QVBoxLayout()
+        # Left Panel Configuration using QFormLayout like the dialogs
+        left_panel_layout = QFormLayout()
+        left_panel_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        left_panel_layout.addRow("Top Left:", self.top_left_combo)
+        left_panel_layout.addRow("Bottom Left:", self.bottom_left_combo)
         
-        # Top Left Section - left justified
-        top_left_layout = QHBoxLayout()
-        top_left_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        top_left_label = QLabel("Top Left:")
-        top_left_label.setMinimumWidth(50)
-        top_left_layout.addWidget(top_left_label)
-        top_left_layout.addWidget(self.top_left_combo)
-        top_left_layout.addStretch()
-        left_panel_layout.addLayout(top_left_layout)
+        # Right Panel Configuration using QFormLayout like the dialogs
+        right_panel_layout = QFormLayout()
+        right_panel_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        right_panel_layout.addRow("Top Right:", self.top_right_combo)
+        right_panel_layout.addRow("Bottom Right:", self.bottom_right_combo)
         
-        # Bottom Left Section - left justified
-        bottom_left_layout = QHBoxLayout()
-        bottom_left_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        bottom_left_label = QLabel("Bottom Left:")
-        bottom_left_label.setMinimumWidth(50)
-        bottom_left_layout.addWidget(bottom_left_label)
-        bottom_left_layout.addWidget(self.bottom_left_combo)
-        bottom_left_layout.addStretch()
-        left_panel_layout.addLayout(bottom_left_layout)
+        # Create containers for the form layouts
+        left_widget = QWidget()
+        left_widget.setLayout(left_panel_layout)
         
-        # Right Panel Configuration
-        right_panel_layout = QVBoxLayout()
-
-        # Top Right Section - left justified
-        top_right_layout = QHBoxLayout()
-        top_right_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        top_right_label = QLabel("Top Right:")
-        top_right_label.setMinimumWidth(50)
-        top_right_layout.addWidget(top_right_label)
-        top_right_layout.addWidget(self.top_right_combo)
-        top_right_layout.addStretch()
-        right_panel_layout.addLayout(top_right_layout)
+        right_widget = QWidget()
+        right_widget.setLayout(right_panel_layout)
         
-        # Bottom Right Section - left justified
-        bottom_right_layout = QHBoxLayout()
-        bottom_right_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        bottom_right_label = QLabel("Bottom Right:")
-        bottom_right_label.setMinimumWidth(50)
-        bottom_right_layout.addWidget(bottom_right_label)
-        bottom_right_layout.addWidget(self.bottom_right_combo)
-        bottom_right_layout.addStretch()
-        right_panel_layout.addLayout(bottom_right_layout)
+        # Add both panel configurations to the main layout
+        main_layout.addWidget(left_widget)
+        main_layout.addWidget(right_widget)
         
-        # Add both panel configurations to the layout
-        panel_layout.addLayout(left_panel_layout)
-        panel_layout.addLayout(right_panel_layout)
-        
-        panel_layout_group.setLayout(panel_layout)
+        panel_layout_group.setLayout(main_layout)
         parent_layout.addWidget(panel_layout_group)
         debug.debug("Panel layout section setup complete")
-
+    
     @debug_method
     def _populate_panel_dropdowns(self):
         """Populate the panel dropdowns with content options"""

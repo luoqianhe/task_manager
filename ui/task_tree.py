@@ -2085,7 +2085,10 @@ class TaskTreeWidget(QTreeWidget):
 
     @debug_method
     def load_tasks_tree(self):
-        debug.debug("Loading tasks tree")
+        """Load all tasks without filtering (base implementation)"""
+        debug.debug("Loading all tasks (base implementation)")
+        start_time = time.time()
+        
         try:
             # Save the expanded states before clearing
             expanded_items = self._save_expanded_states()
@@ -2093,20 +2096,208 @@ class TaskTreeWidget(QTreeWidget):
             
             self.clear()
             
-            # Import database manager and load tasks
-            # [existing code]
+            # Import database manager
+            from database.memory_db_manager import get_memory_db_manager
+            db_manager = get_memory_db_manager()
+            
+            # Check if completed_at column exists
+            debug.debug("Checking database schema for completed_at column")
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA table_info(tasks)")
+                columns = [info[1] for info in cursor.fetchall()]
+                has_completed_at = 'completed_at' in columns
+                debug.debug(f"Has completed_at column: {has_completed_at}")
+            
+            # Create query to load ALL tasks (no filtering)
+            completed_at_field = ", t.completed_at" if has_completed_at else ""
+            debug.debug(f"Completed_at field in query: {completed_at_field}")
+            
+            query = f"""
+                SELECT t.id, t.title, t.description, '', t.status, t.priority, 
+                    t.due_date, c.name, t.is_compact, t.parent_id{completed_at_field}
+                FROM tasks t
+                LEFT JOIN categories c ON t.category_id = c.id
+                ORDER BY t.parent_id NULLS FIRST, t.display_order
+                """
+            debug.debug("Executing query to load all tasks")
+            tasks = db_manager.execute_query(query)
+            debug.debug(f"Query returned {len(tasks)} total tasks")
+            
+            # Process tasks with priority headers (like Current Tasks tab)
+            debug.debug("Processing all tasks with priority headers")
+            self._process_all_tasks_with_priority_headers(tasks)
             
             # Restore expanded states
             self._restore_expanded_states(expanded_items)
             debug.debug(f"Restored expanded states for {len(expanded_items)} items")
+            
+            end_time = time.time()
+            debug.debug(f"Load tasks tree completed in {end_time - start_time:.3f} seconds")
             
         except Exception as e:
             debug.error(f"Error loading tasks tree: {e}")
             import traceback
             traceback.print_exc()
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(None, "Error", f"Failed to load tasks: {str(e)}")    
-    
+            QMessageBox.warning(None, "Error", f"Failed to load tasks: {str(e)}")
+
+    @debug_method
+    def _process_all_tasks_with_priority_headers(self, tasks):
+        """Process all tasks and organize them under priority headers"""
+        start_time = time.time()
+        try:
+            debug.debug(f"Processing {len(tasks)} tasks with priority headers")
+            
+            # Import database manager
+            from database.memory_db_manager import get_memory_db_manager
+            db_manager = get_memory_db_manager()
+            
+            # Get priority order map and colors
+            debug.debug("Getting priority order map and colors")
+            priority_order = {}
+            priority_colors = {}
+            result = db_manager.execute_query(
+                "SELECT name, display_order, color FROM priorities ORDER BY display_order"
+            )
+            for name, order, color in result:
+                priority_order[name] = order
+                priority_colors[name] = color
+            debug.debug(f"Found {len(priority_colors)} priorities")
+            
+            # Create headers for each priority
+            debug.debug("Creating priority headers")
+            priority_headers = {}
+            for priority, color in priority_colors.items():
+                debug.debug(f"Creating header for priority: {priority}, color: {color}")
+                header_item = PriorityHeaderItem(priority, color)
+                self.addTopLevelItem(header_item)
+                priority_headers[priority] = header_item
+            
+            # Ensure "Unprioritized" header exists if not in database
+            if "Unprioritized" not in priority_headers:
+                debug.debug("Creating Unprioritized header (not found in database)")
+                unprioritized_color = "#AAAAAA"  # Medium gray
+                unprioritized_header = PriorityHeaderItem("Unprioritized", unprioritized_color)
+                self.addTopLevelItem(unprioritized_header)
+                priority_headers["Unprioritized"] = unprioritized_header
+            
+            # Restore expanded state from settings
+            debug.debug("Restoring expanded states from settings")
+            settings = self.get_settings_manager()
+            all_priorities = list(priority_headers.keys())
+            expanded_priorities = settings.get_setting("expanded_priorities", all_priorities)
+            debug.debug(f"Expanded priorities from settings: {expanded_priorities}")
+            
+            for priority, header_item in priority_headers.items():
+                # Get the color - either from priority_colors or default to gray for "Unprioritized"
+                color = priority_colors.get(priority, "#AAAAAA")
+                
+                if priority in expanded_priorities:
+                    debug.debug(f"Expanding header for priority: {priority}")
+                    self.expandItem(header_item)
+                    header_item.setData(0, Qt.ItemDataRole.UserRole, {
+                        'is_priority_header': True,
+                        'priority': priority,
+                        'color': color,
+                        'expanded': True
+                    })
+                else:
+                    debug.debug(f"Collapsing header for priority: {priority}")
+                    self.collapseItem(header_item)
+                    header_item.setData(0, Qt.ItemDataRole.UserRole, {
+                        'is_priority_header': True,
+                        'priority': priority,
+                        'color': color,
+                        'expanded': False
+                    })
+            
+            items = {}
+            
+            # First pass: create all items with proper links and files
+            debug.debug("First pass: creating all items with links and files")
+            for i, row in enumerate(tasks):
+                if i % 20 == 0:  # Log progress every 20 items
+                    debug.debug(f"Processing task {i+1}/{len(tasks)}")
+                
+                task_id = row[0]
+                
+                # Load links for this task
+                debug.debug(f"Loading links for task {task_id}")
+                task_links = []
+                try:
+                    task_links = db_manager.get_task_links(task_id)
+                    debug.debug(f"Found {len(task_links)} links for task {task_id}")
+                except Exception as e:
+                    debug.error(f"Error loading links for task {task_id}: {e}")
+                
+                # Load files for this task
+                debug.debug(f"Loading files for task {task_id}")
+                task_files = []
+                try:
+                    task_files = db_manager.get_task_files(task_id)
+                    debug.debug(f"Found {len(task_files)} files for task {task_id}")
+                except Exception as e:
+                    debug.error(f"Error loading files for task {task_id}: {e}")
+                
+                # Create the task item WITH links and files
+                debug.debug(f"Creating task item for ID: {task_id}")
+                item = self.add_task_item(
+                    row[0],      # task_id
+                    row[1],      # title
+                    row[2],      # description
+                    '',          # link (empty legacy field)
+                    row[4],      # status
+                    row[5],      # priority
+                    row[6],      # due_date
+                    row[7],      # category
+                    row[8],      # is_compact
+                    links=task_links,  # Pass links as named parameter
+                    files=task_files   # Pass files as named parameter
+                )
+                items[task_id] = item
+                
+                # Store parent info for second pass
+                parent_id = row[9]  # parent_id
+                debug.debug(f"Task {task_id} has parent_id: {parent_id}")
+                
+                # Process using priority headers logic
+                priority = row[5] or "Unprioritized"  # Default to Unprioritized if None
+                debug.debug(f"Task {task_id} has priority: {priority}")
+                
+                if parent_id is None:
+                    # This is a top-level task, add it to the priority header
+                    if priority in priority_headers:
+                        debug.debug(f"Adding task {task_id} to priority header: {priority}")
+                        priority_headers[priority].addChild(item)
+                    else:
+                        # If no matching header, use Unprioritized
+                        debug.debug(f"No header found for priority '{priority}', using Unprioritized for task {task_id}")
+                        priority_headers["Unprioritized"].addChild(item)
+                else:
+                    # This is a child task, will be handled in second pass
+                    debug.debug(f"Task {task_id} is a child task, will be handled in second pass")
+                    item.setData(0, Qt.ItemDataRole.UserRole + 1, parent_id)
+                            
+            # Second pass: handle parent-child relationships for non-top-level tasks
+            debug.debug("Second pass: handling parent-child relationships")
+            parent_child_count = 0
+            for task_id, item in items.items():
+                parent_id = item.data(0, Qt.ItemDataRole.UserRole + 1)
+                if parent_id is not None and parent_id in items:
+                    parent_item = items[parent_id]
+                    parent_item.addChild(item)
+                    parent_child_count += 1
+                    debug.debug(f"Added task {task_id} as child of {parent_id}")
+            
+            debug.debug(f"Processed {parent_child_count} parent-child relationships")
+            end_time = time.time()
+            debug.debug(f"Task processing completed in {end_time - start_time:.3f} seconds")
+        
+        except Exception as e:
+            debug.error(f"Error processing tasks with priority headers: {e}")
+            debug.error(traceback.format_exc())
+            
     def dragMoveEvent(self, event):
         """Handle drag move events and implement autoscroll"""
         debug.debug("Drag move event")
@@ -2324,6 +2515,7 @@ class TaskTreeWidget(QTreeWidget):
             debug.debug("Forcing viewport update")
             self.viewport().update()
 
+    @debug_method
     def show_context_menu(self, position):
         debug.debug("Showing context menu")
         item = self.itemAt(position)
@@ -2558,6 +2750,13 @@ class TaskTreeWidget(QTreeWidget):
             action = category_menu.addAction(category)
             category_actions[action] = category
         
+        # NEW: Add separator before expand/collapse options
+        menu.addSeparator()
+        
+        # NEW: Add Expand All and Collapse All options
+        expand_all_action = menu.addAction("Expand All")
+        collapse_all_action = menu.addAction("Collapse All")
+        
         # Execute menu and handle action
         debug.debug("Showing context menu")
         action = menu.exec(self.mapToGlobal(position))
@@ -2587,6 +2786,12 @@ class TaskTreeWidget(QTreeWidget):
                 self.change_status_with_timestamp(item, "Completed")
             else:
                 self.change_status(item, "Completed")
+        elif action == expand_all_action:
+            debug.debug("Expand all action selected")
+            self.expand_all_items()
+        elif action == collapse_all_action:
+            debug.debug("Collapse all action selected")
+            self.collapse_all_items()
         elif action in status_actions:
             new_status = status_actions[action]
             debug.debug(f"Status change selected: {new_status} for item: {item.text(0)}")
@@ -2604,7 +2809,7 @@ class TaskTreeWidget(QTreeWidget):
             self.change_category(item, new_category)
         else:
             debug.debug("No action selected or menu canceled")
-    
+
     @debug_method
     def create_child_task(self, parent_item):
         """Create a new task as a child of the selected task"""
@@ -3453,7 +3658,125 @@ class TaskTreeWidget(QTreeWidget):
         except Exception as e:
             debug.error(f"Error saving priority expanded states: {e}")
 
-   
+    @debug_method
+    def expand_all_items(self):
+        """Expand all items in the tree (priority headers and tasks with children)"""
+        debug.debug("Expanding all items")
+        try:
+            # Block signals to prevent multiple save operations
+            self.blockSignals(True)
+            
+            # Expand all top-level items and their children
+            expanded_count = 0
+            for i in range(self.topLevelItemCount()):
+                item = self.topLevelItem(i)
+                expanded_count += self._expand_item_recursively(item)
+            
+            # Save the expanded states
+            self._save_expanded_states()
+            
+            # Also save priority expanded states if applicable
+            if hasattr(self, '_save_priority_expanded_states'):
+                self._save_priority_expanded_states()
+            
+            # Restore signals
+            self.blockSignals(False)
+            
+            # Force viewport update
+            self.viewport().update()
+            
+            debug.debug(f"Expanded {expanded_count} items successfully")
+            
+        except Exception as e:
+            debug.error(f"Error expanding all items: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Ensure signals are restored even if there's an error
+            self.blockSignals(False)
+
+    @debug_method  
+    def collapse_all_items(self):
+        """Collapse all items in the tree (priority headers and tasks with children)"""
+        debug.debug("Collapsing all items")
+        try:
+            # Block signals to prevent multiple save operations
+            self.blockSignals(True)
+            
+            # Collapse all top-level items and their children
+            collapsed_count = 0
+            for i in range(self.topLevelItemCount()):
+                item = self.topLevelItem(i)
+                collapsed_count += self._collapse_item_recursively(item)
+            
+            # Save the expanded states (which should now be mostly empty)
+            self._save_expanded_states()
+            
+            # Also save priority expanded states if applicable
+            if hasattr(self, '_save_priority_expanded_states'):
+                self._save_priority_expanded_states()
+            
+            # Restore signals
+            self.blockSignals(False)
+            
+            # Force viewport update
+            self.viewport().update()
+            
+            debug.debug(f"Collapsed {collapsed_count} items successfully")
+            
+        except Exception as e:
+            debug.error(f"Error collapsing all items: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Ensure signals are restored even if there's an error
+            self.blockSignals(False)
+
+    @debug_method
+    def _expand_item_recursively(self, item):
+        """Recursively expand an item and all its children"""
+        expanded_count = 0
+        
+        if item.childCount() > 0:
+            # Expand this item
+            self.expandItem(item)
+            expanded_count += 1
+            
+            # Update the item's data to reflect expanded state
+            data = item.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(data, dict):
+                data['expanded'] = True
+                item.setData(0, Qt.ItemDataRole.UserRole, data)
+            
+            # Recursively expand all children
+            for i in range(item.childCount()):
+                child = item.child(i)
+                expanded_count += self._expand_item_recursively(child)
+        
+        return expanded_count
+
+    @debug_method
+    def _collapse_item_recursively(self, item):
+        """Recursively collapse an item and all its children"""
+        collapsed_count = 0
+        
+        if item.childCount() > 0:
+            # First collapse all children recursively
+            for i in range(item.childCount()):
+                child = item.child(i)
+                collapsed_count += self._collapse_item_recursively(child)
+            
+            # Then collapse this item
+            self.collapseItem(item)
+            collapsed_count += 1
+            
+            # Update the item's data to reflect collapsed state
+            data = item.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(data, dict):
+                data['expanded'] = False
+                item.setData(0, Qt.ItemDataRole.UserRole, data)
+        
+        return collapsed_count  
 class PriorityHeaderItem(QTreeWidgetItem):
     """Custom tree widget item for priority headers"""
     
