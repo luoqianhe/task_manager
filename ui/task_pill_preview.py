@@ -372,7 +372,24 @@ class TaskPillPreviewWidget(QWidget):
                 color_value = hex_field.text()
                 debug.debug(f"{color_type}_color: {color_value}")
                 settings.set_setting(f"{color_type}_color", color_value)
+
+        # Add Files and Links background colors
+        if hasattr(self.settings_widget, 'files_bg_color_hex'):
+            files_bg_color = self.settings_widget.files_bg_color_hex.text()
+            debug.debug(f"files_background_color: {files_bg_color}")
+            settings.set_setting("files_background_color", files_bg_color)
+
+        if hasattr(self.settings_widget, 'links_bg_color_hex'):
+            links_bg_color = self.settings_widget.links_bg_color_hex.text()
+            debug.debug(f"links_background_color: {links_bg_color}")
+            settings.set_setting("links_background_color", links_bg_color)
         
+        # add due date background colors
+        if hasattr(self.settings_widget, 'due_date_bg_color_hex'):
+            due_date_bg_color = self.settings_widget.due_date_bg_color_hex.text()
+            debug.debug(f"due_date_background_color: {due_date_bg_color}")
+            settings.set_setting("due_date_background_color", due_date_bg_color)
+       
         # Panel contents - get them from the settings widget, not directly
         left_contents = []
         right_contents = []

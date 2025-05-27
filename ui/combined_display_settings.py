@@ -292,7 +292,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         """Set up the color settings section"""
         debug.debug("Setting up color settings section")
         
-        # Create all color buttons and hex fields first
+        # Create all color buttons and hex fields FIRST (including Files/Links/Due Date)
         self.title_color_btn = QPushButton()
         self.title_color_hex = QLineEdit("#333333")
         self.desc_color_btn = QPushButton()
@@ -302,22 +302,35 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.left_panel_color_btn = QPushButton()
         self.left_panel_color_hex = QLineEdit("#FFFFFF")
         
-        # Configure buttons
+        # NEW: Add Files, Links, and Due Date background color controls
+        self.files_bg_color_btn = QPushButton()
+        self.files_bg_color_hex = QLineEdit("#E8F4FD")  # Light blue default
+        self.links_bg_color_btn = QPushButton()
+        self.links_bg_color_hex = QLineEdit("#FFF2E8")  # Light orange default
+        self.due_date_bg_color_btn = QPushButton()
+        self.due_date_bg_color_hex = QLineEdit("#E1F5FE")  # Light blue default
+        
+        # Configure all buttons with the colorPicker property
         for btn, color in [
             (self.title_color_btn, "#333333"),
             (self.desc_color_btn, "#666666"),
             (self.due_color_btn, "#888888"),
-            (self.left_panel_color_btn, "#FFFFFF")
+            (self.left_panel_color_btn, "#FFFFFF"),
+            (self.files_bg_color_btn, "#E8F4FD"),
+            (self.links_bg_color_btn, "#FFF2E8"),
+            (self.due_date_bg_color_btn, "#E1F5FE")
         ]:
-            btn.setFixedSize(30, 20)
-            btn.setStyleSheet(f"background-color: {color}; border: 1px solid #666666;")
+            btn.setProperty("colorPicker", True)
+            btn.setStyleSheet(f"background-color: {color};")
         
         # Configure hex fields
         for hex_field in [self.title_color_hex, self.desc_color_hex, 
-                        self.due_color_hex, self.left_panel_color_hex]:
+                        self.due_color_hex, self.left_panel_color_hex,
+                        self.files_bg_color_hex, self.links_bg_color_hex,
+                        self.due_date_bg_color_hex]:
             hex_field.setFixedWidth(80)
         
-        # Connect signals
+        # Connect signals for existing colors
         debug.debug("Connecting color buttons and hex fields signals")
         self.title_color_btn.clicked.connect(lambda: self.pick_color("title"))
         self.title_color_hex.textChanged.connect(lambda: self.update_color_from_hex("title"))
@@ -328,12 +341,24 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.left_panel_color_btn.clicked.connect(lambda: self.pick_color("left_panel"))
         self.left_panel_color_hex.textChanged.connect(lambda: self.update_color_from_hex("left_panel"))
         
-        # Now create the group and layout
-        colors_group = QGroupBox("Text Colors")
+        self.files_bg_color_btn.clicked.connect(lambda: self.pick_color_and_update_preview("files_background"))
+        self.links_bg_color_btn.clicked.connect(lambda: self.pick_color_and_update_preview("links_background"))
+        self.due_date_bg_color_btn.clicked.connect(lambda: self.pick_color_and_update_preview("due_date_background"))
+
+
+        
+        # NEW: Connect signals for Files, Links, and Due Date background colors
+        self.files_bg_color_hex.textChanged.connect(lambda: self.update_color_and_preview("files_background"))
+        self.links_bg_color_hex.textChanged.connect(lambda: self.update_color_and_preview("links_background"))
+        self.due_date_bg_color_hex.textChanged.connect(lambda: self.update_color_and_preview("due_date_background"))
+
+        
+        # Create the group with updated title
+        colors_group = QGroupBox("Colors")
         colors_layout = QVBoxLayout()
         
-        # First row: Title and Description
-        first_row = QHBoxLayout()
+        # First row: Text Colors
+        text_colors_row = QHBoxLayout()
         
         # Title color layout
         title_layout = QVBoxLayout()
@@ -353,9 +378,6 @@ class CombinedDisplaySettingsWidget(QWidget):
         desc_color_row.addStretch()
         desc_layout.addLayout(desc_color_row)
         
-        first_row.addLayout(title_layout)
-        first_row.addLayout(desc_layout)
-        
         # Due date color layout
         due_layout = QVBoxLayout()
         due_layout.addWidget(QLabel("Due Date:"))
@@ -374,11 +396,57 @@ class CombinedDisplaySettingsWidget(QWidget):
         panel_color_row.addStretch()
         panel_layout.addLayout(panel_color_row)
         
-        first_row.addLayout(panel_layout)
-        first_row.addLayout(due_layout)
+        text_colors_row.addLayout(title_layout)
+        text_colors_row.addLayout(desc_layout)
+        text_colors_row.addLayout(due_layout)
+        text_colors_row.addLayout(panel_layout)
         
-        # Add rows to main layout
-        colors_layout.addLayout(first_row)
+        # Add some spacing between text and background colors
+        colors_layout.addLayout(text_colors_row)
+        colors_layout.addSpacing(15)  # Visual separator
+        
+        # Second row: Background Colors with subtitle
+        bg_colors_label = QLabel("Pill Background Colors:")
+        bg_colors_label.setStyleSheet("font-weight: bold; color: #666666; font-size: 12px;")
+        colors_layout.addWidget(bg_colors_label)
+        
+        bg_colors_row = QHBoxLayout()
+        
+        # Files background color layout
+        files_bg_layout = QVBoxLayout()
+        files_bg_layout.addWidget(QLabel("Files Background:"))
+        files_bg_color_row = QHBoxLayout()
+        files_bg_color_row.addWidget(self.files_bg_color_btn)
+        files_bg_color_row.addWidget(self.files_bg_color_hex)
+        files_bg_color_row.addStretch()
+        files_bg_layout.addLayout(files_bg_color_row)
+        
+        # Links background color layout
+        links_bg_layout = QVBoxLayout()
+        links_bg_layout.addWidget(QLabel("Links Background:"))
+        links_bg_color_row = QHBoxLayout()
+        links_bg_color_row.addWidget(self.links_bg_color_btn)
+        links_bg_color_row.addWidget(self.links_bg_color_hex)
+        links_bg_color_row.addStretch()
+        links_bg_layout.addLayout(links_bg_color_row)
+        
+        # Due Date background color layout
+        due_date_bg_layout = QVBoxLayout()
+        due_date_bg_layout.addWidget(QLabel("Due Date Background:"))
+        due_date_bg_color_row = QHBoxLayout()
+        due_date_bg_color_row.addWidget(self.due_date_bg_color_btn)
+        due_date_bg_color_row.addWidget(self.due_date_bg_color_hex)
+        due_date_bg_color_row.addStretch()
+        due_date_bg_layout.addLayout(due_date_bg_color_row)
+        
+        # Add background color layouts to row
+        bg_colors_row.addLayout(files_bg_layout)
+        bg_colors_row.addLayout(links_bg_layout)
+        bg_colors_row.addLayout(due_date_bg_layout)  # Now this variable is defined!
+        bg_colors_row.addStretch()  # Push to left
+        
+        # Add background colors row to main layout
+        colors_layout.addLayout(bg_colors_row)
         
         colors_group.setLayout(colors_layout)
         parent_layout.addWidget(colors_group)
@@ -654,37 +722,6 @@ class CombinedDisplaySettingsWidget(QWidget):
         debug.debug("Preview section setup complete")
     
     @debug_method
-    def pick_color(self, color_type):
-        """Open color picker dialog for the specified color type"""
-        debug.debug(f"Opening color picker for {color_type}")
-        color_btn = None
-        color_hex = None
-        
-        if color_type == "title":
-            color_btn = self.title_color_btn
-            color_hex = self.title_color_hex
-        elif color_type == "description":
-            color_btn = self.desc_color_btn
-            color_hex = self.desc_color_hex
-        elif color_type == "due_date":
-            color_btn = self.due_color_btn
-            color_hex = self.due_color_hex
-        elif color_type == "left_panel":
-            color_btn = self.left_panel_color_btn
-            color_hex = self.left_panel_color_hex
-        
-        current_color = QColor(color_hex.text())
-        color = QColorDialog.getColor(current_color, self)
-        
-        if color.isValid():
-            hex_color = color.name()
-            debug.debug(f"Selected color for {color_type}: {hex_color}")
-            color_btn.setStyleSheet(f"background-color: {hex_color}; border: 1px solid #666666;")
-            color_hex.setText(hex_color)
-        else:
-            debug.debug(f"Color selection cancelled for {color_type}")
-    
-    @debug_method
     def _setup_header_section(self, parent_layout):
         """Set up the header section with top buttons"""
         debug.debug("Setting up header section")
@@ -737,7 +774,50 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         parent_layout.addLayout(bottom_button_layout)
         debug.debug("Bottom buttons setup complete")
-    
+
+    @debug_method
+    def pick_color(self, color_type):
+        """Open color picker dialog for the specified color type"""
+        debug.debug(f"Opening color picker for {color_type}")
+        color_btn = None
+        color_hex = None
+        
+        if color_type == "title":
+            color_btn = self.title_color_btn
+            color_hex = self.title_color_hex
+        elif color_type == "description":
+            color_btn = self.desc_color_btn
+            color_hex = self.desc_color_hex
+        elif color_type == "due_date":
+            color_btn = self.due_color_btn
+            color_hex = self.due_color_hex
+        elif color_type == "left_panel":
+            color_btn = self.left_panel_color_btn
+            color_hex = self.left_panel_color_hex
+        elif color_type == "files_background":
+            color_btn = self.files_bg_color_btn
+            color_hex = self.files_bg_color_hex
+        elif color_type == "links_background":
+            color_btn = self.links_bg_color_btn
+            color_hex = self.links_bg_color_hex
+        elif color_type == "due_date_background":
+            color_btn = self.due_date_bg_color_btn
+            color_hex = self.due_date_bg_color_hex
+        
+        if color_btn and color_hex:
+            current_color = QColor(color_hex.text())
+            color = QColorDialog.getColor(current_color, self)
+            
+            if color.isValid():
+                hex_color = color.name()
+                debug.debug(f"Selected color for {color_type}: {hex_color}")
+                
+                # Only set background color - let OS style manager handle size/borders
+                color_btn.setStyleSheet(f"background-color: {hex_color};")
+                color_hex.setText(hex_color)
+            else:
+                debug.debug(f"Color selection cancelled for {color_type}")    
+
     @debug_method
     def update_color_from_hex(self, color_type):
         """Update color button when hex value changes"""
@@ -757,24 +837,37 @@ class CombinedDisplaySettingsWidget(QWidget):
         elif color_type == "left_panel":
             color_btn = self.left_panel_color_btn
             color_hex = self.left_panel_color_hex
+        elif color_type == "files_background":
+            color_btn = self.files_bg_color_btn
+            color_hex = self.files_bg_color_hex
+        elif color_type == "links_background":
+            color_btn = self.links_bg_color_btn
+            color_hex = self.links_bg_color_hex
+        elif color_type == "due_date_background":
+            color_btn = self.due_date_bg_color_btn
+            color_hex = self.due_date_bg_color_hex
         
-        hex_value = color_hex.text()
-        debug.debug(f"New hex value: {hex_value}")
-        
-        if hex_value.startswith("#") and len(hex_value) == 7:
-            try:
-                QColor(hex_value)  # Test if valid color
-                color_btn.setStyleSheet(f"background-color: {hex_value}; border: 1px solid #666666;")
-                debug.debug(f"Valid color, button updated for {color_type}")
-            except Exception as e:
-                debug.error(f"Invalid color format for {color_type}: {e}")
-        else:
-            debug.warning(f"Invalid hex format for {color_type}: {hex_value}")
-    
+        if color_btn and color_hex:
+            hex_value = color_hex.text()
+            debug.debug(f"New hex value: {hex_value}")
+            
+            if hex_value.startswith("#") and len(hex_value) == 7:
+                try:
+                    QColor(hex_value)  # Test if valid color
+                    
+                    # Only set background color - let OS style manager handle size/borders
+                    color_btn.setStyleSheet(f"background-color: {hex_value};")
+                    debug.debug(f"Valid color, button updated for {color_type}")
+                except Exception as e:
+                    debug.error(f"Invalid color format for {color_type}: {e}")
+            else:
+                debug.warning(f"Invalid hex format for {color_type}: {hex_value}")
+   
     @debug_method
     def save_settings(self, check = False):
         """Save all display settings to the settings manager and apply changes immediately"""
         debug.debug("Saving all display settings")
+        
         # Save font family and size
         self.settings.set_setting("font_family", self.font_family_combo.currentText())
         self.settings.set_setting("font_size", self.font_size_spin.value())
@@ -796,6 +889,13 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.settings.set_setting("title_color", self.title_color_hex.text())
         self.settings.set_setting("description_color", self.desc_color_hex.text())
         self.settings.set_setting("due_date_color", self.due_color_hex.text())
+        
+        # Save Files and Links background colors
+        self.settings.set_setting("files_background_color", self.files_bg_color_hex.text())
+        self.settings.set_setting("links_background_color", self.links_bg_color_hex.text())
+                
+        # Save Due Date background color
+        self.settings.set_setting("due_date_background_color", self.due_date_bg_color_hex.text())
 
         # Save left panel settings
         self.settings.set_setting("left_panel_color", self.left_panel_color_hex.text())
@@ -846,6 +946,10 @@ class CombinedDisplaySettingsWidget(QWidget):
         # APPLY CHANGES IMMEDIATELY
         debug.debug("Applying changes to all tabs")
         self.apply_changes_to_all_tabs()
+        
+        # RETURN TO TASK VIEW - THIS WAS MISSING!
+        debug.debug("Returning to task view after saving display settings")
+        self.main_window.show_task_view() 
    
     @debug_method
     def save_and_return(self, check = False):
@@ -875,14 +979,14 @@ class CombinedDisplaySettingsWidget(QWidget):
         debug.debug("Loading current settings from settings manager")
         # Block signals during loading to prevent multiple preview updates
         with QSignalBlocker(self.font_family_combo), \
-             QSignalBlocker(self.font_size_spin), \
-             QSignalBlocker(self.bold_titles_check), \
-             QSignalBlocker(self.italic_desc_check), \
-             QSignalBlocker(self.compact_view_check), \
-             QSignalBlocker(self.top_left_combo), \
-             QSignalBlocker(self.bottom_left_combo), \
-             QSignalBlocker(self.top_right_combo), \
-             QSignalBlocker(self.bottom_right_combo):
+            QSignalBlocker(self.font_size_spin), \
+            QSignalBlocker(self.bold_titles_check), \
+            QSignalBlocker(self.italic_desc_check), \
+            QSignalBlocker(self.compact_view_check), \
+            QSignalBlocker(self.top_left_combo), \
+            QSignalBlocker(self.bottom_left_combo), \
+            QSignalBlocker(self.top_right_combo), \
+            QSignalBlocker(self.bottom_right_combo):
             
             # Font settings
             font_family = self.settings.get_setting("font_family", "")
@@ -930,9 +1034,9 @@ class CombinedDisplaySettingsWidget(QWidget):
             self.desc_color_hex.setText(desc_color)
             self.due_color_hex.setText(due_color)
             
-            self.title_color_btn.setStyleSheet(f"background-color: {title_color}; border: 1px solid #666666;")
-            self.desc_color_btn.setStyleSheet(f"background-color: {desc_color}; border: 1px solid #666666;")
-            self.due_color_btn.setStyleSheet(f"background-color: {due_color}; border: 1px solid #666666;")
+            self.title_color_btn.setStyleSheet(f"background-color: {title_color};")
+            self.desc_color_btn.setStyleSheet(f"background-color: {desc_color};")
+            self.due_color_btn.setStyleSheet(f"background-color: {due_color};")
             
             # Left panel settings
             left_panel_color = self.settings.get_setting("left_panel_color", "#FFFFFF")
@@ -941,13 +1045,32 @@ class CombinedDisplaySettingsWidget(QWidget):
             debug.debug(f"Loaded left panel settings - Color: {left_panel_color}, Size: {left_panel_size}, Bold: {left_panel_bold}")
             
             self.left_panel_color_hex.setText(left_panel_color)
-            self.left_panel_color_btn.setStyleSheet(f"background-color: {left_panel_color}; border: 1px solid #666666;")
+            self.left_panel_color_btn.setStyleSheet(f"background-color: {left_panel_color};")
 
             if left_panel_size:
                 self.left_panel_size_spin.setValue(int(left_panel_size))
 
             self.left_panel_bold_check.setChecked(left_panel_bold)
             
+            # Files and Links background colors
+            files_bg_color = self.settings.get_setting("files_background_color", "#E8F4FD")
+            links_bg_color = self.settings.get_setting("links_background_color", "#FFF2E8")
+            debug.debug(f"Loaded background colors - Files: {files_bg_color}, Links: {links_bg_color}")
+            
+            self.files_bg_color_hex.setText(files_bg_color)
+            self.links_bg_color_hex.setText(links_bg_color)
+            
+            self.files_bg_color_btn.setStyleSheet(f"background-color: {files_bg_color};")
+            self.links_bg_color_btn.setStyleSheet(f"background-color: {links_bg_color};")
+            
+            # Due Date background color
+            due_date_bg_color = self.settings.get_setting("due_date_background_color", "#E1F5FE")
+            debug.debug(f"Loaded due date background color: {due_date_bg_color}")
+
+            self.due_date_bg_color_hex.setText(due_date_bg_color)
+            self.due_date_bg_color_btn.setStyleSheet(f"background-color: {due_date_bg_color};")
+
+
             # Panel layout settings
             left_contents = self.settings.get_setting("left_panel_contents", ["Category", "Status"])
             debug.debug(f"Loaded left panel contents: {left_contents}")
@@ -1072,3 +1195,53 @@ class CombinedDisplaySettingsWidget(QWidget):
             self.task_preview.update_preview()
         else:
             debug.warning("No task_preview found, cannot update preview")
+            
+    @debug_method
+    def update_color_and_preview(self, color_type):
+        """Update color button and trigger preview update"""
+        debug.debug(f"Updating color and preview for {color_type}")
+        # First update the color button
+        self.update_color_from_hex(color_type)
+        
+        # Then save the setting and update preview
+        self.save_color_setting(color_type)
+        
+        # Force preview update
+        if hasattr(self, 'task_preview'):
+            debug.debug("Updating preview after color change")
+            self.task_preview.update_preview()
+
+    @debug_method
+    def pick_color_and_update_preview(self, color_type):
+        """Pick color and trigger preview update"""
+        debug.debug(f"Picking color and updating preview for {color_type}")
+        # First pick the color (this will update both button and hex field)
+        self.pick_color(color_type)
+        
+        # Then save the setting and update preview
+        self.save_color_setting(color_type)
+        
+        # Force preview update
+        if hasattr(self, 'task_preview'):
+            debug.debug("Updating preview after color pick")
+            self.task_preview.update_preview()
+
+    @debug_method
+    def save_color_setting(self, color_type):
+        """Save a specific color setting immediately"""
+        debug.debug(f"Saving color setting for {color_type}")
+        
+        if color_type == "files_background":
+            color_value = self.files_bg_color_hex.text()
+            self.settings.set_setting("files_background_color", color_value)
+        elif color_type == "links_background":
+            color_value = self.links_bg_color_hex.text()
+            self.settings.set_setting("links_background_color", color_value)
+        elif color_type == "due_date_background":
+            color_value = self.due_date_bg_color_hex.text()
+            self.settings.set_setting("due_date_background_color", color_value)
+        
+        debug.debug(f"Saved {color_type} = {color_value}")
+        
+        # Force settings to save to disk
+        self.settings.save_settings(self.settings.settings)

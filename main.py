@@ -52,6 +52,8 @@ import traceback
 import os
 from ui.combined_display_settings import CombinedDisplaySettingsWidget
 
+import traceback
+  
 # Import database modules
 from database.memory_db_manager import get_memory_db_manager
 from database.db_config import db_config, ensure_db_exists
@@ -171,14 +173,30 @@ class MainWindow(QMainWindow):
         self.combined_settings = CombinedSettingsManager(main_window=self)
         self.settings_tabs.addTab(self.combined_settings, "Task Attributes")
         
-        # Create Combined Display Settings tab
+        # Create Combined Display Settings tab - IMPROVED ERROR HANDLING
+        debug.debug('Creating Display Settings tab')
         try:
-            debug.debug('Creating Display Settings tab')
-            from ui.combined_display_settings import CombinedDisplaySettingsWidget
             self.display_settings = CombinedDisplaySettingsWidget(self)
             self.settings_tabs.addTab(self.display_settings, "Display Settings")
+            debug.debug('Display Settings tab created successfully')
+        except ImportError as e:
+            debug.error(f"Import error creating display settings widget: {e}")
+            debug.error("Make sure combined_display_settings.py is in the ui/ directory")
+            # Show a placeholder tab so user knows something is missing
+            placeholder = QWidget()
+            placeholder_layout = QVBoxLayout(placeholder)
+            error_label = QLabel(f"Display Settings unavailable: {str(e)}")
+            placeholder_layout.addWidget(error_label)
+            self.settings_tabs.addTab(placeholder, "Display Settings (Error)")
         except Exception as e:
-            debug.error(f"Error creating display settings widget: {e}")
+            debug.error(f"Unexpected error creating display settings widget: {e}")
+            debug.error(traceback.format_exc())
+            # Show a placeholder tab so user knows something is missing
+            placeholder = QWidget()
+            placeholder_layout = QVBoxLayout(placeholder)
+            error_label = QLabel(f"Display Settings error: {str(e)}")
+            placeholder_layout.addWidget(error_label)
+            self.settings_tabs.addTab(placeholder, "Display Settings (Error)")
         
         # Create App Settings tab (Bee API key management is still here)
         debug.debug('Creating App Settings tab')

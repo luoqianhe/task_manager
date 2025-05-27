@@ -443,11 +443,20 @@ class TaskPillDelegate(QStyledItemDelegate):
         elif section_type == "Priority":
             return self.get_priority_color(section_data)
         elif section_type == "Due Date":
-            return QColor("#E1F5FE")  # Light blue
+            # Get custom color from settings
+            settings = self.get_settings_manager()
+            custom_color = settings.get_setting("due_date_background_color", "#E1F5FE")
+            return QColor(custom_color)
         elif section_type == "Link":
-            return QColor("#f5f5f5")  # Light gray
-        elif section_type == "Files":  # New section type for files
-            return QColor("#E8F5E9")  # Light green
+            # Get custom color from settings
+            settings = self.get_settings_manager()
+            custom_color = settings.get_setting("links_background_color", "#FFF2E8")
+            return QColor(custom_color)
+        elif section_type == "Files":
+            # Get custom color from settings  
+            settings = self.get_settings_manager()
+            custom_color = settings.get_setting("files_background_color", "#E8F4FD")
+            return QColor(custom_color)
         elif section_type == "Completion Date":
             return QColor("#F3E5F5")  # Light purple
         elif section_type == "Progress":

@@ -11,10 +11,12 @@ import sys
 import platform
 
 from ui.os_style_manager import OSStyleManager
-
+from ui.startup_manager import StartupManager
+# from ui.startup_manager_test import StartupManagerTest as StartupManager
 
 # Import the debug logger
 from utils.debug_logger import get_debug_logger
+from utils.debug_decorator import debug_method
 debug = get_debug_logger()
 
 class SettingsManager:
@@ -209,7 +211,7 @@ class AppSettingsWidget(QWidget):
         db_layout.addRow(goto_file_btn)
         
         # Change location button
-        change_db_btn = QPushButton("Change Database Location")
+        change_db_btn = QPushButton("Change File Location")
         change_db_btn.setFixedHeight(30)
         change_db_btn.clicked.connect(self.change_database_location)
         db_layout.addRow(change_db_btn)
@@ -266,6 +268,7 @@ class AppSettingsWidget(QWidget):
         
         # Style preferences button
         style_prefs_button = QPushButton("Style Preferences...")
+        style_prefs_button.setFixedHeight(30)
         style_prefs_button.clicked.connect(self.show_style_preferences)
         style_prefs_layout.addWidget(style_prefs_button)
         
@@ -327,6 +330,36 @@ class AppSettingsWidget(QWidget):
         self.debug_checkbox.setChecked(debug_enabled)
         self.debug_checkbox.toggled.connect(self.toggle_debug_logging)
         debug_layout.addWidget(self.debug_checkbox)
+        
+        # Startup Settings group (add this after debug_group)
+        startup_group = QGroupBox("Startup Settings")
+        startup_layout = QVBoxLayout()
+        
+        # Initialize startup manager with error handling
+        try:
+            debug.debug("Initializing StartupManager")
+            from ui.startup_manager import StartupManager
+            self.startup_manager = StartupManager()
+            startup_enabled = self.startup_manager.is_startup_enabled()
+            debug.debug(f"Startup enabled from system: {startup_enabled}")
+        except Exception as e:
+            debug.error(f"Error initializing StartupManager: {e}")
+            debug.error(traceback.format_exc())
+            startup_enabled = False
+        
+        # Startup checkbox
+        self.startup_checkbox = QCheckBox("Start Task Organizer when I log into my computer")
+        self.startup_checkbox.setChecked(startup_enabled)
+        self.startup_checkbox.toggled.connect(self.toggle_startup)
+        startup_layout.addWidget(self.startup_checkbox)
+        
+        # Add description
+        startup_description = QLabel("When enabled, Task Organizer will automatically start when you log into your computer.")
+        startup_description.setWordWrap(True)
+        startup_layout.addWidget(startup_description)
+        
+        startup_group.setLayout(startup_layout)
+        layout.addWidget(startup_group)
         
         # Add description
         debug_description = QLabel("Enabling debug logging will create detailed log files in the application's data directory. This can be useful for troubleshooting problems.")
@@ -394,19 +427,119 @@ class AppSettingsWidget(QWidget):
             debug.error(f"Error opening directory: {e}")
             QMessageBox.warning(self, "Error", f"Could not open database location: {str(e)}")
     
-    def save_settings(self):
+    @debug_method
+    def save_settings(self, checked = False):
+        """Save settings and return to main task view"""
         debug.debug("Saving settings")
         
         # Get current debug checkbox state and save it
         debug_enabled = self.debug_checkbox.isChecked()
         self.settings.set_setting("debug_enabled", debug_enabled)
         debug.debug(f"Saved debug_enabled setting: {debug_enabled}")
+        
+        # Save startup setting if checkbox exists
+        if hasattr(self, 'startup_checkbox'):
+            startup_enabled = self.startup_checkbox.isChecked()
+            self.settings.set_setting("startup_enabled", startup_enabled)
+            debug.debug(f"Saved startup_enabled setting: {startup_enabled}")
+        
+        # Return to task view
+        debug.debug("Returning to task view after saving settings")
+        self.main_window.show_task_view()
     
     def show_style_preferences(self):
         """Show the style preferences dialog"""
         from ui.style_preferences_dialog import StylePreferencesDialog
         dialog = StylePreferencesDialog(self.settings, self)
         dialog.exec()
+    
+    def toggle_startup(self, enabled):
+        """Handle toggling startup on/off with comprehensive error handling"""
+        debug.debug(f"Startup toggled: {enabled}")
+        
+        try:
+            # Check if startup manager exists
+            if not hasattr(self, 'startup_manager'):
+                debug.error("startup_manager not found - creating new instance")
+                from ui.startup_manager import StartupManager
+                self.startup_manager = StartupManager()
+            
+            debug.debug("About to call startup_manager.toggle_startup")
+            
+            # Show a simple message first to test if QMessageBox works at all
+            try:
+                from PyQt6.QtWidgets import QMessageBox
+                debug.debug("Testing basic QMessageBox...")
+                
+                # Very simple test message - don't use any complex functionality
+                reply = QMessageBox.question(
+                    self,
+                    "Test",
+                    "This is a test. Continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                
+                debug.debug(f"Test QMessageBox completed with reply: {reply}")
+                
+                if reply == QMessageBox.StandardButton.No:
+                    debug.debug("User said no to test, reverting checkbox")
+                    self.startup_checkbox.setChecked(not enabled)
+                    return
+                    
+            except Exception as e:
+                debug.error(f"QMessageBox test failed: {e}")
+                debug.error(traceback.format_exc())
+                self.startup_checkbox.setChecked(not enabled)
+                return
+            
+            # Now try the actual startup toggle
+            debug.debug("Calling startup_manager.toggle_startup")
+            success, message = self.startup_manager.toggle_startup(enabled)
+            debug.debug(f"toggle_startup returned: success={success}, message={message}")
+            
+            if success:
+                debug.debug(f"Startup toggle successful: {message}")
+                self.settings.set_setting("startup_enabled", enabled)
+                
+                # Show success message with minimal functionality
+                try:
+                    QMessageBox.information(self, "Success", message)
+                    debug.debug("Success message shown")
+                except Exception as e:
+                    debug.error(f"Error showing success message: {e}")
+                    # Don't fail the whole operation just because message failed
+                    
+            else:
+                debug.error(f"Startup toggle failed: {message}")
+                # Revert the checkbox since the operation failed
+                self.startup_checkbox.setChecked(not enabled)
+                
+                # Show error message
+                try:
+                    QMessageBox.warning(self, "Error", message)
+                    debug.debug("Error message shown")
+                except Exception as e:
+                    debug.error(f"Error showing error message: {e}")
+                    
+        except Exception as e:
+            debug.error(f"Exception in toggle_startup: {e}")
+            debug.error(traceback.format_exc())
+            
+            # Revert checkbox
+            try:
+                self.startup_checkbox.setChecked(not enabled)
+            except:
+                pass
+                
+            # Try to show error message
+            try:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.critical(self, "Error", f"Failed to toggle startup: {str(e)}")
+            except:
+                print(f"CRITICAL ERROR: Could not show error message: {e}")
+                
+            # Re-raise the exception so we can see it in the console
+            raise
     
     def toggle_debug_logging(self, enabled):
         """Handle toggling debug logging"""
