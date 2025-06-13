@@ -3,7 +3,8 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QSpinBox, QCheckBox,
     QRadioButton, QButtonGroup, QGroupBox, QPushButton, QColorDialog, QLineEdit,
-    QFormLayout, QMessageBox, QScrollArea, QFrame, QSizePolicy, QSplitter
+    QFormLayout, QMessageBox, QScrollArea, QFrame, QSizePolicy, QSplitter,
+    QFontDialog, QGridLayout
 )
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtCore import Qt, QSignalBlocker
@@ -31,6 +32,15 @@ class CombinedDisplaySettingsWidget(QWidget):
         # Fixed panel widths - these are constants
         self.left_panel_width = 100  # Fixed width for left panel
         self.right_panel_width = 100  # Fixed width for right panel
+        
+        # Set the standard font family for your application
+        self.standard_font_family = self.settings.get_setting("font_family", "Arial")
+        
+        # Initialize fonts for different elements
+        self.task_title_font = QFont(self.standard_font_family, 14, QFont.Weight.Bold)
+        self.task_description_font = QFont(self.standard_font_family, 10)
+        self.task_due_date_font = QFont(self.standard_font_family, 9)
+        self.panel_text_font = QFont(self.standard_font_family, 8)
         
         self.setup_ui()
         self.load_current_settings()
@@ -62,10 +72,10 @@ class CombinedDisplaySettingsWidget(QWidget):
         # Add all settings sections
         debug.debug("Setting up font settings section")
         self._setup_font_settings(content_layout)
-        debug.debug("Setting up color settings section")
-        self._setup_color_settings(content_layout)
         debug.debug("Setting up panel layout section")
         self._setup_panel_layout(content_layout)
+        debug.debug("Setting up pill background colors section")
+        self._setup_pill_background_colors(content_layout)
         debug.debug("Setting up preview section")
         self._setup_preview_section(content_layout)
         
@@ -81,228 +91,240 @@ class CombinedDisplaySettingsWidget(QWidget):
 
     @debug_method
     def _setup_font_settings(self, parent_layout):
-        """Set up the font settings section as three panels side by side with equal width"""
-        debug.debug("Creating font settings section with three panels")
-        # Create horizontal layout for the three panels
-        font_settings_layout = QHBoxLayout()
+        """Set up the font settings section with font controls only (no color pickers)"""
+        debug.debug("Creating font settings section without color pickers")
         
-        # ===== PANEL 1: Font Family and Sizes =====
-        debug.debug("Creating font basics panel")
-        font_basics_panel = QGroupBox("Font Basics")
-        font_basics_layout = QVBoxLayout(font_basics_panel)
+        # Create single Font Settings panel
+        font_settings_panel = QGroupBox("Font Settings")
+        font_settings_layout = QVBoxLayout(font_settings_panel)
         
-        # Create and configure widgets
-        self.font_family_combo = QComboBox()
-        self.font_family_combo.setMaximumWidth(200)
-        self._populate_font_combo()
+        # Create 2x2 grid layout for font controls
+        font_grid = QGridLayout()
+        font_grid.setSpacing(15)  # Add some spacing between grid items
         
-        self.font_size_spin = QSpinBox()
-        self.font_size_spin.setRange(8, 24)
-        self.font_size_spin.setValue(10)
-        self.font_size_spin.setFixedWidth(60)
+        # Row 1, Column 1: Task Title Font
+        self.title_font_button = QPushButton("Change")
+        self.title_font_button.setProperty("fontSettings", True)
+        self.title_font_button.clicked.connect(lambda: self.open_font_dialog("title"))
+        self.title_font_button.setToolTip("Task Title Font Settings")
+        self.title_preview = QLabel("Sample Task Title")
+        self.title_preview.setFont(self.task_title_font)
         
-        self.left_panel_size_spin = QSpinBox()
-        self.left_panel_size_spin.setRange(6, 14)
-        self.left_panel_size_spin.setValue(8)
-        self.left_panel_size_spin.setFixedWidth(60)
+        title_layout = QHBoxLayout()
+        title_layout.addWidget(self.title_preview)
+        title_layout.addStretch()
+        title_layout.addWidget(self.title_font_button)
+        font_grid.addLayout(title_layout, 0, 0)  # Row 0, Column 0
         
-        # Add Font Family (horizontal layout)
-        font_family_layout = QHBoxLayout()
-        font_family_label = QLabel("Font Family:")
-        font_family_layout.addWidget(font_family_label)
-        font_family_layout.addWidget(self.font_family_combo)
-        font_family_layout.addStretch()
-        font_basics_layout.addLayout(font_family_layout)
+        # Row 1, Column 2: Task Description Font
+        self.desc_font_button = QPushButton("Change")
+        self.desc_font_button.setProperty("fontSettings", True)
+        self.desc_font_button.clicked.connect(lambda: self.open_font_dialog("description"))
+        self.desc_font_button.setToolTip("Task Description Font Settings")
+        self.desc_preview = QLabel("Sample task description text")
+        self.desc_preview.setFont(self.task_description_font)
         
-        # Add Main Text Size (horizontal layout)
-        main_size_layout = QHBoxLayout()
-        main_size_label = QLabel("Main Text Size:")
-        main_size_layout.addWidget(main_size_label)
-        main_size_layout.addWidget(self.font_size_spin)
-        self.font_size_spin.setFixedHeight(30)
-        main_size_layout.addStretch()
-        font_basics_layout.addLayout(main_size_layout)
+        desc_layout = QHBoxLayout()
+        desc_layout.addWidget(self.desc_preview)
+        desc_layout.addStretch()
+        desc_layout.addWidget(self.desc_font_button)
+        font_grid.addLayout(desc_layout, 0, 1)  # Row 0, Column 1
         
-        # Add Panel Text Size (horizontal layout)
-        panel_size_layout = QHBoxLayout()
-        panel_size_label = QLabel("Panel Text Size:")
-        panel_size_layout.addWidget(panel_size_label)
-        panel_size_layout.addWidget(self.left_panel_size_spin)
-        self.left_panel_size_spin.setFixedHeight(30)
-        panel_size_layout.addStretch()
-        font_basics_layout.addLayout(panel_size_layout)
+        # Row 2, Column 1: Due Date Font
+        self.date_font_button = QPushButton("Change")
+        self.date_font_button.setProperty("fontSettings", True)
+        self.date_font_button.clicked.connect(lambda: self.open_font_dialog("due_date"))
+        self.date_font_button.setToolTip("Due Date Font Settings")
+        self.date_preview = QLabel("Due: 2025-05-30")
+        self.date_preview.setFont(self.task_due_date_font)
         
-        # Add stretch to push everything to the top
-        font_basics_layout.addStretch()
+        date_layout = QHBoxLayout()
+        date_layout.addWidget(self.date_preview)
+        date_layout.addStretch()
+        date_layout.addWidget(self.date_font_button)
+        font_grid.addLayout(date_layout, 1, 0)  # Row 1, Column 0
         
-        # ===== PANEL 2: Font Weight =====
-        debug.debug("Creating font weight panel")
-        font_weight_panel = QGroupBox("Font Weight")
-        font_weight_layout = QVBoxLayout(font_weight_panel)
+        # Row 2, Column 2: Panel Text Font
+        self.panel_font_button = QPushButton("Change")
+        self.panel_font_button.setProperty("fontSettings", True)
+        self.panel_font_button.clicked.connect(lambda: self.open_font_dialog("panel"))
+        self.panel_font_button.setToolTip("Left/Right Panel Font Settings")
+        self.panel_preview = QLabel("Category | Status")
+        self.panel_preview.setFont(self.panel_text_font)
         
-        # Create and configure widgets
-        self.weight_group = QButtonGroup(self)
+        panel_layout = QHBoxLayout()
+        panel_layout.addWidget(self.panel_preview)
+        panel_layout.addStretch()
+        panel_layout.addWidget(self.panel_font_button)
+        font_grid.addLayout(panel_layout, 1, 1)  # Row 1, Column 1
         
-        self.regular_radio = QRadioButton("Regular")
-        self.regular_radio.setChecked(True)
-        self.weight_group.addButton(self.regular_radio, 0)
+        # Add the grid to the main layout
+        font_settings_layout.addLayout(font_grid)
         
-        self.medium_radio = QRadioButton("Medium")
-        self.weight_group.addButton(self.medium_radio, 1)
+        # Add some spacing
+        font_settings_layout.addSpacing(15)
         
-        self.bold_radio = QRadioButton("Bold")
-        self.weight_group.addButton(self.bold_radio, 2)
-        
-        # Add radio buttons to layout
-        font_weight_layout.addWidget(self.regular_radio)
-        font_weight_layout.addWidget(self.medium_radio)
-        font_weight_layout.addWidget(self.bold_radio)
-        
-        # Add stretch to push everything to the top
-        font_weight_layout.addStretch()
-        
-        # ===== PANEL 3: Style Options =====
-        debug.debug("Creating style options panel")
-        style_options_panel = QGroupBox("Style Options")
-        style_options_layout = QVBoxLayout(style_options_panel)
-        
-        # Create and configure widgets
-        self.bold_titles_check = QCheckBox("Bold titles")
-        self.bold_titles_check.setChecked(True)
-        
-        self.italic_desc_check = QCheckBox("Italic descriptions")
-        
-        self.compact_view_check = QCheckBox("Use compact view by default")
-        
-        self.left_panel_bold_check = QCheckBox("Bold panel text")
-        
-        # Add checkboxes to layout
-        style_options_layout.addWidget(self.bold_titles_check)
-        style_options_layout.addWidget(self.italic_desc_check)
-        style_options_layout.addWidget(self.compact_view_check)
-        style_options_layout.addWidget(self.left_panel_bold_check)
+        # Reset button below the grid
+        reset_fonts_btn = QPushButton("Reset All Fonts to System Default")
+        reset_fonts_btn.clicked.connect(self.reset_all_fonts)
+        reset_fonts_btn.setFixedHeight(30)  # Make it slightly taller
+        font_settings_layout.addWidget(reset_fonts_btn)
         
         # Add stretch to push everything to the top
-        style_options_layout.addStretch()
+        font_settings_layout.addStretch()
         
-        # Set equal width for all panels using size policies
-        for panel in [font_basics_panel, font_weight_panel, style_options_panel]:
-            panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        
-        # Add all three panels to the horizontal layout with equal width (1:1:1 ratio)
-        font_settings_layout.addWidget(font_basics_panel, 1)
-        font_settings_layout.addWidget(font_weight_panel, 1)
-        font_settings_layout.addWidget(style_options_panel, 1)
-        
-        # Add the horizontal layout to the parent layout
-        parent_layout.addLayout(font_settings_layout)
-        debug.debug("Font settings section setup complete")
+        # Add the panel to parent layout
+        parent_layout.addWidget(font_settings_panel)
+        debug.debug("Font settings section setup complete (without color pickers)")
 
     @debug_method
-    def _populate_font_combo(self):
-        """Populate the font family combo box with available fonts"""
-        debug.debug("Populating font family combo box")
-        cross_platform_fonts = [
-            "Arial", "Helvetica", "Times New Roman", "Times",
-            "Courier New", "Courier", "Verdana", "Georgia",
-            "Tahoma", "Trebuchet MS"
-        ]
+    def reset_all_fonts(self, checked = False):
+        """Reset all fonts to system defaults (no color reset)"""
+        debug.debug("Resetting all fonts to system defaults")
         
-        # Add system fonts based on platform
+        # Determine system default font based on platform
+        import platform
         system = platform.system()
-        debug.debug(f"Current platform: {system}")
+        
         if system == "Windows":
-            windows_fonts = ["Segoe UI", "Calibri", "Cambria", "Consolas"]
-            for font in windows_fonts:
-                if font not in cross_platform_fonts:
-                    cross_platform_fonts.append(font)
+            default_family = "Segoe UI"
         elif system == "Darwin":  # macOS
-            mac_fonts = ["San Francisco", "Helvetica Neue", "Lucida Grande", "Menlo"]
-            for font in mac_fonts:
-                if font not in cross_platform_fonts:
-                    cross_platform_fonts.append(font)
+            default_family = "San Francisco"
+        else:  # Linux
+            default_family = "Ubuntu"
         
-        # Add fonts to combo box
-        debug.debug(f"Adding {len(cross_platform_fonts)} fonts to combo box")
-        self.font_family_combo.addItems(cross_platform_fonts)
+        # Update the standard font family
+        self.standard_font_family = default_family
         
-        # Set default font based on platform
-        default_font = "Segoe UI" if system == "Windows" else "San Francisco" if system == "Darwin" else "Arial"
-        index = self.font_family_combo.findText(default_font)
-        if index >= 0:
-            debug.debug(f"Setting default font to: {default_font}")
-            self.font_family_combo.setCurrentIndex(index)
+        # Reset all fonts to defaults
+        self.task_title_font = QFont(default_family, 14, QFont.Weight.Bold)
+        self.task_description_font = QFont(default_family, 10)
+        self.task_due_date_font = QFont(default_family, 9)
+        self.panel_text_font = QFont(default_family, 8)
+        
+        # Update all preview labels with fonts only (no colors)
+        self.title_preview.setFont(self.task_title_font)
+        self.desc_preview.setFont(self.task_description_font)
+        self.date_preview.setFont(self.task_due_date_font)
+        self.panel_preview.setFont(self.panel_text_font)
+        
+        # Save all the reset font settings
+        self.save_font_setting("title", self.task_title_font)
+        self.save_font_setting("description", self.task_description_font)
+        self.save_font_setting("due_date", self.task_due_date_font)
+        self.save_font_setting("panel", self.panel_text_font)
+        
+        # Save the font family setting
+        self.settings.set_setting("font_family", default_family)
+        
+        # Update preview
+        if hasattr(self, 'task_preview'):
+            self.task_preview.update_preview()
+        
+        debug.debug(f"All fonts reset to {default_family}")
+ 
+    @debug_method
+    def open_font_dialog(self, font_type):
+        """Open Qt's own font dialog (no colors) with DontUseNativeDialog option"""
+        debug.debug(f"Opening Qt font dialog for {font_type}")
+        
+        # Get current font based on type
+        if font_type == "title":
+            current_font = self.task_title_font
+            preview_label = self.title_preview
+        elif font_type == "description":
+            current_font = self.task_description_font
+            preview_label = self.desc_preview
+        elif font_type == "due_date":
+            current_font = self.task_due_date_font
+            preview_label = self.date_preview
+        elif font_type == "panel":
+            current_font = self.panel_text_font
+            preview_label = self.panel_preview
         else:
-            debug.warning(f"Default font {default_font} not found in font list")
+            debug.warning(f"Unknown font type: {font_type}")
+            return
+        
+        # Create dialog with DontUseNativeDialog option
+        dialog = QFontDialog(current_font, self)
+        dialog.setOption(QFontDialog.FontDialogOption.DontUseNativeDialog)
+        dialog.setWindowTitle(f"Choose {font_type.replace('_', ' ').title()} Font")
+        
+        if dialog.exec():
+            font = dialog.selectedFont()
+            
+            # Force the standard font family (this is the key part!)
+            font.setFamily(self.standard_font_family)
+            
+            # Update the appropriate font
+            if font_type == "title":
+                self.task_title_font = font
+            elif font_type == "description":
+                self.task_description_font = font
+            elif font_type == "due_date":
+                self.task_due_date_font = font
+            elif font_type == "panel":
+                self.panel_text_font = font
+            
+            # Update preview label
+            preview_label.setFont(font)
+            
+            # Save the font settings
+            self.save_font_setting(font_type, font)
+            
+            # Update preview
+            if hasattr(self, 'task_preview'):
+                self.task_preview.update_preview()
+            
+            debug.debug(f"Font updated for {font_type}: size={font.pointSize()}, bold={font.bold()}, italic={font.italic()}")   
+ 
+    @debug_method
+    def load_font_settings(self, font_type, font_obj, preview_label):
+        """Load font settings for a specific font type"""
+        debug.debug(f"Loading font settings for {font_type}")
+        
+        # Load font properties from settings
+        size = self.settings.get_setting(f"{font_type}_font_size", font_obj.pointSize())
+        bold = self.settings.get_setting(f"{font_type}_font_bold", font_obj.bold())
+        italic = self.settings.get_setting(f"{font_type}_font_italic", font_obj.italic())
+        underline = self.settings.get_setting(f"{font_type}_font_underline", font_obj.underline())
+        
+        debug.debug(f"Font settings for {font_type}: size={size}, bold={bold}, italic={italic}, underline={underline}")
+        
+        # Apply settings to font object
+        font_obj.setFamily(self.standard_font_family)
+        font_obj.setPointSize(size)
+        font_obj.setBold(bold)
+        font_obj.setItalic(italic)
+        font_obj.setUnderline(underline)
+        
+        # Update preview label
+        preview_label.setFont(font_obj)
+        
+        # IMPORTANT: Also save the font settings to ensure consistency
+        self.settings.set_setting(f"{font_type}_font_size", size)
+        self.settings.set_setting(f"{font_type}_font_bold", bold)
+        self.settings.set_setting(f"{font_type}_font_italic", italic)
+        self.settings.set_setting(f"{font_type}_font_underline", underline)
 
     @debug_method
-    def _setup_style_options(self):
-        """Set up style options section"""
-        debug.debug("Setting up style options section")
-        style_options_layout = QVBoxLayout()
-        style_options_label = QLabel("Style Options:")
-        style_options_layout.addWidget(style_options_label)
+    def save_font_setting(self, font_type, font):
+        """Save individual font settings to the settings manager"""
+        debug.debug(f"Saving font settings for {font_type}")
         
-        # Option checkboxes
-        self.bold_titles_check = QCheckBox("Bold titles")
-        self.bold_titles_check.setChecked(True)
+        self.settings.set_setting(f"{font_type}_font_size", font.pointSize())
+        self.settings.set_setting(f"{font_type}_font_bold", font.bold())
+        self.settings.set_setting(f"{font_type}_font_italic", font.italic())
+        self.settings.set_setting(f"{font_type}_font_underline", font.underline())
         
-        self.italic_desc_check = QCheckBox("Italic descriptions")
-        
-        self.compact_view_check = QCheckBox("Use compact view by default")
-        
-        # Moved the panel bold check here
-        self.left_panel_bold_check = QCheckBox("Bold panel text")
-        
-        style_options_layout.addWidget(self.bold_titles_check)
-        style_options_layout.addWidget(self.italic_desc_check)
-        style_options_layout.addWidget(self.compact_view_check)
-        style_options_layout.addWidget(self.left_panel_bold_check)
-        
-        return style_options_layout
+        debug.debug(f"Saved {font_type} font: size={font.pointSize()}, bold={font.bold()}, italic={font.italic()}, underline={font.underline()}")
 
     @debug_method
-    def _setup_font_weight(self):
-        """Set up font weight section"""
-        debug.debug("Setting up font weight section")
-        font_weight_layout = QVBoxLayout()
-        font_weight_label = QLabel("Font Weight:")
-        font_weight_layout.addWidget(font_weight_label)
+    def _setup_pill_background_colors(self, parent_layout):
+        """Set up the pill background colors section"""
+        debug.debug("Setting up pill background colors section")
         
-        self.weight_group = QButtonGroup(self)
-        
-        self.regular_radio = QRadioButton("Regular")
-        self.regular_radio.setChecked(True)
-        self.weight_group.addButton(self.regular_radio, 0)
-        
-        self.medium_radio = QRadioButton("Medium")
-        self.weight_group.addButton(self.medium_radio, 1)
-        
-        self.bold_radio = QRadioButton("Bold")
-        self.weight_group.addButton(self.bold_radio, 2)
-        
-        font_weight_layout.addWidget(self.regular_radio)
-        font_weight_layout.addWidget(self.medium_radio)
-        font_weight_layout.addWidget(self.bold_radio)
-        
-        return font_weight_layout
-
-    @debug_method
-    def _setup_color_settings(self, parent_layout):
-        """Set up the color settings section with separate groups"""
-        debug.debug("Setting up color settings section")
-        
-        # Create all color buttons and hex fields FIRST (including Files/Links/Due Date)
-        self.title_color_btn = QPushButton()
-        self.title_color_hex = QLineEdit("#333333")
-        self.desc_color_btn = QPushButton()
-        self.desc_color_hex = QLineEdit("#666666")
-        self.due_color_btn = QPushButton()
-        self.due_color_hex = QLineEdit("#888888")
-        self.left_panel_color_btn = QPushButton()
-        self.left_panel_color_hex = QLineEdit("#FFFFFF")
-        
-        # NEW: Add Files, Links, and Due Date background color controls
+        # Create all color buttons and hex fields
         self.files_bg_color_btn = QPushButton()
         self.files_bg_color_hex = QLineEdit("#E8F4FD")  # Light blue default
         self.links_bg_color_btn = QPushButton()
@@ -312,10 +334,6 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         # Configure all buttons with the colorPicker property
         for btn, color in [
-            (self.title_color_btn, "#333333"),
-            (self.desc_color_btn, "#666666"),
-            (self.due_color_btn, "#888888"),
-            (self.left_panel_color_btn, "#FFFFFF"),
             (self.files_bg_color_btn, "#E8F4FD"),
             (self.links_bg_color_btn, "#FFF2E8"),
             (self.due_date_bg_color_btn, "#E1F5FE")
@@ -324,81 +342,19 @@ class CombinedDisplaySettingsWidget(QWidget):
             btn.setStyleSheet(f"background-color: {color};")
         
         # Configure hex fields
-        for hex_field in [self.title_color_hex, self.desc_color_hex, 
-                        self.due_color_hex, self.left_panel_color_hex,
-                        self.files_bg_color_hex, self.links_bg_color_hex,
-                        self.due_date_bg_color_hex]:
+        for hex_field in [self.files_bg_color_hex, self.links_bg_color_hex, self.due_date_bg_color_hex]:
             hex_field.setFixedWidth(80)
         
-        # Connect signals for existing colors
-        debug.debug("Connecting color buttons and hex fields signals")
-        self.title_color_btn.clicked.connect(lambda: self.pick_color("title"))
-        self.title_color_hex.textChanged.connect(lambda: self.update_color_from_hex("title"))
-        self.desc_color_btn.clicked.connect(lambda: self.pick_color("description"))
-        self.desc_color_hex.textChanged.connect(lambda: self.update_color_from_hex("description"))
-        self.due_color_btn.clicked.connect(lambda: self.pick_color("due_date"))
-        self.due_color_hex.textChanged.connect(lambda: self.update_color_from_hex("due_date"))
-        self.left_panel_color_btn.clicked.connect(lambda: self.pick_color("left_panel"))
-        self.left_panel_color_hex.textChanged.connect(lambda: self.update_color_from_hex("left_panel"))
-        
+        # Connect signals
         self.files_bg_color_btn.clicked.connect(lambda: self.pick_color_and_update_preview("files_background"))
         self.links_bg_color_btn.clicked.connect(lambda: self.pick_color_and_update_preview("links_background"))
         self.due_date_bg_color_btn.clicked.connect(lambda: self.pick_color_and_update_preview("due_date_background"))
 
-        # NEW: Connect signals for Files, Links, and Due Date background colors
         self.files_bg_color_hex.textChanged.connect(lambda: self.update_color_and_preview("files_background"))
         self.links_bg_color_hex.textChanged.connect(lambda: self.update_color_and_preview("links_background"))
         self.due_date_bg_color_hex.textChanged.connect(lambda: self.update_color_and_preview("due_date_background"))
 
-        # ===== FIRST GROUP: Text Colors =====
-        text_colors_group = QGroupBox("Text Colors")
-        text_colors_layout = QHBoxLayout()
-        
-        # Title color layout
-        title_layout = QVBoxLayout()
-        title_layout.addWidget(QLabel("Task Title:"))
-        title_color_row = QHBoxLayout()
-        title_color_row.addWidget(self.title_color_btn)
-        title_color_row.addWidget(self.title_color_hex)
-        title_color_row.addStretch()
-        title_layout.addLayout(title_color_row)
-        
-        # Description color layout
-        desc_layout = QVBoxLayout()
-        desc_layout.addWidget(QLabel("Task Description:"))
-        desc_color_row = QHBoxLayout()
-        desc_color_row.addWidget(self.desc_color_btn)
-        desc_color_row.addWidget(self.desc_color_hex)
-        desc_color_row.addStretch()
-        desc_layout.addLayout(desc_color_row)
-        
-        # Due date color layout
-        due_layout = QVBoxLayout()
-        due_layout.addWidget(QLabel("Due Date:"))
-        due_color_row = QHBoxLayout()
-        due_color_row.addWidget(self.due_color_btn)
-        due_color_row.addWidget(self.due_color_hex)
-        due_color_row.addStretch()
-        due_layout.addLayout(due_color_row)
-        
-        # Panel color layout
-        panel_layout = QVBoxLayout()
-        panel_layout.addWidget(QLabel("Left/Right Panel Text:"))
-        panel_color_row = QHBoxLayout()
-        panel_color_row.addWidget(self.left_panel_color_btn)
-        panel_color_row.addWidget(self.left_panel_color_hex)
-        panel_color_row.addStretch()
-        panel_layout.addLayout(panel_color_row)
-        
-        text_colors_layout.addLayout(title_layout)
-        text_colors_layout.addLayout(desc_layout)
-        text_colors_layout.addLayout(due_layout)
-        text_colors_layout.addLayout(panel_layout)
-        
-        text_colors_group.setLayout(text_colors_layout)
-        parent_layout.addWidget(text_colors_group)
-        
-        # ===== SECOND GROUP: Pill Background Colors =====
+        # Create the group
         pill_bg_colors_group = QGroupBox("Pill Background Colors")
         pill_bg_colors_layout = QHBoxLayout()
         
@@ -438,103 +394,11 @@ class CombinedDisplaySettingsWidget(QWidget):
         pill_bg_colors_group.setLayout(pill_bg_colors_layout)
         parent_layout.addWidget(pill_bg_colors_group)
         
-        debug.debug("Color settings section setup complete")    
-    
-    @debug_method
-    def _create_color_picker_compact(self, label_text, color_type, default_color):
-        """Helper method to create a compact color picker column"""
-        debug.debug(f"Creating compact color picker for {color_type} with default {default_color}")
-        color_layout = QVBoxLayout()
-        label = QLabel(label_text)
-        
-        picker_layout = QHBoxLayout()
-        color_btn = QPushButton()
-        color_btn.setFixedSize(30, 20)
-        color_btn.setStyleSheet(f"background-color: {default_color}; border: 1px solid #666666;")
-        
-        color_hex = QLineEdit(default_color)
-        color_hex.setFixedWidth(80)
-        
-        # Store references to the widgets
-        if color_type == "title":
-            self.title_color_btn = color_btn
-            self.title_color_hex = color_hex
-            color_btn.clicked.connect(lambda: self.pick_color("title"))
-            color_hex.textChanged.connect(lambda: self.update_color_from_hex("title"))
-        elif color_type == "description":
-            self.desc_color_btn = color_btn
-            self.desc_color_hex = color_hex
-            color_btn.clicked.connect(lambda: self.pick_color("description"))
-            color_hex.textChanged.connect(lambda: self.update_color_from_hex("description"))
-        elif color_type == "due_date":
-            self.due_color_btn = color_btn
-            self.due_color_hex = color_hex
-            color_btn.clicked.connect(lambda: self.pick_color("due_date"))
-            color_hex.textChanged.connect(lambda: self.update_color_from_hex("due_date"))
-        elif color_type == "left_panel":
-            self.left_panel_color_btn = color_btn
-            self.left_panel_color_hex = color_hex
-            color_btn.clicked.connect(lambda: self.pick_color("left_panel"))
-            color_hex.textChanged.connect(lambda: self.update_color_from_hex("left_panel"))
-        
-        picker_layout.addWidget(color_btn)
-        picker_layout.addWidget(color_hex)
-        picker_layout.addStretch()
-        
-        color_layout.addWidget(label)
-        color_layout.addLayout(picker_layout)
-        
-        debug.debug(f"Compact color picker created for {color_type}")
-        return color_layout
-    
-    @debug_method
-    def _create_color_picker(self, label_text, color_type, default_color):
-        """Helper method to create a consistent color picker row"""
-        debug.debug(f"Creating standard color picker for {color_type} with default {default_color}")
-        color_layout = QHBoxLayout()
-        label = QLabel(label_text)
-        label.setMinimumWidth(100)
-        
-        color_btn = QPushButton()
-        color_btn.setFixedSize(30, 20)
-        color_btn.setStyleSheet(f"background-color: {default_color}; border: 1px solid #666666;")
-        
-        color_hex = QLineEdit(default_color)
-        color_hex.setFixedWidth(80)
-        
-        # Store references to the widgets
-        if color_type == "title":
-            self.title_color_btn = color_btn
-            self.title_color_hex = color_hex
-            color_btn.clicked.connect(lambda: self.pick_color("title"))
-            color_hex.textChanged.connect(lambda: self.update_color_from_hex("title"))
-        elif color_type == "description":
-            self.desc_color_btn = color_btn
-            self.desc_color_hex = color_hex
-            color_btn.clicked.connect(lambda: self.pick_color("description"))
-            color_hex.textChanged.connect(lambda: self.update_color_from_hex("description"))
-        elif color_type == "due_date":
-            self.due_color_btn = color_btn
-            self.due_color_hex = color_hex
-            color_btn.clicked.connect(lambda: self.pick_color("due_date"))
-            color_hex.textChanged.connect(lambda: self.update_color_from_hex("due_date"))
-        elif color_type == "left_panel":
-            self.left_panel_color_btn = color_btn
-            self.left_panel_color_hex = color_hex
-            color_btn.clicked.connect(lambda: self.pick_color("left_panel"))
-            color_hex.textChanged.connect(lambda: self.update_color_from_hex("left_panel"))
-        
-        color_layout.addWidget(label)
-        color_layout.addWidget(color_btn)
-        color_layout.addWidget(color_hex)
-        color_layout.addStretch()
-        
-        debug.debug(f"Standard color picker created for {color_type}")
-        return color_layout
+        debug.debug("Pill background colors section setup complete")
 
     @debug_method
     def _setup_panel_layout(self, parent_layout):
-        """Set up the panel layout section with auto-sized dropdowns like the task dialogs"""
+        """Set up the panel layout section with auto-sized dropdowns (no auto-adjust checkbox)"""
         debug.debug("Setting up panel layout section")
         panel_layout_group = QGroupBox("Task Pill Layout")
         main_layout = QHBoxLayout()
@@ -554,9 +418,8 @@ class CombinedDisplaySettingsWidget(QWidget):
         for combo in [self.top_left_combo, self.bottom_left_combo, 
                     self.top_right_combo, self.bottom_right_combo]:
             combo.addItems(panel_options)
-            # Set auto-sizing policy exactly like in the dialogs
             combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-            combo.setFixedHeight(30)  # Match dialog height
+            combo.setFixedHeight(30)
         
         # Connect combo box signals to update preview directly
         self.top_left_combo.currentTextChanged.connect(self.force_preview_update)
@@ -589,27 +452,11 @@ class CombinedDisplaySettingsWidget(QWidget):
         
         panel_layout_group.setLayout(main_layout)
         parent_layout.addWidget(panel_layout_group)
-        debug.debug("Panel layout section setup complete")
-    
-    @debug_method
-    def _populate_panel_dropdowns(self):
-        """Populate the panel dropdowns with content options"""
-        debug.debug("Populating panel dropdowns")
-        options = [
-            "None", "Category", "Status", "Priority", "Due Date",
-            "Link", "Progress", "Completion Date", "Tag", "Files"
-        ]
-        
-        # Add options to all dropdowns
-        self.top_left_combo.addItems(options)
-        self.bottom_left_combo.addItems(options)
-        self.top_right_combo.addItems(options)
-        self.bottom_right_combo.addItems(options)
-        debug.debug(f"Added {len(options)} options to each dropdown")
+        debug.debug("Panel layout section setup complete (without auto-adjust checkbox)")
 
     @debug_method
     def force_preview_update(self, check = False):
-        """Force a direct update of the preview when panel dropdowns change"""
+        """Force a direct update of the preview when panel dropdowns change (no font colors)"""
         debug.debug("Forcing preview update due to panel dropdown change")
         # Get current settings
         left_contents = []
@@ -640,6 +487,9 @@ class CombinedDisplaySettingsWidget(QWidget):
         self.settings.set_setting("left_panel_contents", left_final)
         self.settings.set_setting("right_panel_contents", right_final)
         
+        # Set auto text color to always be enabled
+        self.settings.set_setting("auto_panel_text_color", True)
+        
         # Force settings to save to disk
         self.settings.save_settings(self.settings.settings)
         
@@ -660,7 +510,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         if hasattr(self.task_preview, 'sample_tree') and self.task_preview.sample_tree:
             debug.debug("Forcing viewport update")
             self.task_preview.sample_tree.viewport().update()
-    
+            
     @debug_method
     def _setup_preview_section(self, parent_layout):
         """Set up the preview section with a single group box"""
@@ -740,25 +590,28 @@ class CombinedDisplaySettingsWidget(QWidget):
         debug.debug("Bottom buttons setup complete")
 
     @debug_method
+    def pick_color_and_update_preview(self, color_type):
+        """Pick color and trigger preview update"""
+        debug.debug(f"Picking color and updating preview for {color_type}")
+        # First pick the color (this will update both button and hex field)
+        self.pick_color(color_type)
+        
+        # Then save the setting and update preview
+        self.save_color_setting(color_type)
+        
+        # Force preview update
+        if hasattr(self, 'task_preview'):
+            debug.debug("Updating preview after color pick")
+            self.task_preview.update_preview()
+
+    @debug_method
     def pick_color(self, color_type):
         """Open color picker dialog for the specified color type"""
         debug.debug(f"Opening color picker for {color_type}")
         color_btn = None
         color_hex = None
         
-        if color_type == "title":
-            color_btn = self.title_color_btn
-            color_hex = self.title_color_hex
-        elif color_type == "description":
-            color_btn = self.desc_color_btn
-            color_hex = self.desc_color_hex
-        elif color_type == "due_date":
-            color_btn = self.due_color_btn
-            color_hex = self.due_color_hex
-        elif color_type == "left_panel":
-            color_btn = self.left_panel_color_btn
-            color_hex = self.left_panel_color_hex
-        elif color_type == "files_background":
+        if color_type == "files_background":
             color_btn = self.files_bg_color_btn
             color_hex = self.files_bg_color_hex
         elif color_type == "links_background":
@@ -780,7 +633,22 @@ class CombinedDisplaySettingsWidget(QWidget):
                 color_btn.setStyleSheet(f"background-color: {hex_color};")
                 color_hex.setText(hex_color)
             else:
-                debug.debug(f"Color selection cancelled for {color_type}")    
+                debug.debug(f"Color selection cancelled for {color_type}")
+
+    @debug_method
+    def update_color_and_preview(self, color_type):
+        """Update color button and trigger preview update"""
+        debug.debug(f"Updating color and preview for {color_type}")
+        # First update the color button
+        self.update_color_from_hex(color_type)
+        
+        # Then save the setting and update preview
+        self.save_color_setting(color_type)
+        
+        # Force preview update
+        if hasattr(self, 'task_preview'):
+            debug.debug("Updating preview after color change")
+            self.task_preview.update_preview()
 
     @debug_method
     def update_color_from_hex(self, color_type):
@@ -789,19 +657,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         color_btn = None
         color_hex = None
         
-        if color_type == "title":
-            color_btn = self.title_color_btn
-            color_hex = self.title_color_hex
-        elif color_type == "description":
-            color_btn = self.desc_color_btn
-            color_hex = self.desc_color_hex
-        elif color_type == "due_date":
-            color_btn = self.due_color_btn
-            color_hex = self.due_color_hex
-        elif color_type == "left_panel":
-            color_btn = self.left_panel_color_btn
-            color_hex = self.left_panel_color_hex
-        elif color_type == "files_background":
+        if color_type == "files_background":
             color_btn = self.files_bg_color_btn
             color_hex = self.files_bg_color_hex
         elif color_type == "links_background":
@@ -826,45 +682,103 @@ class CombinedDisplaySettingsWidget(QWidget):
                     debug.error(f"Invalid color format for {color_type}: {e}")
             else:
                 debug.warning(f"Invalid hex format for {color_type}: {hex_value}")
-   
+
     @debug_method
+    def save_color_setting(self, color_type):
+        """Save a specific color setting immediately"""
+        debug.debug(f"Saving color setting for {color_type}")
+        
+        if color_type == "files_background":
+            color_value = self.files_bg_color_hex.text()
+            self.settings.set_setting("files_background_color", color_value)
+        elif color_type == "links_background":
+            color_value = self.links_bg_color_hex.text()
+            self.settings.set_setting("links_background_color", color_value)
+        elif color_type == "due_date_background":
+            color_value = self.due_date_bg_color_hex.text()
+            self.settings.set_setting("due_date_background_color", color_value)
+        
+        debug.debug(f"Saved {color_type} = {color_value}")
+        
+        # Force settings to save to disk
+        self.settings.save_settings(self.settings.settings)
+
+    @debug_method
+    def load_current_settings(self):
+        """Load current settings from settings manager (no font colors)"""
+        debug.debug("Loading current settings from settings manager")
+        
+        # Block signals during loading to prevent multiple preview updates
+        with QSignalBlocker(self.top_left_combo), \
+            QSignalBlocker(self.bottom_left_combo), \
+            QSignalBlocker(self.top_right_combo), \
+            QSignalBlocker(self.bottom_right_combo):
+            
+            # Font family
+            font_family = self.settings.get_setting("font_family", "Arial")
+            debug.debug(f"Loaded font family: {font_family}")
+            
+            # Update standard font family
+            self.standard_font_family = font_family
+            
+            # Load individual font settings (no colors)
+            self.load_font_settings("title", self.task_title_font, self.title_preview)
+            self.load_font_settings("description", self.task_description_font, self.desc_preview)
+            self.load_font_settings("due_date", self.task_due_date_font, self.date_preview)
+            self.load_font_settings("panel", self.panel_text_font, self.panel_preview)
+            
+            # Load panel layout settings
+            left_contents = self.settings.get_setting("left_panel_contents", ["Category", "Status"])
+            right_contents = self.settings.get_setting("right_panel_contents", ["Link", "Due Date"])
+            
+            # Convert special placeholder back to empty selections
+            if left_contents == ["__NONE__"]:
+                left_contents = []
+            if right_contents == ["__NONE__"]:
+                right_contents = []
+            
+            debug.debug(f"Loaded panel contents - Left: {left_contents}, Right: {right_contents}")
+            
+            # Set combo box selections
+            self.top_left_combo.setCurrentText(left_contents[0] if len(left_contents) > 0 else "None")
+            self.bottom_left_combo.setCurrentText(left_contents[1] if len(left_contents) > 1 else "None")
+            self.top_right_combo.setCurrentText(right_contents[0] if len(right_contents) > 0 else "None")
+            self.bottom_right_combo.setCurrentText(right_contents[1] if len(right_contents) > 1 else "None")
+            
+            # Load background colors
+            self.files_bg_color_hex.setText(self.settings.get_setting("files_background_color", "#E8F4FD"))
+            self.links_bg_color_hex.setText(self.settings.get_setting("links_background_color", "#FFF2E8"))
+            self.due_date_bg_color_hex.setText(self.settings.get_setting("due_date_background_color", "#E1F5FE"))
+            
+            # Update background color buttons
+            self.update_color_from_hex("files_background")
+            self.update_color_from_hex("links_background")
+            self.update_color_from_hex("due_date_background")
+            
+            debug.debug("All settings loaded successfully")
+
+    @debug_method 
     def save_settings(self, check = False):
-        """Save all display settings to the settings manager and apply changes immediately"""
+        """Save all display settings to the settings manager and apply changes immediately (no font colors)"""
         debug.debug("Saving all display settings")
         
-        # Save font family and size
-        self.settings.set_setting("font_family", self.font_family_combo.currentText())
-        self.settings.set_setting("font_size", self.font_size_spin.value())
+        # Save font family
+        self.settings.set_setting("font_family", self.standard_font_family)
         
-        # Save style options
-        self.settings.set_setting("bold_titles", self.bold_titles_check.isChecked())
-        self.settings.set_setting("italic_descriptions", self.italic_desc_check.isChecked())
-        self.settings.set_setting("compact_view_default", self.compact_view_check.isChecked())
-        
-        # Save font weight
-        weight = 0  # Regular
-        if self.medium_radio.isChecked():
-            weight = 1
-        elif self.bold_radio.isChecked():
-            weight = 2
-        self.settings.set_setting("font_weight", weight)
-        
-        # Save colors
-        self.settings.set_setting("title_color", self.title_color_hex.text())
-        self.settings.set_setting("description_color", self.desc_color_hex.text())
-        self.settings.set_setting("due_date_color", self.due_color_hex.text())
+        # Save font settings for each element (no colors)
+        self.save_font_setting("title", self.task_title_font)
+        self.save_font_setting("description", self.task_description_font)
+        self.save_font_setting("due_date", self.task_due_date_font)
+        self.save_font_setting("panel", self.panel_text_font)
         
         # Save Files and Links background colors
         self.settings.set_setting("files_background_color", self.files_bg_color_hex.text())
         self.settings.set_setting("links_background_color", self.links_bg_color_hex.text())
-                
-        # Save Due Date background color
         self.settings.set_setting("due_date_background_color", self.due_date_bg_color_hex.text())
-
-        # Save left panel settings
-        self.settings.set_setting("left_panel_color", self.left_panel_color_hex.text())
-        self.settings.set_setting("left_panel_size", self.left_panel_size_spin.value())
-        self.settings.set_setting("left_panel_bold", self.left_panel_bold_check.isChecked())
+        
+        # Set auto panel text color to always be enabled (no user control)
+        self.settings.set_setting("auto_panel_text_color", True)
+        debug.debug("Set auto_panel_text_color to True (always enabled)")
         
         # Save panel layout settings
         left_contents = []
@@ -911,187 +825,27 @@ class CombinedDisplaySettingsWidget(QWidget):
         debug.debug("Applying changes to all tabs")
         self.apply_changes_to_all_tabs()
         
-        # RETURN TO TASK VIEW - THIS WAS MISSING!
+        # RETURN TO TASK VIEW
         debug.debug("Returning to task view after saving display settings")
-        self.main_window.show_task_view() 
-   
-    @debug_method
-    def save_and_return(self, check = False):
-        """Save settings and return to task view"""
-        debug.debug("Saving settings and returning to task view")
-        # First save all settings
-        self.save_settings()
-        
-        # Then return to task view
-        debug.debug("Returning to task view")
-        self.main_window.show_task_view()
+        self.main_window.show_task_view()            
 
     @debug_method
-    def cancel_and_return(self, check = False):
-        """Cancel changes and return to task view"""
-        debug.debug("Canceling changes and returning to task view")
-        # Restore original settings
-        self.load_current_settings()
+    def save_font_color_setting(self, font_type, color):
+        """Save a specific font color setting immediately"""
+        debug.debug(f"Saving font color setting for {font_type}: {color}")
         
-        # Return to task view without saving
-        debug.debug("Returning to task view without saving")
-        self.main_window.show_task_view()
-    
-    @debug_method
-    def load_current_settings(self):
-        """Load current settings from settings manager"""
-        debug.debug("Loading current settings from settings manager")
-        # Block signals during loading to prevent multiple preview updates
-        with QSignalBlocker(self.font_family_combo), \
-            QSignalBlocker(self.font_size_spin), \
-            QSignalBlocker(self.bold_titles_check), \
-            QSignalBlocker(self.italic_desc_check), \
-            QSignalBlocker(self.compact_view_check), \
-            QSignalBlocker(self.top_left_combo), \
-            QSignalBlocker(self.bottom_left_combo), \
-            QSignalBlocker(self.top_right_combo), \
-            QSignalBlocker(self.bottom_right_combo):
-            
-            # Font settings
-            font_family = self.settings.get_setting("font_family", "")
-            debug.debug(f"Loaded font family: {font_family}")
-            if font_family:
-                index = self.font_family_combo.findText(font_family)
-                if index >= 0:
-                    self.font_family_combo.setCurrentIndex(index)
-                else:
-                    debug.warning(f"Font family {font_family} not found in combo box")
-            
-            font_size = self.settings.get_setting("font_size", 0)
-            debug.debug(f"Loaded font size: {font_size}")
-            if font_size:
-                self.font_size_spin.setValue(int(font_size))
-            
-            # Style options
-            bold_titles = self.settings.get_setting("bold_titles", True)
-            italic_descriptions = self.settings.get_setting("italic_descriptions", False)
-            compact_view_default = self.settings.get_setting("compact_view_default", False)
-            debug.debug(f"Loaded style options - Bold titles: {bold_titles}, Italic desc: {italic_descriptions}, Compact view: {compact_view_default}")
-            
-            self.bold_titles_check.setChecked(bold_titles)
-            self.italic_desc_check.setChecked(italic_descriptions)
-            self.compact_view_check.setChecked(compact_view_default)
-            
-            # Font weight
-            weight = self.settings.get_setting("font_weight", 0)  # 0=Regular, 1=Medium, 2=Bold
-            debug.debug(f"Loaded font weight: {weight}")
-            
-            if weight == 0:
-                self.regular_radio.setChecked(True)
-            elif weight == 1:
-                self.medium_radio.setChecked(True)
-            else:
-                self.bold_radio.setChecked(True)
-            
-            # Text colors
-            title_color = self.settings.get_setting("title_color", "#333333")
-            desc_color = self.settings.get_setting("description_color", "#666666")
-            due_color = self.settings.get_setting("due_date_color", "#888888")
-            debug.debug(f"Loaded text colors - Title: {title_color}, Desc: {desc_color}, Due: {due_color}")
-            
-            self.title_color_hex.setText(title_color)
-            self.desc_color_hex.setText(desc_color)
-            self.due_color_hex.setText(due_color)
-            
-            self.title_color_btn.setStyleSheet(f"background-color: {title_color};")
-            self.desc_color_btn.setStyleSheet(f"background-color: {desc_color};")
-            self.due_color_btn.setStyleSheet(f"background-color: {due_color};")
-            
-            # Left panel settings
-            left_panel_color = self.settings.get_setting("left_panel_color", "#FFFFFF")
-            left_panel_size = self.settings.get_setting("left_panel_size", 8)
-            left_panel_bold = self.settings.get_setting("left_panel_bold", False)
-            debug.debug(f"Loaded left panel settings - Color: {left_panel_color}, Size: {left_panel_size}, Bold: {left_panel_bold}")
-            
-            self.left_panel_color_hex.setText(left_panel_color)
-            self.left_panel_color_btn.setStyleSheet(f"background-color: {left_panel_color};")
-
-            if left_panel_size:
-                self.left_panel_size_spin.setValue(int(left_panel_size))
-
-            self.left_panel_bold_check.setChecked(left_panel_bold)
-            
-            # Files and Links background colors
-            files_bg_color = self.settings.get_setting("files_background_color", "#E8F4FD")
-            links_bg_color = self.settings.get_setting("links_background_color", "#FFF2E8")
-            debug.debug(f"Loaded background colors - Files: {files_bg_color}, Links: {links_bg_color}")
-            
-            self.files_bg_color_hex.setText(files_bg_color)
-            self.links_bg_color_hex.setText(links_bg_color)
-            
-            self.files_bg_color_btn.setStyleSheet(f"background-color: {files_bg_color};")
-            self.links_bg_color_btn.setStyleSheet(f"background-color: {links_bg_color};")
-            
-            # Due Date background color
-            due_date_bg_color = self.settings.get_setting("due_date_background_color", "#E1F5FE")
-            debug.debug(f"Loaded due date background color: {due_date_bg_color}")
-
-            self.due_date_bg_color_hex.setText(due_date_bg_color)
-            self.due_date_bg_color_btn.setStyleSheet(f"background-color: {due_date_bg_color};")
-
-
-            # Panel layout settings
-            left_contents = self.settings.get_setting("left_panel_contents", ["Category", "Status"])
-            debug.debug(f"Loaded left panel contents: {left_contents}")
-            
-            # Handle the special "__NONE__" value
-            if left_contents == ["__NONE__"]:
-                debug.debug("Using empty list for left panel contents")
-                left_contents = []
-                
-            # Set top left content - index 0 = "None" if not present
-            self.top_left_combo.setCurrentIndex(0)  # Default to "None"
-            if len(left_contents) > 0:
-                idx = self.top_left_combo.findText(left_contents[0])
-                if idx >= 0:
-                    debug.debug(f"Setting top left combo to: {left_contents[0]}")
-                    self.top_left_combo.setCurrentIndex(idx)
-            
-            # Set bottom left content - index 0 = "None" if not present  
-            self.bottom_left_combo.setCurrentIndex(0)  # Default to "None"
-            if len(left_contents) > 1:
-                idx = self.bottom_left_combo.findText(left_contents[1])
-                if idx >= 0:
-                    debug.debug(f"Setting bottom left combo to: {left_contents[1]}")
-                    self.bottom_left_combo.setCurrentIndex(idx)
-            
-            # Right section content settings
-            right_contents = self.settings.get_setting("right_panel_contents", ["Link", "Due Date"])
-            debug.debug(f"Loaded right panel contents: {right_contents}")
-            
-            # Handle the special "__NONE__" value
-            if right_contents == ["__NONE__"]:
-                debug.debug("Using empty list for right panel contents")
-                right_contents = []
-            
-            # Set top right content - index 0 = "None" if not present
-            self.top_right_combo.setCurrentIndex(0)  # Default to "None"
-            if len(right_contents) > 0:
-                idx = self.top_right_combo.findText(right_contents[0])
-                if idx >= 0:
-                    debug.debug(f"Setting top right combo to: {right_contents[0]}")
-                    self.top_right_combo.setCurrentIndex(idx)
-            
-            # Set bottom right content - index 0 = "None" if not present
-            self.bottom_right_combo.setCurrentIndex(0)  # Default to "None"
-            if len(right_contents) > 1:
-                idx = self.bottom_right_combo.findText(right_contents[1])
-                if idx >= 0:
-                    debug.debug(f"Setting bottom right combo to: {right_contents[1]}")
-                    self.bottom_right_combo.setCurrentIndex(idx)
-                    
-            # After loading settings, update the preview
-            if hasattr(self, 'task_preview'):
-                debug.debug("Updating preview after loading settings")
-                self.task_preview.update_preview()
+        # Save to settings based on the naming convention used in task_pill_delegate.py
+        if font_type == "panel":
+            # Save panel text color with the correct key
+            self.settings.set_setting("panel_color", color)
+        else:
+            self.settings.set_setting(f"{font_type}_color", color)
         
-        debug.debug("Current settings loaded successfully")
-                
+        debug.debug(f"Saved {font_type}_color = {color}")
+        
+        # Force settings to save to disk
+        self.settings.save_settings(self.settings.settings)
+
     @debug_method
     def apply_changes_to_all_tabs(self):
         """Apply display settings changes to all task trees immediately"""
@@ -1123,89 +877,148 @@ class CombinedDisplaySettingsWidget(QWidget):
                     updated_tabs += 1
             
             debug.debug(f"Applied changes to {updated_tabs} task trees")
-    
-    @debug_method
-    def update_preview_now(self):
-        """Immediately update settings and refresh the preview"""
-        debug.debug("Immediately updating preview")
-        # Get current combo box values
-        left_contents = []
-        right_contents = []
-        
-        # Left panel contents
-        if self.top_left_combo.currentText() != "None":
-            left_contents.append(self.top_left_combo.currentText())
-        
-        if self.bottom_left_combo.currentText() != "None":
-            left_contents.append(self.bottom_left_combo.currentText())
-        
-        # Right panel contents
-        if self.top_right_combo.currentText() != "None":
-            right_contents.append(self.top_right_combo.currentText())
-        
-        if self.bottom_right_combo.currentText() != "None":
-            right_contents.append(self.bottom_right_combo.currentText())
-        
-        debug.debug(f"Current panel contents - Left: {left_contents}, Right: {right_contents}")
-        
-        # Save settings immediately
-        debug.debug("Saving panel contents to settings")
-        self.settings.set_setting("left_panel_contents", left_contents)
-        self.settings.set_setting("right_panel_contents", right_contents)
-        
-        # Update the preview if it exists
-        if hasattr(self, 'task_preview'):
-            debug.debug("Updating preview")
-            self.task_preview.update_preview()
-        else:
-            debug.warning("No task_preview found, cannot update preview")
             
     @debug_method
-    def update_color_and_preview(self, color_type):
-        """Update color button and trigger preview update"""
-        debug.debug(f"Updating color and preview for {color_type}")
-        # First update the color button
-        self.update_color_from_hex(color_type)
+    def pick_font_color(self, font_type):
+        """Open color picker dialog for the specified font color"""
+        debug.debug(f"Opening color picker for {font_type} font color")
+        color_btn = None
+        color_hex = None
         
-        # Then save the setting and update preview
-        self.save_color_setting(color_type)
+        if font_type == "title":
+            color_btn = self.title_color_btn
+            color_hex = self.title_color_hex
+        elif font_type == "description":
+            color_btn = self.desc_color_btn
+            color_hex = self.desc_color_hex
+        elif font_type == "due_date":
+            color_btn = self.date_color_btn
+            color_hex = self.date_color_hex
+        elif font_type == "panel":
+            color_btn = self.panel_color_btn
+            color_hex = self.panel_color_hex
         
-        # Force preview update
+        if color_btn and color_hex:
+            current_color = QColor(color_hex.text())
+            color = QColorDialog.getColor(current_color, self)
+            
+            if color.isValid():
+                hex_color = color.name()
+                debug.debug(f"Selected color for {font_type} font: {hex_color}")
+                
+                # Update button and hex field
+                color_btn.setStyleSheet(f"background-color: {hex_color};")
+                color_hex.setText(hex_color)
+                
+                # Update preview label color immediately
+                self.update_preview_font_color(font_type, hex_color)
+                
+                # Save the color setting
+                self.save_font_color_setting(font_type, hex_color)
+            else:
+                debug.debug(f"Font color selection cancelled for {font_type}")
+
+    @debug_method
+    def update_font_color_from_hex(self, font_type):
+        """Update font color button and preview when hex value changes"""
+        debug.debug(f"Updating font color from hex value for {font_type}")
+        color_btn = None
+        color_hex = None
+        
+        if font_type == "title":
+            color_btn = self.title_color_btn
+            color_hex = self.title_color_hex
+        elif font_type == "description":
+            color_btn = self.desc_color_btn
+            color_hex = self.desc_color_hex
+        elif font_type == "due_date":
+            color_btn = self.date_color_btn
+            color_hex = self.date_color_hex
+        elif font_type == "panel":
+            color_btn = self.panel_color_btn
+            color_hex = self.panel_color_hex
+        
+        if color_btn and color_hex:
+            hex_value = color_hex.text()
+            debug.debug(f"New hex value: {hex_value}")
+            
+            if hex_value.startswith("#") and len(hex_value) == 7:
+                try:
+                    QColor(hex_value)  # Test if valid color
+                    
+                    # Update button color
+                    color_btn.setStyleSheet(f"background-color: {hex_value};")
+                    
+                    # Update preview label color
+                    self.update_preview_font_color(font_type, hex_value)
+                    
+                    # Save the color setting
+                    self.save_font_color_setting(font_type, hex_value)
+                    
+                    debug.debug(f"Valid color, updated {font_type} font color")
+                except Exception as e:
+                    debug.error(f"Invalid color format for {font_type}: {e}")
+            else:
+                debug.warning(f"Invalid hex format for {font_type}: {hex_value}")
+
+    @debug_method
+    def update_preview_font_color(self, font_type, color):
+        """Update the preview label's font color"""
+        debug.debug(f"Updating preview font color for {font_type} to {color}")
+        
+        if font_type == "title":
+            self.title_preview.setStyleSheet(f"color: {color};")
+        elif font_type == "description":
+            self.desc_preview.setStyleSheet(f"color: {color};")
+        elif font_type == "due_date":
+            self.date_preview.setStyleSheet(f"color: {color};")
+        elif font_type == "panel":
+            self.panel_preview.setStyleSheet(f"color: {color};")
+        
+        # Force preview update if it exists
         if hasattr(self, 'task_preview'):
-            debug.debug("Updating preview after color change")
             self.task_preview.update_preview()
 
     @debug_method
-    def pick_color_and_update_preview(self, color_type):
-        """Pick color and trigger preview update"""
-        debug.debug(f"Picking color and updating preview for {color_type}")
-        # First pick the color (this will update both button and hex field)
-        self.pick_color(color_type)
+    def save_font_color_setting(self, font_type, color):
+        """Save a specific font color setting immediately"""
+        debug.debug(f"Saving font color setting for {font_type}: {color}")
         
-        # Then save the setting and update preview
-        self.save_color_setting(color_type)
+        # Save to settings based on the naming convention used in task_pill_delegate.py
+        self.settings.set_setting(f"{font_type}_color", color)
         
-        # Force preview update
-        if hasattr(self, 'task_preview'):
-            debug.debug("Updating preview after color pick")
-            self.task_preview.update_preview()
-
-    @debug_method
-    def save_color_setting(self, color_type):
-        """Save a specific color setting immediately"""
-        debug.debug(f"Saving color setting for {color_type}")
-        
-        if color_type == "files_background":
-            color_value = self.files_bg_color_hex.text()
-            self.settings.set_setting("files_background_color", color_value)
-        elif color_type == "links_background":
-            color_value = self.links_bg_color_hex.text()
-            self.settings.set_setting("links_background_color", color_value)
-        elif color_type == "due_date_background":
-            color_value = self.due_date_bg_color_hex.text()
-            self.settings.set_setting("due_date_background_color", color_value)
-        
-        debug.debug(f"Saved {color_type} = {color_value}")
+        debug.debug(f"Saved {font_type}_color = {color}")
         
         # Force settings to save to disk
         self.settings.save_settings(self.settings.settings)
+
+    @debug_method
+    def load_font_color_settings(self):
+        """Load font color settings from the settings manager"""
+        debug.debug("Loading font color settings")
+        
+        # Load colors for each font type
+        title_color = self.settings.get_setting("title_color", "#333333")
+        desc_color = self.settings.get_setting("description_color", "#666666")
+        date_color = self.settings.get_setting("due_date_color", "#888888")
+        panel_color = self.settings.get_setting("panel_color", "#FFFFFF")  # Changed from "left_panel_color" to "panel_color"
+        
+        debug.debug(f"Loaded colors - title: {title_color}, desc: {desc_color}, date: {date_color}, panel: {panel_color}")
+        
+        # Update hex fields
+        self.title_color_hex.setText(title_color)
+        self.desc_color_hex.setText(desc_color)
+        self.date_color_hex.setText(date_color)
+        self.panel_color_hex.setText(panel_color)
+        
+        # Update color buttons
+        self.title_color_btn.setStyleSheet(f"background-color: {title_color};")
+        self.desc_color_btn.setStyleSheet(f"background-color: {desc_color};")
+        self.date_color_btn.setStyleSheet(f"background-color: {date_color};")
+        self.panel_color_btn.setStyleSheet(f"background-color: {panel_color};")
+        
+        # Update preview label colors
+        self.title_preview.setStyleSheet(f"color: {title_color};")
+        self.desc_preview.setStyleSheet(f"color: {desc_color};")
+        self.date_preview.setStyleSheet(f"color: {date_color};")
+        self.panel_preview.setStyleSheet(f"color: {panel_color};")

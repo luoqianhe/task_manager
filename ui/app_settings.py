@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import sys
 import platform
+import traceback
 
 from ui.os_style_manager import OSStyleManager
 from ui.startup_manager import StartupManager
@@ -466,33 +467,6 @@ class AppSettingsWidget(QWidget):
             
             debug.debug("About to call startup_manager.toggle_startup")
             
-            # Show a simple message first to test if QMessageBox works at all
-            try:
-                from PyQt6.QtWidgets import QMessageBox
-                debug.debug("Testing basic QMessageBox...")
-                
-                # Very simple test message - don't use any complex functionality
-                reply = QMessageBox.question(
-                    self,
-                    "Test",
-                    "This is a test. Continue?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                
-                debug.debug(f"Test QMessageBox completed with reply: {reply}")
-                
-                if reply == QMessageBox.StandardButton.No:
-                    debug.debug("User said no to test, reverting checkbox")
-                    self.startup_checkbox.setChecked(not enabled)
-                    return
-                    
-            except Exception as e:
-                debug.error(f"QMessageBox test failed: {e}")
-                debug.error(traceback.format_exc())
-                self.startup_checkbox.setChecked(not enabled)
-                return
-            
-            # Now try the actual startup toggle
             debug.debug("Calling startup_manager.toggle_startup")
             success, message = self.startup_manager.toggle_startup(enabled)
             debug.debug(f"toggle_startup returned: success={success}, message={message}")
@@ -500,26 +474,11 @@ class AppSettingsWidget(QWidget):
             if success:
                 debug.debug(f"Startup toggle successful: {message}")
                 self.settings.set_setting("startup_enabled", enabled)
-                
-                # Show success message with minimal functionality
-                try:
-                    QMessageBox.information(self, "Success", message)
-                    debug.debug("Success message shown")
-                except Exception as e:
-                    debug.error(f"Error showing success message: {e}")
-                    # Don't fail the whole operation just because message failed
                     
             else:
                 debug.error(f"Startup toggle failed: {message}")
                 # Revert the checkbox since the operation failed
                 self.startup_checkbox.setChecked(not enabled)
-                
-                # Show error message
-                try:
-                    QMessageBox.warning(self, "Error", message)
-                    debug.debug("Error message shown")
-                except Exception as e:
-                    debug.error(f"Error showing error message: {e}")
                     
         except Exception as e:
             debug.error(f"Exception in toggle_startup: {e}")

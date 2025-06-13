@@ -131,12 +131,134 @@ class TaskPillPreviewWidget(QWidget):
                 self.settings_widget.left_panel_bold_check.toggled.connect(
                     self.update_preview)
                 
+            # Auto panel text color checkbox
+            if hasattr(self.settings_widget, 'auto_panel_text_color_check'):
+                debug.debug("Connecting to auto_panel_text_color_check")
+                self.settings_widget.auto_panel_text_color_check.toggled.connect(
+                    self.update_preview)
+            
             debug.debug("All signal connections complete")
-                
+                    
         except Exception as e:
             debug.error(f"Error connecting to settings changes: {e}")
             debug.error(traceback.format_exc())
     
+    @debug_method
+    def apply_current_settings(self):
+        """Apply the current settings to the delegate"""
+        debug.debug("Applying current settings to delegate")
+        start_time = time.time()
+        
+        from ui.app_settings import SettingsManager
+        settings = SettingsManager()
+        
+        debug.debug("Reading values from settings widgets")
+        
+        # Font family
+        if hasattr(self.settings_widget, 'font_family_combo'):
+            font_family = self.settings_widget.font_family_combo.currentText()
+            debug.debug(f"Font family: {font_family}")
+            settings.set_setting("font_family", font_family)
+        
+        # Individual font settings from the font objects in the settings widget
+        if hasattr(self.settings_widget, 'task_title_font'):
+            title_font = self.settings_widget.task_title_font
+            settings.set_setting("title_font_size", title_font.pointSize())
+            settings.set_setting("title_font_bold", title_font.bold())
+            settings.set_setting("title_font_italic", title_font.italic())
+            settings.set_setting("title_font_underline", title_font.underline())
+            debug.debug(f"Title font: size={title_font.pointSize()}, bold={title_font.bold()}")
+        
+        if hasattr(self.settings_widget, 'task_description_font'):
+            desc_font = self.settings_widget.task_description_font
+            settings.set_setting("description_font_size", desc_font.pointSize())
+            settings.set_setting("description_font_bold", desc_font.bold())
+            settings.set_setting("description_font_italic", desc_font.italic())
+            settings.set_setting("description_font_underline", desc_font.underline())
+            debug.debug(f"Description font: size={desc_font.pointSize()}, bold={desc_font.bold()}")
+        
+        if hasattr(self.settings_widget, 'task_due_date_font'):
+            due_date_font = self.settings_widget.task_due_date_font
+            settings.set_setting("due_date_font_size", due_date_font.pointSize())
+            settings.set_setting("due_date_font_bold", due_date_font.bold())
+            settings.set_setting("due_date_font_italic", due_date_font.italic())
+            settings.set_setting("due_date_font_underline", due_date_font.underline())
+            debug.debug(f"Due date font: size={due_date_font.pointSize()}, bold={due_date_font.bold()}")
+        
+        if hasattr(self.settings_widget, 'panel_text_font'):
+            panel_font = self.settings_widget.panel_text_font
+            settings.set_setting("panel_font_size", panel_font.pointSize())
+            settings.set_setting("panel_font_bold", panel_font.bold())
+            settings.set_setting("panel_font_italic", panel_font.italic())
+            settings.set_setting("panel_font_underline", panel_font.underline())
+            debug.debug(f"Panel font: size={panel_font.pointSize()}, bold={panel_font.bold()}")
+
+        # Font color settings - CORRECTED
+        if hasattr(self.settings_widget, 'title_color_hex'):
+            title_color = self.settings_widget.title_color_hex.text()
+            settings.set_setting("title_color", title_color)
+            debug.debug(f"Title color: {title_color}")
+        
+        if hasattr(self.settings_widget, 'desc_color_hex'):
+            desc_color = self.settings_widget.desc_color_hex.text()
+            settings.set_setting("description_color", desc_color)
+            debug.debug(f"Description color: {desc_color}")
+        
+        if hasattr(self.settings_widget, 'date_color_hex'):
+            date_color = self.settings_widget.date_color_hex.text()
+            settings.set_setting("due_date_color", date_color)
+            debug.debug(f"Due date color: {date_color}")
+        
+        if hasattr(self.settings_widget, 'panel_color_hex'):
+            panel_color = self.settings_widget.panel_color_hex.text()
+            settings.set_setting("panel_color", panel_color)  # Changed from "left_panel_color" to "panel_color"
+            debug.debug(f"Panel color: {panel_color}")
+
+        # Background colors
+        if hasattr(self.settings_widget, 'files_bg_color_hex'):
+            files_bg_color = self.settings_widget.files_bg_color_hex.text()
+            settings.set_setting("files_background_color", files_bg_color)
+
+        if hasattr(self.settings_widget, 'links_bg_color_hex'):
+            links_bg_color = self.settings_widget.links_bg_color_hex.text()
+            settings.set_setting("links_background_color", links_bg_color)
+        
+        if hasattr(self.settings_widget, 'due_date_bg_color_hex'):
+            due_date_bg_color = self.settings_widget.due_date_bg_color_hex.text()
+            settings.set_setting("due_date_background_color", due_date_bg_color)
+
+        # Auto panel text color setting
+        if hasattr(self.settings_widget, 'auto_panel_text_color_check'):
+            auto_color = self.settings_widget.auto_panel_text_color_check.isChecked()
+            debug.debug(f"Auto panel text color: {auto_color}")
+            settings.set_setting("auto_panel_text_color", auto_color)
+
+        # Panel contents
+        left_contents = []
+        right_contents = []
+        
+        if hasattr(self.settings_widget, 'top_left_combo'):
+            if self.settings_widget.top_left_combo.currentText() != "None":
+                left_contents.append(self.settings_widget.top_left_combo.currentText())
+        
+        if hasattr(self.settings_widget, 'bottom_left_combo'):
+            if self.settings_widget.bottom_left_combo.currentText() != "None":
+                left_contents.append(self.settings_widget.bottom_left_combo.currentText())
+        
+        if hasattr(self.settings_widget, 'top_right_combo'):
+            if self.settings_widget.top_right_combo.currentText() != "None":
+                right_contents.append(self.settings_widget.top_right_combo.currentText())
+        
+        if hasattr(self.settings_widget, 'bottom_right_combo'):
+            if self.settings_widget.bottom_right_combo.currentText() != "None":
+                right_contents.append(self.settings_widget.bottom_right_combo.currentText())
+        
+        settings.set_setting("left_panel_contents", left_contents)
+        settings.set_setting("right_panel_contents", right_contents)
+        
+        end_time = time.time()
+        debug.debug(f"Settings applied in {end_time - start_time:.3f} seconds")
+      
     @debug_method
     def setup_ui(self):
         """Set up the preview UI"""
@@ -313,19 +435,16 @@ class TaskPillPreviewWidget(QWidget):
         
         end_time = time.time()
         debug.debug(f"Immediate preview update completed in {end_time - start_time:.3f} seconds")
-    
+
     @debug_method
     def apply_current_settings(self):
-        """Apply the current settings to the delegate"""
+        """Apply the current settings to the delegate (no font colors)"""
         debug.debug("Applying current settings to delegate")
         start_time = time.time()
         
-        # We'll need the settings manager
-        debug.debug("Getting settings manager")
         from ui.app_settings import SettingsManager
         settings = SettingsManager()
         
-        # Get all current values from the settings widgets
         debug.debug("Reading values from settings widgets")
         
         # Font family
@@ -334,102 +453,78 @@ class TaskPillPreviewWidget(QWidget):
             debug.debug(f"Font family: {font_family}")
             settings.set_setting("font_family", font_family)
         
-        # Font size
-        if hasattr(self.settings_widget, 'font_size_spin'):
-            font_size = self.settings_widget.font_size_spin.value()
-            debug.debug(f"Font size: {font_size}")
-            settings.set_setting("font_size", font_size)
+        # Individual font settings from the font objects in the settings widget
+        if hasattr(self.settings_widget, 'task_title_font'):
+            title_font = self.settings_widget.task_title_font
+            settings.set_setting("title_font_size", title_font.pointSize())
+            settings.set_setting("title_font_bold", title_font.bold())
+            settings.set_setting("title_font_italic", title_font.italic())
+            settings.set_setting("title_font_underline", title_font.underline())
+            debug.debug(f"Title font: size={title_font.pointSize()}, bold={title_font.bold()}")
         
-        # Bold titles
-        if hasattr(self.settings_widget, 'bold_titles_check'):
-            bold_titles = self.settings_widget.bold_titles_check.isChecked()
-            debug.debug(f"Bold titles: {bold_titles}")
-            settings.set_setting("bold_titles", bold_titles)
+        if hasattr(self.settings_widget, 'task_description_font'):
+            desc_font = self.settings_widget.task_description_font
+            settings.set_setting("description_font_size", desc_font.pointSize())
+            settings.set_setting("description_font_bold", desc_font.bold())
+            settings.set_setting("description_font_italic", desc_font.italic())
+            settings.set_setting("description_font_underline", desc_font.underline())
+            debug.debug(f"Description font: size={desc_font.pointSize()}, bold={desc_font.bold()}")
         
-        # Italic descriptions
-        if hasattr(self.settings_widget, 'italic_desc_check'):
-            italic_desc = self.settings_widget.italic_desc_check.isChecked()
-            debug.debug(f"Italic descriptions: {italic_desc}")
-            settings.set_setting("italic_descriptions", italic_desc)
+        if hasattr(self.settings_widget, 'task_due_date_font'):
+            due_date_font = self.settings_widget.task_due_date_font
+            settings.set_setting("due_date_font_size", due_date_font.pointSize())
+            settings.set_setting("due_date_font_bold", due_date_font.bold())
+            settings.set_setting("due_date_font_italic", due_date_font.italic())
+            settings.set_setting("due_date_font_underline", due_date_font.underline())
+            debug.debug(f"Due date font: size={due_date_font.pointSize()}, bold={due_date_font.bold()}")
         
-        # Font weight
-        if hasattr(self.settings_widget, 'weight_group'):
-            weight = 0  # Default to regular
-            if self.settings_widget.medium_radio.isChecked():
-                weight = 1
-                debug.debug("Font weight: Medium (1)")
-            elif self.settings_widget.bold_radio.isChecked():
-                weight = 2
-                debug.debug("Font weight: Bold (2)")
-            else:
-                debug.debug("Font weight: Regular (0)")
-            settings.set_setting("font_weight", weight)
-        
-        # Colors
-        for color_type in ['title', 'description', 'due_date', 'left_panel']:
-            hex_field = getattr(self.settings_widget, f'{color_type}_color_hex', None)
-            if hex_field:
-                color_value = hex_field.text()
-                debug.debug(f"{color_type}_color: {color_value}")
-                settings.set_setting(f"{color_type}_color", color_value)
+        if hasattr(self.settings_widget, 'panel_text_font'):
+            panel_font = self.settings_widget.panel_text_font
+            settings.set_setting("panel_font_size", panel_font.pointSize())
+            settings.set_setting("panel_font_bold", panel_font.bold())
+            settings.set_setting("panel_font_italic", panel_font.italic())
+            settings.set_setting("panel_font_underline", panel_font.underline())
+            debug.debug(f"Panel font: size={panel_font.pointSize()}, bold={panel_font.bold()}")
 
-        # Add Files and Links background colors
+        # Background colors
         if hasattr(self.settings_widget, 'files_bg_color_hex'):
             files_bg_color = self.settings_widget.files_bg_color_hex.text()
-            debug.debug(f"files_background_color: {files_bg_color}")
             settings.set_setting("files_background_color", files_bg_color)
 
         if hasattr(self.settings_widget, 'links_bg_color_hex'):
             links_bg_color = self.settings_widget.links_bg_color_hex.text()
-            debug.debug(f"links_background_color: {links_bg_color}")
             settings.set_setting("links_background_color", links_bg_color)
         
-        # add due date background colors
         if hasattr(self.settings_widget, 'due_date_bg_color_hex'):
             due_date_bg_color = self.settings_widget.due_date_bg_color_hex.text()
-            debug.debug(f"due_date_background_color: {due_date_bg_color}")
             settings.set_setting("due_date_background_color", due_date_bg_color)
-       
-        # Panel contents - get them from the settings widget, not directly
+
+        # Auto panel text color setting - always enabled
+        settings.set_setting("auto_panel_text_color", True)
+        debug.debug("Set auto_panel_text_color to True (always enabled)")
+
+        # Panel contents
         left_contents = []
         right_contents = []
         
-        # Only try to access these attributes on the parent widget, not self
-        debug.debug("Getting panel contents from combo boxes")
         if hasattr(self.settings_widget, 'top_left_combo'):
             if self.settings_widget.top_left_combo.currentText() != "None":
-                debug.debug(f"Top left: {self.settings_widget.top_left_combo.currentText()}")
                 left_contents.append(self.settings_widget.top_left_combo.currentText())
         
         if hasattr(self.settings_widget, 'bottom_left_combo'):
             if self.settings_widget.bottom_left_combo.currentText() != "None":
-                debug.debug(f"Bottom left: {self.settings_widget.bottom_left_combo.currentText()}")
                 left_contents.append(self.settings_widget.bottom_left_combo.currentText())
         
         if hasattr(self.settings_widget, 'top_right_combo'):
             if self.settings_widget.top_right_combo.currentText() != "None":
-                debug.debug(f"Top right: {self.settings_widget.top_right_combo.currentText()}")
                 right_contents.append(self.settings_widget.top_right_combo.currentText())
         
         if hasattr(self.settings_widget, 'bottom_right_combo'):
             if self.settings_widget.bottom_right_combo.currentText() != "None":
-                debug.debug(f"Bottom right: {self.settings_widget.bottom_right_combo.currentText()}")
                 right_contents.append(self.settings_widget.bottom_right_combo.currentText())
         
-        debug.debug(f"Setting panel contents - left: {left_contents}, right: {right_contents}")
         settings.set_setting("left_panel_contents", left_contents)
         settings.set_setting("right_panel_contents", right_contents)
-        
-        # Left panel settings
-        if hasattr(self.settings_widget, 'left_panel_size_spin'):
-            panel_size = self.settings_widget.left_panel_size_spin.value()
-            debug.debug(f"Left panel size: {panel_size}")
-            settings.set_setting("left_panel_size", panel_size)
-            
-        if hasattr(self.settings_widget, 'left_panel_bold_check'):
-            panel_bold = self.settings_widget.left_panel_bold_check.isChecked()
-            debug.debug(f"Left panel bold: {panel_bold}")
-            settings.set_setting("left_panel_bold", panel_bold)    
         
         end_time = time.time()
         debug.debug(f"Settings applied in {end_time - start_time:.3f} seconds")

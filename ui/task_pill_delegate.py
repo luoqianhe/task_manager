@@ -10,6 +10,7 @@ from ui.os_style_manager import OSStyleManager
 
 # Import the debug logger
 from utils.debug_logger import get_debug_logger
+from utils.debug_decorator import debug_method
 debug = get_debug_logger()
 
 class TaskPillDelegate(QStyledItemDelegate):
@@ -19,7 +20,7 @@ class TaskPillDelegate(QStyledItemDelegate):
         debug.debug("Getting database connection from overridden method")
         from database.database_manager import get_db_manager
         return get_db_manager().get_connection()
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         # Initialize attributes
@@ -35,22 +36,22 @@ class TaskPillDelegate(QStyledItemDelegate):
             # Adjust sizes based on OS
             if self.os_style == "macOS":
                 self.pill_height = 80
-                self.compact_height = 35
                 self.pill_radius = 15
             elif self.os_style == "Windows":
                 self.pill_height = 70
-                self.compact_height = 35
                 self.pill_radius = 4  # Much less rounded for Windows
             else:  # Linux
                 self.pill_height = 75
-                self.compact_height = 38
                 self.pill_radius = 8  # Medium roundness for Linux
         else:
             # Default values if no OS style manager
             self.pill_height = 80
-            self.compact_height = 40
             self.pill_radius = 10
-            
+        
+        # Calculate compact height dynamically based on title font size
+        self.compact_height = self._calculate_compact_height()
+        debug.debug(f"Calculated compact height: {self.compact_height}")
+        
         self.item_margin = 5
         
         settings = self.get_settings_manager()
@@ -104,7 +105,7 @@ class TaskPillDelegate(QStyledItemDelegate):
                 debug.debug("Event filter installed on parent")
             except Exception as e:
                 debug.error(f"Error setting up event filters: {e}")
-
+             
     def _get_section_data(self, user_data, section_type):
         """Get data for a specific section type"""
         debug.debug(f"Getting section data for type: {section_type}")
@@ -262,12 +263,12 @@ class TaskPillDelegate(QStyledItemDelegate):
             debug.error(f"Error saving compact state: {e}")
 
     def eventFilter(self, source, event):
-        """Handle mouse events for hover detection and button clicks"""
+        """Handle mouse events for hover detection, button clicks, and tooltips"""
         # Check if we're handling a tree widget or its viewport
         is_tree_widget = hasattr(source, 'indexAt')
         is_viewport = hasattr(source, 'parent') and hasattr(source.parent(), 'indexAt')
         
-        # Handle mouse movement for hover effects
+        # Handle mouse movement for hover effects AND tooltips
         if event.type() == event.Type.MouseMove:
             # Get position and find item under cursor
             if hasattr(event, 'position'):
@@ -283,33 +284,62 @@ class TaskPillDelegate(QStyledItemDelegate):
                 tree_widget = source
             elif is_viewport:
                 tree_widget = source.parent()
-                # No need to adjust position for viewport
             else:
-                # Not a tree widget or viewport, can't handle
                 return super().eventFilter(source, event)
             
-            # Now use tree_widget to find item at position
+            # Find item at position
             index = tree_widget.indexAt(pos)
             if index.isValid():
-                # Set hover item and force redraw
+                # Get item data
+                user_data = index.data(Qt.ItemDataRole.UserRole)
+                
+                # Skip if this is a priority header
+                if isinstance(user_data, dict) and user_data.get('is_priority_header', False):
+                    tree_widget.setToolTip("")  # Clear any existing tooltip
+                    return super().eventFilter(source, event)
+                
+                # Check if this is a compact task
+                item_id = user_data.get('id', 0) if isinstance(user_data, dict) else 0
+                is_compact = item_id in self.compact_items
+                
+                if is_compact and isinstance(user_data, dict):
+                    # Get the visual rectangle for this item
+                    rect = tree_widget.visualRect(index)
+                    
+                    # Determine which section the mouse is over
+                    hovered_section = self._get_hovered_section(pos, rect, is_compact)
+                    
+                    if hovered_section and hovered_section != "Title":
+                        # Show tooltip for the hovered section
+                        tooltip_text = self._get_section_tooltip_text(user_data, hovered_section)
+                        tree_widget.setToolTip(tooltip_text)
+                        debug.debug(f"Showing tooltip for {hovered_section}: {tooltip_text}")
+                    else:
+                        # Clear tooltip if hovering over title or outside sections
+                        tree_widget.setToolTip("")
+                else:
+                    # Clear tooltip for non-compact tasks
+                    tree_widget.setToolTip("")
+                
+                # Existing hover button logic
                 self.hover_item = index
-                # Calculate button position
                 rect = tree_widget.visualRect(index)
                 self.toggle_button_rect = QRectF(
-                    rect.center().x() - 12,  # 12 = half of button size
-                    rect.top() - 12,  # Position button above item
-                    24, 24  # Button size
+                    rect.center().x() - 12,
+                    rect.top() - 12,
+                    24, 24
                 )
                 tree_widget.viewport().update()
                 debug.debug(f"Hover detected at row {index.row()}")
             else:
-                # Clear hover state if not over an item
+                # Clear hover state and tooltip if not over an item
                 if self.hover_item:
                     self.hover_item = None
                     tree_widget.viewport().update()
-                    debug.debug("Cleared hover state")
+                    tree_widget.setToolTip("")  # Clear tooltip
+                    debug.debug("Cleared hover state and tooltip")
         
-        # Handle mouse clicks for toggle button
+        # Handle mouse clicks for toggle button (existing code)
         elif event.type() == event.Type.MouseButtonPress:
             debug.debug("Mouse button press detected")
             # Get position
@@ -369,10 +399,13 @@ class TaskPillDelegate(QStyledItemDelegate):
                         
                         # Update item size if found
                         if item:
-                            height = self.compact_height if not is_compact else self.pill_height
-                            debug.debug(f"Updating item size to height: {height}")
-                            item.setSizeHint(0, QSize(tree_widget.viewport().width(), 
-                                                    height + self.item_margin * 2))
+                            current_compact_height = self._calculate_compact_height()
+                            height = current_compact_height if not is_compact else self.pill_height
+                            debug.debug(f"Toggle: item {item_id}, new compact state: {not is_compact}, height: {height}")
+
+                            item.setSizeHint(0, QSize(tree_widget.viewport().width(), height + self.item_margin * 2))
+                            debug.debug(f"Updated item {item_id} size hint to height: {height + self.item_margin * 2}")
+
                             tree_widget.scheduleDelayedItemsLayout()  # Force layout update
                         
                         # Force repaint
@@ -405,10 +438,14 @@ class TaskPillDelegate(QStyledItemDelegate):
                         
                         # Update item size if found
                         if item:
-                            height = self.compact_height if not is_compact else self.pill_height
-                            debug.debug(f"Updating item size to height: {height}")
+                            current_compact_height = self._calculate_compact_height()  
+                            height = current_compact_height if not is_compact else self.pill_height
+                            debug.debug(f"Toggle: item {item_id}, new compact state: {not is_compact}, height: {height}")
+
+                            # And update the item size setting:
                             item.setSizeHint(0, QSize(tree_widget.viewport().width(), 
-                                                height + self.item_margin * 2))
+                                            height + self.item_margin * 2))
+                            debug.debug(f"Updated item {item_id} size hint to height: {height + self.item_margin * 2}")
                             tree_widget.scheduleDelayedItemsLayout()  # Force layout update
                         
                         # Force repaint
@@ -671,6 +708,131 @@ class TaskPillDelegate(QStyledItemDelegate):
                     rect.bottom()
                 )
 
+    def _get_section_tooltip_text(self, user_data, section_type):
+        """Get detailed tooltip text for a specific section type"""
+        debug.debug(f"Getting tooltip text for section: {section_type}")
+        
+        if section_type == "Category":
+            category = user_data.get('category', '')
+            return f"Category: {category}" if category else "No Category"
+        
+        elif section_type == "Status":
+            status = user_data.get('status', 'Not Started')
+            return f"Status: {status}"
+        
+        elif section_type == "Priority":
+            priority = user_data.get('priority', '')
+            return f"Priority: {priority}" if priority else "No Priority"
+        
+        elif section_type == "Due Date":
+            due_date = user_data.get('due_date', '')
+            if due_date:
+                # Try to format the date nicely
+                try:
+                    from datetime import datetime
+                    # Assume the date is in YYYY-MM-DD format
+                    date_obj = datetime.strptime(due_date, "%Y-%m-%d")
+                    formatted_date = date_obj.strftime("%B %d, %Y")  # e.g., "May 15, 2025"
+                    return f"Due: {formatted_date}"
+                except:
+                    return f"Due: {due_date}"
+            return "No Due Date"
+        
+        elif section_type == "Link":
+            links = user_data.get('links', [])
+            if links and isinstance(links, list) and len(links) > 0:
+                if len(links) == 1:
+                    _, url, label = links[0]
+                    link_text = label if label else url
+                    return f"Link: {link_text}"
+                else:
+                    return f"Links: {len(links)} links available"
+            return "No Links"
+        
+        elif section_type == "Files":
+            files = user_data.get('files', [])
+            if files and isinstance(files, list) and len(files) > 0:
+                if len(files) == 1:
+                    _, file_path, file_name = files[0]
+                    display_name = file_name if file_name else file_path
+                    return f"File: {display_name}"
+                else:
+                    return f"Files: {len(files)} files attached"
+            return "No Files"
+        
+        elif section_type == "Completion Date":
+            completed_at = user_data.get('completed_at', '')
+            if completed_at:
+                try:
+                    from datetime import datetime
+                    # Assume format is YYYY-MM-DD HH:MM:SS
+                    date_obj = datetime.strptime(completed_at, "%Y-%m-%d %H:%M:%S")
+                    formatted_date = date_obj.strftime("%B %d, %Y at %I:%M %p")
+                    return f"Completed: {formatted_date}"
+                except:
+                    return f"Completed: {completed_at}"
+            return "Not Completed"
+        
+        elif section_type == "Progress":
+            status = user_data.get('status', 'Not Started')
+            if status == 'Not Started':
+                return "Progress: 0% (Not Started)"
+            elif status == 'In Progress':
+                return "Progress: 50% (In Progress)"
+            elif status == 'Completed':
+                return "Progress: 100% (Completed)"
+            else:
+                return f"Progress: {status}"
+        
+        elif section_type == "Tag":
+            tag = user_data.get('tag', '')
+            return f"Tag: {tag}" if tag else "No Tag"
+        
+        else:
+            return f"{section_type}: Not Available"
+
+    def _get_hovered_section(self, pos, rect, is_compact):
+        """Determine which section the mouse is hovering over in a collapsed task"""
+        if not is_compact:
+            return None  # Only show tooltips for compact tasks
+        
+        # Calculate section boundaries
+        left_width = self.left_section_width if self.left_panel_contents else 0
+        right_width = self.right_section_width if self.right_panel_contents else 0
+        
+        # Check if mouse is in left panel
+        if left_width > 0 and pos.x() >= rect.left() and pos.x() <= rect.left() + left_width:
+            # In compact mode, left sections are stacked HORIZONTALLY (side by side)
+            if len(self.left_panel_contents) >= 2:
+                # Two sections - check if in left or right half of the left panel
+                section_width = left_width / 2
+                if pos.x() <= rect.left() + section_width:
+                    return self.left_panel_contents[0]  # First (leftmost) section
+                else:
+                    return self.left_panel_contents[1]  # Second (rightmost) section
+            elif len(self.left_panel_contents) == 1:
+                return self.left_panel_contents[0]  # Only one left section
+        
+        # Check if mouse is in right panel
+        elif right_width > 0 and pos.x() >= rect.right() - right_width and pos.x() <= rect.right():
+            # In compact mode, right sections are stacked HORIZONTALLY (side by side)
+            if len(self.right_panel_contents) >= 2:
+                # Two sections - check if in left or right half of the right panel
+                section_width = right_width / 2
+                right_panel_start = rect.right() - right_width
+                if pos.x() <= right_panel_start + section_width:
+                    return self.right_panel_contents[0]  # First (leftmost) section
+                else:
+                    return self.right_panel_contents[1]  # Second (rightmost) section
+            elif len(self.right_panel_contents) == 1:
+                return self.right_panel_contents[0]  # Only one right section
+        
+        # Check if mouse is in center area (title)
+        elif pos.x() > rect.left() + left_width and pos.x() < rect.right() - right_width:
+            return "Title"  # Hovering over title area
+        
+        return None
+
     def _draw_priority_header(self, painter, option, index, user_data):
             """Draw a priority header item"""
             # Save painter state
@@ -748,69 +910,61 @@ class TaskPillDelegate(QStyledItemDelegate):
             self._draw_due_date(painter, rect, is_compact, due_date_str, font_family, font_size, settings, left_width, right_width)    
 
     def _draw_title(self, painter, rect, is_compact, title, font_family, font_size, settings, left_width, right_width):
-        """Draw the task title with custom font settings"""
-        # Get title style settings
-        bold_titles = settings.get_setting("bold_titles", True)
+        """Draw the task title with custom font settings - Fixed compact positioning"""
+        # Get title font from new font settings
+        title_font = self._get_font_for_element("title")
+        
+        # Get title color from settings
         title_color = settings.get_setting("title_color", "#333333")
-        
-        # Create title font
-        title_font = QFont(font_family, font_size)
-        if bold_titles:
-            title_font.setBold(True)
-        
-        # Set font weight based on settings
-        weight = settings.get_setting("font_weight", 0)  # 0=Regular, 1=Medium, 2=Bold
-        if weight == 1:
-            title_font.setWeight(QFont.Weight.Medium)
-        elif weight == 2:
-            title_font.setWeight(QFont.Weight.Bold)
         
         painter.setFont(title_font)
         painter.setPen(QColor(title_color))
         
-        # Define title_rect based on compact mode - using the updated left_width and right_width
+        # Define title_rect based on compact mode
         if is_compact:
-            # In compact mode, title takes top half width
+            # In compact mode, position title with more space from top (6px) for breathing room
             title_rect = QRectF(
                 rect.left() + left_width + self.text_padding,
-                rect.top(),
+                rect.top() + 6,  # 6 pixels from top edge instead of rect.top()
                 rect.width() - left_width - right_width - self.text_padding * 2,
-                rect.height() / 2  # Only take the top half in compact mode
+                rect.height() - 8  # Use remaining height (total - 6 top - 2 bottom padding)
             )
+            # Use AlignTop for precise positioning in compact mode
+            alignment = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
         else:
-            # In full mode, title is at the top
+            # Full mode positioning (unchanged)
             title_rect = QRectF(
                 rect.left() + left_width + self.text_padding,
                 rect.top() + 10,
                 rect.width() - left_width - right_width - self.text_padding * 2,
-                20  # Height for title
+                20
             )
+            # Use AlignVCenter for full mode
+            alignment = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
 
         # Draw title with ellipsis if too long
         elidedTitle = painter.fontMetrics().elidedText(
             title, Qt.TextElideMode.ElideRight, int(title_rect.width()))
-        painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elidedTitle)
+        
+        painter.drawText(title_rect, alignment, elidedTitle)
 
     def _draw_description(self, painter, rect, description, font_family, font_size, settings, left_width, right_width):
         """Draw the task description with custom font settings"""
-        # Get description style settings
-        italic_desc = settings.get_setting("italic_descriptions", False)
-        desc_color = settings.get_setting("description_color", "#666666")
+        # Get description font from new font settings
+        desc_font = self._get_font_for_element("description")
         
-        # Create description font
-        desc_font = QFont(font_family, font_size - 2)  # Slightly smaller
-        if italic_desc:
-            desc_font.setItalic(True)
+        # Get description color from settings
+        desc_color = settings.get_setting("description_color", "#666666")
         
         painter.setFont(desc_font)
         painter.setPen(QColor(desc_color))
         
-        # Define description rect with adjusted panel widths
+        # Define description rect
         desc_rect = QRectF(
             rect.left() + left_width + self.text_padding,
             rect.top() + 30,
             rect.width() - left_width - right_width - self.text_padding * 2,
-            30  # Height for description
+            30
         )
         
         # Truncate description if too long and add ellipsis
@@ -820,27 +974,25 @@ class TaskPillDelegate(QStyledItemDelegate):
 
     def _draw_due_date(self, painter, rect, is_compact, due_date_str, font_family, font_size, settings, left_width, right_width):
         """Draw the due date with custom font settings"""
-        # Get due date style settings
+        # Get due date font from new font settings
+        date_font = self._get_font_for_element("due_date")
+        
+        # Get due date color from settings
         due_color = settings.get_setting("due_date_color", "#888888")
         
-        # Create due date font
-        date_font = QFont(font_family, font_size - 2)  # Slightly smaller
         painter.setFont(date_font)
         painter.setPen(QColor(due_color))
         
         if is_compact:
-            # In compact mode, show due date below title but still compact
-            title_rect_bottom = rect.top() + rect.height() / 2 + 2  # Just below vertical center
+            title_rect_bottom = rect.top() + rect.height() / 2 + 2
             date_rect = QRectF(
                 rect.left() + left_width + self.text_padding,
                 title_rect_bottom,
                 rect.width() - left_width - right_width - self.text_padding * 2,
                 rect.height() / 2 - 2
             )
-            # Draw text left-aligned
             painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, f"Due: {due_date_str}")
         else:
-            # In full mode, show due date at bottom
             date_rect = QRectF(
                 rect.left() + left_width + self.text_padding,
                 rect.top() + rect.height() - 18,
@@ -931,6 +1083,306 @@ class TaskPillDelegate(QStyledItemDelegate):
             # Restore painting settings
             painter.restore()
 
+    def _get_font_for_element(self, element_type):
+        """Get font settings for a specific element type from settings"""
+        settings = self.get_settings_manager()
+        font_family = settings.get_setting("font_family", "Arial")
+        
+        if element_type == "title":
+            size = settings.get_setting("title_font_size", 14)
+            bold = settings.get_setting("title_font_bold", True)
+            italic = settings.get_setting("title_font_italic", False)
+            underline = settings.get_setting("title_font_underline", False)
+        elif element_type == "description":
+            size = settings.get_setting("description_font_size", 10)
+            bold = settings.get_setting("description_font_bold", False)
+            italic = settings.get_setting("description_font_italic", False)
+            underline = settings.get_setting("description_font_underline", False)
+        elif element_type == "due_date":
+            size = settings.get_setting("due_date_font_size", 9)
+            bold = settings.get_setting("due_date_font_bold", False)
+            italic = settings.get_setting("due_date_font_italic", False)
+            underline = settings.get_setting("due_date_font_underline", False)
+        elif element_type == "panel":
+            size = settings.get_setting("panel_font_size", 8)
+            bold = settings.get_setting("panel_font_bold", False)
+            italic = settings.get_setting("panel_font_italic", False)
+            underline = settings.get_setting("panel_font_underline", False)
+        else:
+            # Default fallback
+            size = 10
+            bold = False
+            italic = False
+            underline = False
+        
+        font = QFont(font_family, size)
+        font.setBold(bold)
+        font.setItalic(italic)
+        font.setUnderline(underline)
+        
+        return font
+
+    def _calculate_compact_height(self):
+        """Calculate compact height based on title font size with proper descender space"""
+        debug.debug("Calculating compact height based on title font size")
+        
+        # Get title font settings
+        settings = self.get_settings_manager()
+        title_font_size = settings.get_setting("title_font_size", 14)
+        debug.debug(f"Title font size: {title_font_size}")
+        
+        # Create a font to measure actual height
+        font_family = settings.get_setting("font_family", "Arial")
+        title_font = QFont(font_family, title_font_size)
+        title_font.setBold(settings.get_setting("title_font_bold", True))
+        
+        # Get font metrics
+        from PyQt6.QtGui import QFontMetrics
+        font_metrics = QFontMetrics(title_font)
+        font_height = font_metrics.height()
+        ascent = font_metrics.ascent()
+        descent = font_metrics.descent()
+        debug.debug(f"Font metrics - height: {font_height}, ascent: {ascent}, descent: {descent}")
+        
+        # Calculate compact height: 
+        # - 6 pixels top padding (more space from top edge)
+        # - Full font height (includes ascent + descent for descenders)
+        # - 2 pixels bottom padding (minimal bottom space)
+        compact_height = 6 + font_height + 2
+        
+        # Ensure minimum height for usability (never smaller than 22 pixels)
+        compact_height = max(compact_height, 22)
+        
+        debug.debug(f"Calculated compact height: {compact_height} (6 top + {font_height} font + 2 bottom)")
+        return compact_height
+    
+    @debug_method
+    def _draw_description(self, painter, rect, description, font_family, font_size, settings, left_width, right_width):
+        """Draw the task description with custom font settings - UPDATED"""
+        # Get description font from new font settings
+        desc_font = self._get_font_for_element("description")
+        
+        # Get description color from settings
+        desc_color = settings.get_setting("description_color", "#666666")
+        
+        painter.setFont(desc_font)
+        painter.setPen(QColor(desc_color))
+        
+        # Define description rect with adjusted panel widths
+        desc_rect = QRectF(
+            rect.left() + left_width + self.text_padding,
+            rect.top() + 30,
+            rect.width() - left_width - right_width - self.text_padding * 2,
+            30  # Height for description
+        )
+        
+        # Truncate description if too long and add ellipsis
+        elidedText = painter.fontMetrics().elidedText(
+            description, Qt.TextElideMode.ElideRight, int(desc_rect.width()))
+        painter.drawText(desc_rect, Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, elidedText)
+
+    @debug_method
+    def _draw_due_date(self, painter, rect, is_compact, due_date_str, font_family, font_size, settings, left_width, right_width):
+        """Draw the due date with custom font settings - UPDATED"""
+        # Get due date font from new font settings
+        date_font = self._get_font_for_element("due_date")
+        
+        # Get due date color from settings
+        due_color = settings.get_setting("due_date_color", "#888888")
+        
+        painter.setFont(date_font)
+        painter.setPen(QColor(due_color))
+        
+        if is_compact:
+            # In compact mode, show due date below title but still compact
+            title_rect_bottom = rect.top() + rect.height() / 2 + 2  # Just below vertical center
+            date_rect = QRectF(
+                rect.left() + left_width + self.text_padding,
+                title_rect_bottom,
+                rect.width() - left_width - right_width - self.text_padding * 2,
+                rect.height() / 2 - 2
+            )
+            # Draw text left-aligned
+            painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, f"Due: {due_date_str}")
+        else:
+            # In full mode, show due date at bottom
+            date_rect = QRectF(
+                rect.left() + left_width + self.text_padding,
+                rect.top() + rect.height() - 18,
+                rect.width() - left_width - right_width - self.text_padding * 2,
+                15
+            )
+            painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"Due: {due_date_str}")
+
+    @debug_method
+    def _draw_custom_panel(self, painter, path, rect, is_compact, content_types, 
+                        user_data, panel_width, panel_side="left"):
+        """Draw custom panel with multiple sections based on settings"""
+        # Get panel font from new font settings
+        panel_font = self._get_font_for_element("panel")
+        
+        # Get settings
+        settings = self.get_settings_manager()
+        
+        # Check if auto text color is enabled (default: True for readability)
+        auto_text_color = settings.get_setting("auto_panel_text_color", True)
+        
+        # Use clipping to ensure proper drawing within the pill
+        painter.setClipPath(path)
+        
+        # Calculate section dimensions based on compact mode
+        section_count = len(content_types)
+        if is_compact:
+            # In compact mode: stack horizontally (side by side)
+            section_width = panel_width / section_count
+            section_height = rect.height()
+        else:
+            # In expanded mode: stack vertically (top to bottom) 
+            section_width = panel_width
+            section_height = rect.height() / section_count
+        
+        # Draw each section
+        for i, content_type in enumerate(content_types):
+            if content_type == "None":
+                continue
+                
+            # Get section data and color
+            section_data = self._get_section_data(user_data, content_type)
+            section_color = self._get_section_color(content_type, section_data)
+            
+            # Determine text color based on setting
+            if auto_text_color:
+                # Calculate text color based on background brightness for readability
+                bg_color = section_color
+                brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
+                text_color = "#000000" if brightness > 128 else "#FFFFFF"
+            else:
+                # Use user's custom panel text color from font color settings
+                # This should use the panel text color, not the left_panel_color
+                text_color = settings.get_setting("panel_color", "#FFFFFF")  # Changed from "left_panel_color" to "panel_color"
+            
+            # Calculate section rectangle based on compact mode and panel side
+            if is_compact:
+                # Compact mode: horizontal stacking
+                if panel_side == "left":
+                    section_rect = QRectF(
+                        rect.left() + (i * section_width),
+                        rect.top(),
+                        section_width,
+                        section_height
+                    )
+                else:  # right panel
+                    section_rect = QRectF(
+                        rect.right() - panel_width + (i * section_width),
+                        rect.top(),
+                        section_width,
+                        section_height
+                    )
+            else:
+                # Expanded mode: vertical stacking (original behavior)
+                if panel_side == "left":
+                    section_rect = QRectF(
+                        rect.left(),
+                        rect.top() + (i * section_height),
+                        section_width,
+                        section_height
+                    )
+                else:  # right panel
+                    section_rect = QRectF(
+                        rect.right() - panel_width,
+                        rect.top() + (i * section_height),
+                        section_width,
+                        section_height
+                    )
+            
+            # Fill the section
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(section_color))
+            painter.drawRect(section_rect)
+            
+            # Draw text if not in compact mode (maintains current behavior)
+            if not is_compact:
+                painter.setFont(panel_font)
+                painter.setPen(QColor(text_color))
+                
+                painter.drawText(
+                    section_rect,
+                    Qt.AlignmentFlag.AlignCenter,
+                    str(section_data) or f"No {content_type}"
+                )
+        
+        # Remove clipping
+        painter.setClipping(False)
+        
+        # Draw divider line
+        painter.setPen(QPen(QColor("#cccccc"), 1))
+        if panel_side == "left":
+            painter.drawLine(
+                rect.left() + panel_width,
+                rect.top(),
+                rect.left() + panel_width,
+                rect.bottom()
+            )
+        else:  # right panel
+            painter.drawLine(
+                rect.right() - panel_width,
+                rect.top(),
+                rect.right() - panel_width,
+                rect.bottom()
+            )
+    
+    def _draw_priority_header(self, painter, option, index, user_data):
+        """Draw a priority header item"""
+        painter.save()
+        
+        # Get data
+        priority = user_data.get('priority', 'Medium')
+        color = user_data.get('color', '#FFC107')
+        expanded = user_data.get('expanded', True)
+        
+        # Calculate rect
+        rect = option.rect.adjusted(
+            self.item_margin,
+            self.item_margin,
+            -self.item_margin,
+            -self.item_margin
+        )
+        
+        # Draw background
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect), 5, 5)
+        painter.fillPath(path, QBrush(QColor(color)))
+        
+        # Calculate text color based on background brightness
+        bg_color = QColor(color)
+        brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
+        text_color = "#000000" if brightness > 128 else "#FFFFFF"
+        
+        # Get font from settings
+        settings = self.get_settings_manager()
+        font_family = settings.get_setting("font_family", "Segoe UI")
+        font_size = int(settings.get_setting("font_size", 12))
+        
+        header_font = QFont(font_family)
+        header_font.setPointSize(font_size)
+        header_font.setBold(True)
+        
+        painter.setFont(header_font)
+        painter.setPen(QColor(text_color))
+        
+        header_text_rect = QRectF(
+            rect.left() + 40,
+            rect.top(),
+            rect.width() - 50,
+            rect.height()
+        )
+        
+        painter.drawText(header_text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, 
+                        priority.upper())
+        
+        painter.restore()
+
     def sizeHint(self, option, index):
         """Return appropriate size based on compact state or header type"""
         user_data = index.data(Qt.ItemDataRole.UserRole)
@@ -939,6 +1391,7 @@ class TaskPillDelegate(QStyledItemDelegate):
         if isinstance(user_data, dict) and user_data.get('is_priority_header', False):
             # Use a fixed smaller height for priority headers
             header_height = 25  # Smaller fixed height value
+            debug.debug(f"Priority header size hint: {header_height + self.item_margin * 2}")
             return QSize(option.rect.width(), header_height + self.item_margin * 2)
         
         # Regular task item sizing
@@ -946,9 +1399,17 @@ class TaskPillDelegate(QStyledItemDelegate):
         if isinstance(user_data, dict) and 'id' in user_data:
             item_id = user_data['id']
         
-        height = self.compact_height if item_id in self.compact_items else self.pill_height
-        return QSize(option.rect.width(), height + self.item_margin * 2)
-
+        # Recalculate compact height in case font settings changed
+        current_compact_height = self._calculate_compact_height()
+        
+        is_compact = item_id in self.compact_items
+        height = current_compact_height if is_compact else self.pill_height
+        
+        total_height = height + self.item_margin * 2
+        debug.debug(f"Task {item_id} size hint - compact: {is_compact}, height: {height}, total: {total_height}")
+        
+        return QSize(option.rect.width(), total_height)
+  
     def show_toggle_button(self, tree_widget, item_index):
         """Force show the toggle button for a specific item (for debugging)"""
         self.hover_item = item_index
