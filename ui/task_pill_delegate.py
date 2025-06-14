@@ -616,98 +616,6 @@ class TaskPillDelegate(QStyledItemDelegate):
         painter.setBrush(QBrush(QColor("#f5f5f5")))
         painter.drawPath(path)
 
-    def _draw_custom_panel(self, painter, path, rect, is_compact, content_types, 
-                            user_data, panel_width, panel_side="left"):
-            """Draw custom panel with multiple sections based on settings"""
-            # Get settings for panel text
-            settings = self.get_settings_manager()
-            default_text_color = settings.get_setting("left_panel_color", "#FFFFFF")
-            text_size = int(settings.get_setting("left_panel_size", 8))
-            text_bold = settings.get_setting("left_panel_bold", False)
-            
-            # Use clipping to ensure proper drawing within the pill
-            painter.setClipPath(path)
-            
-            # Calculate section height - ensure it's evenly divided
-            section_count = len(content_types)
-            section_height = rect.height() / section_count
-            
-            # Draw each section
-            for i, content_type in enumerate(content_types):
-                # Skip if content type is None
-                if content_type == "None":
-                    continue
-                    
-                # Get section data
-                section_data = self._get_section_data(user_data, content_type)
-                
-                # Get color based on content type
-                section_color = self._get_section_color(content_type, section_data)
-                
-                # Calculate text color based on background brightness
-                bg_color = section_color
-                brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
-                text_color = "#000000" if brightness > 128 else "#FFFFFF"
-                
-                # Calculate section rectangle
-                if panel_side == "left":
-                    section_rect = QRectF(
-                        rect.left(),
-                        rect.top() + (i * section_height),
-                        panel_width,
-                        section_height
-                    )
-                else:  # right panel
-                    section_rect = QRectF(
-                        rect.right() - panel_width,
-                        rect.top() + (i * section_height),
-                        panel_width,
-                        section_height
-                    )
-                
-                # Fill the section
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(QBrush(section_color))
-                painter.drawRect(section_rect)
-                
-                # Draw text if not in compact mode
-                if not is_compact:
-                    # Set up font for section text
-                    section_font = QFont(painter.font())
-                    section_font.setPointSize(text_size)
-                    if text_bold:
-                        section_font.setBold(True)
-                        
-                    painter.setFont(section_font)
-                    painter.setPen(QColor(text_color))
-                    
-                    # Draw section text
-                    painter.drawText(
-                        section_rect,
-                        Qt.AlignmentFlag.AlignCenter,
-                        str(section_data) or f"No {content_type}"
-                    )
-            
-            # Remove clipping
-            painter.setClipping(False)
-            
-            # Draw divider line
-            painter.setPen(QPen(QColor("#cccccc"), 1))
-            if panel_side == "left":
-                painter.drawLine(
-                    rect.left() + panel_width,
-                    rect.top(),
-                    rect.left() + panel_width,
-                    rect.bottom()
-                )
-            else:  # right panel
-                painter.drawLine(
-                    rect.right() - panel_width,
-                    rect.top(),
-                    rect.right() - panel_width,
-                    rect.bottom()
-                )
-
     def _get_section_tooltip_text(self, user_data, section_type):
         """Get detailed tooltip text for a specific section type"""
         debug.debug(f"Getting tooltip text for section: {section_type}")
@@ -833,61 +741,6 @@ class TaskPillDelegate(QStyledItemDelegate):
         
         return None
 
-    def _draw_priority_header(self, painter, option, index, user_data):
-            """Draw a priority header item"""
-            # Save painter state
-            painter.save()
-            
-            # Get data
-            priority = user_data.get('priority', 'Medium')
-            color = user_data.get('color', '#FFC107')
-            expanded = user_data.get('expanded', True)
-            
-            # Calculate rect - REDUCE MARGINS HERE
-            rect = option.rect.adjusted(
-                self.item_margin,
-                self.item_margin,  # Reduce top margin
-                -self.item_margin,
-                -self.item_margin  # Reduce bottom margin
-            )
-            
-            # Draw background
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            path = QPainterPath()
-            path.addRoundedRect(QRectF(rect), 5, 5)
-            painter.fillPath(path, QBrush(QColor(color)))
-            
-            # Calculate text color based on background brightness
-            bg_color = QColor(color)
-            brightness = (bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114) / 1000
-            text_color = "#000000" if brightness > 128 else "#FFFFFF"
-            
-            # Draw priority text
-            # Get font settings from SettingsManager
-            settings = self.get_settings_manager()
-            font_family = settings.get_setting("font_family", "Segoe UI")
-            font_size = int(settings.get_setting("font_size", 12))
-            
-            header_font = QFont(font_family)
-            header_font.setPointSize(font_size)
-            header_font.setBold(True)
-            
-            painter.setFont(header_font)
-            painter.setPen(QColor(text_color))
-            
-            header_text_rect = QRectF(
-                rect.left() + 40,  # Position after arrow
-                rect.top(),
-                rect.width() - 50,
-                rect.height()
-            )
-            
-            painter.drawText(header_text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, 
-                            priority.upper())
-            
-            # Restore painter
-            painter.restore()
-
     def _draw_task_content(self, painter, rect, is_compact, title, description, due_date_str, item_id, left_width, right_width):
         """Draw the main task content (title, description, due date)"""
         # Get font settings from SettingsManager
@@ -910,46 +763,57 @@ class TaskPillDelegate(QStyledItemDelegate):
             self._draw_due_date(painter, rect, is_compact, due_date_str, font_family, font_size, settings, left_width, right_width)    
 
     def _draw_title(self, painter, rect, is_compact, title, font_family, font_size, settings, left_width, right_width):
-        """Draw the task title with custom font settings - Fixed compact positioning"""
+        """Draw the task title with improved text fitting and proper descender space"""
         # Get title font from new font settings
         title_font = self._get_font_for_element("title")
         
         # Get title color from settings
-        title_color = settings.get_setting("title_color", "#333333")
+        title_color = settings.get_setting("title_color", "#000000")
         
         painter.setFont(title_font)
         painter.setPen(QColor(title_color))
         
-        # Define title_rect based on compact mode
-        if is_compact:
-            # In compact mode, position title with more space from top (6px) for breathing room
-            title_rect = QRectF(
-                rect.left() + left_width + self.text_padding,
-                rect.top() + 6,  # 6 pixels from top edge instead of rect.top()
-                rect.width() - left_width - right_width - self.text_padding * 2,
-                rect.height() - 8  # Use remaining height (total - 6 top - 2 bottom padding)
-            )
-            # Use AlignTop for precise positioning in compact mode
-            alignment = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
-        else:
-            # Full mode positioning (unchanged)
-            title_rect = QRectF(
-                rect.left() + left_width + self.text_padding,
-                rect.top() + 10,
-                rect.width() - left_width - right_width - self.text_padding * 2,
-                20
-            )
-            # Use AlignVCenter for full mode
-            alignment = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-
-        # Draw title with ellipsis if too long
-        elidedTitle = painter.fontMetrics().elidedText(
-            title, Qt.TextElideMode.ElideRight, int(title_rect.width()))
+        # Get font metrics for proper text positioning
+        font_metrics = painter.fontMetrics()
         
-        painter.drawText(title_rect, alignment, elidedTitle)
+        # Calculate available width for title text
+        available_width = rect.width() - left_width - right_width - (self.text_padding * 2)
+        
+        # Define title rect with proper positioning and font metrics
+        if is_compact:
+            # In compact mode, ensure enough height for descenders
+            title_rect = QRectF(
+                rect.left() + left_width + self.text_padding,
+                rect.top() + 3,  # Small top padding
+                available_width,
+                font_metrics.height() + 2  # Use actual font height plus small buffer
+            )
+        else:
+            # In normal mode, use font metrics for proper height
+            title_rect = QRectF(
+                rect.left() + left_width + self.text_padding,
+                rect.top() + 5,  # Slightly more top padding
+                available_width,
+                font_metrics.height() + 2  # Ensure full font height including descenders
+            )
+        
+        # Calculate if text needs to be elided
+        text_width = font_metrics.horizontalAdvance(title)
+        
+        if text_width > available_width:
+            # Text is too long, elide it intelligently
+            elided_text = font_metrics.elidedText(
+                title, 
+                Qt.TextElideMode.ElideRight, 
+                int(available_width)
+            )
+            painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, elided_text)
+        else:
+            # Text fits normally - use AlignTop to prevent cutting off descenders
+            painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, title)
 
     def _draw_description(self, painter, rect, description, font_family, font_size, settings, left_width, right_width):
-        """Draw the task description with custom font settings"""
+        """Draw the task description with dynamic height and proper word wrapping"""
         # Get description font from new font settings
         desc_font = self._get_font_for_element("description")
         
@@ -959,19 +823,185 @@ class TaskPillDelegate(QStyledItemDelegate):
         painter.setFont(desc_font)
         painter.setPen(QColor(desc_color))
         
-        # Define description rect
+        # Calculate available space
+        available_width = rect.width() - left_width - right_width - (self.text_padding * 2)
+        
+        # Get font metrics for proper line calculations
+        font_metrics = painter.fontMetrics()
+        line_height = font_metrics.height()
+        
+        # Define description rect - use available space more efficiently
+        desc_start_y = rect.top() + 30  # Start below title
+        # Use most of the available height, leaving less bottom padding
+        available_height = rect.height() - 35  # Reduced from 40 to 35
+        
         desc_rect = QRectF(
             rect.left() + left_width + self.text_padding,
-            rect.top() + 30,
-            rect.width() - left_width - right_width - self.text_padding * 2,
-            30
+            desc_start_y,
+            available_width,
+            available_height
         )
         
-        # Truncate description if too long and add ellipsis
-        elidedText = painter.fontMetrics().elidedText(
-            description, Qt.TextElideMode.ElideRight, int(desc_rect.width()))
-        painter.drawText(desc_rect, Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, elidedText)
+        # Calculate maximum lines that can fit
+        max_lines = max(1, int(available_height / line_height))
+        
+        # Split description into words while preserving line breaks
+        # First split by line breaks to preserve hard returns
+        paragraphs = description.split('\n')
+        lines = []
+        
+        for paragraph in paragraphs:
+            if not paragraph.strip():
+                # Empty line - add it as a blank line
+                lines.append("")
+                continue
+                
+            # Process each paragraph for word wrapping
+            words = paragraph.split()
+            current_line = ""
+            
+            for word in words:
+                test_line = current_line + (" " if current_line else "") + word
+                test_width = font_metrics.horizontalAdvance(test_line)
+                
+                if test_width <= available_width:
+                    current_line = test_line
+                else:
+                    if current_line:
+                        lines.append(current_line)
+                        current_line = word
+                    else:
+                        # Single word is too long, elide it
+                        current_line = font_metrics.elidedText(word, Qt.TextElideMode.ElideRight, int(available_width))
+                        lines.append(current_line)
+                        current_line = ""
+                    
+                    # Check if we've reached max lines
+                    if len(lines) >= max_lines:
+                        break
+            
+            # Add remaining text from this paragraph
+            if current_line and len(lines) < max_lines:
+                lines.append(current_line)
+                
+            # Break if we've reached max lines
+            if len(lines) >= max_lines:
+                break
+        
+        # If we have too many lines, truncate and add ellipsis to last line
+        if len(lines) > max_lines:
+            lines = lines[:max_lines]
+            if lines:
+                last_line = lines[-1]
+                # Add ellipsis to last line if needed
+                while font_metrics.horizontalAdvance(last_line + "...") > available_width and len(last_line) > 0:
+                    last_line = last_line[:-1]
+                lines[-1] = last_line + "..."
+        
+        # Draw the lines with proper spacing
+        for i, line in enumerate(lines):
+            line_rect = QRectF(
+                desc_rect.left(),
+                desc_rect.top() + (i * line_height),
+                desc_rect.width(),
+                line_height
+            )
+            painter.drawText(line_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, line)
 
+    def sizeHint(self, option, index):
+        """Return appropriate size based on compact state, content, and description length"""
+        user_data = index.data(Qt.ItemDataRole.UserRole)
+        
+        # Use a consistent width regardless of expand/collapse state
+        consistent_width = 100  # Fixed base width - let the tree widget handle actual width
+        
+        # Check if this is a priority header
+        if isinstance(user_data, dict) and user_data.get('is_priority_header', False):
+            # Use a fixed smaller height for priority headers
+            header_height = 35  # Consistent header height
+            debug.debug(f"Priority header size hint: width={consistent_width}, height={header_height}")
+            return QSize(consistent_width, header_height)
+        
+        # Check if this is a task item
+        if isinstance(user_data, dict) and 'id' in user_data:
+            task_id = user_data['id']
+            is_compact = task_id in self.compact_items
+            
+            if is_compact:
+                # Use calculated compact height
+                height = self.compact_height
+                debug.debug(f"Task {task_id} compact size hint: width={consistent_width}, height={height + self.item_margin * 2}")
+                return QSize(consistent_width, height + self.item_margin * 2)
+            else:
+                # Calculate dynamic height based on description content
+                description = user_data.get('description', '')
+                
+                if description and description.strip():
+                    # Get font settings for calculation
+                    settings = self.get_settings_manager()
+                    font_family = settings.get_setting("font_family", "Arial")
+                    
+                    # Create description font for measurement
+                    desc_font = self._get_font_for_element("description")
+                    font_metrics = QFontMetrics(desc_font)
+                    line_height = font_metrics.height()
+                    
+                    # Use a fixed estimated width for consistency
+                    estimated_width = 400  # Fixed estimate instead of dynamic calculation
+                    left_width = sum(self.left_panel_widths) if hasattr(self, 'left_panel_widths') else 0
+                    right_width = sum(self.right_panel_widths) if hasattr(self, 'right_panel_widths') else 0
+                    available_width = estimated_width - left_width - right_width - (self.text_padding * 2)
+                    
+                    # Calculate lines needed for description (accounting for line breaks)
+                    paragraphs = description.split('\n')
+                    lines_needed = 0
+                    
+                    for paragraph in paragraphs:
+                        if not paragraph.strip():
+                            # Empty line
+                            lines_needed += 1
+                            continue
+                            
+                        # Calculate word wrapping for this paragraph
+                        words = paragraph.split()
+                        current_line = ""
+                        
+                        for word in words:
+                            test_line = current_line + (" " if current_line else "") + word
+                            test_width = font_metrics.horizontalAdvance(test_line)
+                            
+                            if test_width <= available_width:
+                                current_line = test_line
+                            else:
+                                if current_line:
+                                    lines_needed += 1
+                                    current_line = word
+                                else:
+                                    lines_needed += 1
+                                    current_line = ""
+                        
+                        if current_line:
+                            lines_needed += 1
+                    
+                    # Calculate total height needed
+                    # Title space (30px) + description lines + minimal bottom padding
+                    description_height = lines_needed * line_height
+                    total_height = 35 + description_height + 8  # Title + description + minimal padding
+                    
+                    # Ensure minimum height
+                    total_height = max(total_height, self.pill_height)
+                    
+                    debug.debug(f"Task {task_id} expanded size hint: width={consistent_width}, description lines={lines_needed}, height={total_height + self.item_margin * 2}")
+                    return QSize(consistent_width, total_height + self.item_margin * 2)
+                else:
+                    # No description, use standard height
+                    debug.debug(f"Task {task_id} expanded (no description) size hint: width={consistent_width}, height={self.pill_height + self.item_margin * 2}")
+                    return QSize(consistent_width, self.pill_height + self.item_margin * 2)
+        
+        # Default size for other items
+        debug.debug(f"Default size hint: width={consistent_width}, height=50")
+        return QSize(consistent_width, 50)
+    
     def _draw_due_date(self, painter, rect, is_compact, due_date_str, font_family, font_size, settings, left_width, right_width):
         """Draw the due date with custom font settings"""
         # Get due date font from new font settings
@@ -1002,7 +1032,7 @@ class TaskPillDelegate(QStyledItemDelegate):
             painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"Due: {due_date_str}")
 
     def _draw_toggle_button(self, painter, index, item_id, rect):
-        """Draw the toggle button for all items (including headers)"""
+        """Draw the toggle button for all items with consistent positioning"""
         # Get data from the index
         user_data = index.data(Qt.ItemDataRole.UserRole)
         
@@ -1014,10 +1044,19 @@ class TaskPillDelegate(QStyledItemDelegate):
             # Clear any clipping that might interfere
             painter.setClipping(False)
 
-            # Calculate button position - centered at top of pill
+            # Calculate button position - use a fixed reference point for consistency
             button_size = 24
             button_top = rect.top() - button_size // 2
-            button_center = rect.left() + rect.width() // 2
+            
+            # Use the tree widget's viewport width for consistent positioning
+            tree_widget = painter.device().parent() if hasattr(painter.device(), 'parent') else None
+            if tree_widget and hasattr(tree_widget, 'viewport'):
+                viewport_width = tree_widget.viewport().width()
+                # Position button at a consistent location relative to viewport
+                button_center = viewport_width // 2  # Always center in viewport
+            else:
+                # Fallback to rect-based positioning
+                button_center = rect.left() + rect.width() // 2
 
             toggle_button_rect = QRectF(
                 button_center - button_size // 2,
@@ -1082,7 +1121,7 @@ class TaskPillDelegate(QStyledItemDelegate):
 
             # Restore painting settings
             painter.restore()
-
+            
     def _get_font_for_element(self, element_type):
         """Get font settings for a specific element type from settings"""
         settings = self.get_settings_manager()
@@ -1156,64 +1195,6 @@ class TaskPillDelegate(QStyledItemDelegate):
         debug.debug(f"Calculated compact height: {compact_height} (6 top + {font_height} font + 2 bottom)")
         return compact_height
     
-    @debug_method
-    def _draw_description(self, painter, rect, description, font_family, font_size, settings, left_width, right_width):
-        """Draw the task description with custom font settings - UPDATED"""
-        # Get description font from new font settings
-        desc_font = self._get_font_for_element("description")
-        
-        # Get description color from settings
-        desc_color = settings.get_setting("description_color", "#666666")
-        
-        painter.setFont(desc_font)
-        painter.setPen(QColor(desc_color))
-        
-        # Define description rect with adjusted panel widths
-        desc_rect = QRectF(
-            rect.left() + left_width + self.text_padding,
-            rect.top() + 30,
-            rect.width() - left_width - right_width - self.text_padding * 2,
-            30  # Height for description
-        )
-        
-        # Truncate description if too long and add ellipsis
-        elidedText = painter.fontMetrics().elidedText(
-            description, Qt.TextElideMode.ElideRight, int(desc_rect.width()))
-        painter.drawText(desc_rect, Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, elidedText)
-
-    @debug_method
-    def _draw_due_date(self, painter, rect, is_compact, due_date_str, font_family, font_size, settings, left_width, right_width):
-        """Draw the due date with custom font settings - UPDATED"""
-        # Get due date font from new font settings
-        date_font = self._get_font_for_element("due_date")
-        
-        # Get due date color from settings
-        due_color = settings.get_setting("due_date_color", "#888888")
-        
-        painter.setFont(date_font)
-        painter.setPen(QColor(due_color))
-        
-        if is_compact:
-            # In compact mode, show due date below title but still compact
-            title_rect_bottom = rect.top() + rect.height() / 2 + 2  # Just below vertical center
-            date_rect = QRectF(
-                rect.left() + left_width + self.text_padding,
-                title_rect_bottom,
-                rect.width() - left_width - right_width - self.text_padding * 2,
-                rect.height() / 2 - 2
-            )
-            # Draw text left-aligned
-            painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, f"Due: {due_date_str}")
-        else:
-            # In full mode, show due date at bottom
-            date_rect = QRectF(
-                rect.left() + left_width + self.text_padding,
-                rect.top() + rect.height() - 18,
-                rect.width() - left_width - right_width - self.text_padding * 2,
-                15
-            )
-            painter.drawText(date_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"Due: {due_date_str}")
-
     @debug_method
     def _draw_custom_panel(self, painter, path, rect, is_compact, content_types, 
                         user_data, panel_width, panel_side="left"):
@@ -1383,33 +1364,63 @@ class TaskPillDelegate(QStyledItemDelegate):
         
         painter.restore()
 
-    def sizeHint(self, option, index):
-        """Return appropriate size based on compact state or header type"""
-        user_data = index.data(Qt.ItemDataRole.UserRole)
+    def _draw_panel_text_with_fitting(self, painter, text_rect, text, font, max_lines=2):
+        """Draw panel text with improved fitting and multi-line support"""
+        painter.setFont(font)
+        font_metrics = painter.fontMetrics()
+        line_height = font_metrics.height()
+        available_width = text_rect.width() - 4  # Small padding
         
-        # Check if this is a priority header
-        if isinstance(user_data, dict) and user_data.get('is_priority_header', False):
-            # Use a fixed smaller height for priority headers
-            header_height = 25  # Smaller fixed height value
-            debug.debug(f"Priority header size hint: {header_height + self.item_margin * 2}")
-            return QSize(option.rect.width(), header_height + self.item_margin * 2)
+        # Split text into words
+        words = text.split()
+        lines = []
+        current_line = ""
         
-        # Regular task item sizing
-        item_id = 0
-        if isinstance(user_data, dict) and 'id' in user_data:
-            item_id = user_data['id']
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            test_width = font_metrics.horizontalAdvance(test_line)
+            
+            if test_width <= available_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                    current_line = word
+                else:
+                    # Single word too long, elide it
+                    current_line = font_metrics.elidedText(word, Qt.TextElideMode.ElideRight, int(available_width))
+                    lines.append(current_line)
+                    current_line = ""
+            
+            if len(lines) >= max_lines:
+                break
         
-        # Recalculate compact height in case font settings changed
-        current_compact_height = self._calculate_compact_height()
+        if current_line and len(lines) < max_lines:
+            lines.append(current_line)
         
-        is_compact = item_id in self.compact_items
-        height = current_compact_height if is_compact else self.pill_height
+        # Ensure we don't exceed max_lines
+        if len(lines) > max_lines:
+            lines = lines[:max_lines]
+            if lines:
+                # Add ellipsis to last line
+                last_line = lines[-1]
+                while font_metrics.horizontalAdvance(last_line + "...") > available_width and len(last_line) > 0:
+                    last_line = last_line[:-1]
+                lines[-1] = last_line + "..."
         
-        total_height = height + self.item_margin * 2
-        debug.debug(f"Task {item_id} size hint - compact: {is_compact}, height: {height}, total: {total_height}")
+        # Draw each line centered in the available space
+        total_text_height = len(lines) * line_height
+        start_y = text_rect.top() + (text_rect.height() - total_text_height) / 2
         
-        return QSize(option.rect.width(), total_height)
-  
+        for i, line in enumerate(lines):
+            line_rect = QRectF(
+                text_rect.left() + 2,  # Small left padding
+                start_y + (i * line_height),
+                text_rect.width() - 4,  # Account for padding
+                line_height
+            )
+            painter.drawText(line_rect, Qt.AlignmentFlag.AlignCenter, line)
+            
     def show_toggle_button(self, tree_widget, item_index):
         """Force show the toggle button for a specific item (for debugging)"""
         self.hover_item = item_index

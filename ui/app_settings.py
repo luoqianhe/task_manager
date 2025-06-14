@@ -332,10 +332,13 @@ class AppSettingsWidget(QWidget):
         self.debug_checkbox.toggled.connect(self.toggle_debug_logging)
         debug_layout.addWidget(self.debug_checkbox)
         
-        # Startup Settings group (add this after debug_group)
+        # Create a horizontal layout for Startup Settings and Keyboard Shortcuts
+        startup_shortcuts_layout = QHBoxLayout()
+
+        # Startup Settings group (left side)
         startup_group = QGroupBox("Startup Settings")
         startup_layout = QVBoxLayout()
-        
+
         # Initialize startup manager with error handling
         try:
             debug.debug("Initializing StartupManager")
@@ -347,52 +350,72 @@ class AppSettingsWidget(QWidget):
             debug.error(f"Error initializing StartupManager: {e}")
             debug.error(traceback.format_exc())
             startup_enabled = False
-        
+
         # Startup checkbox
         self.startup_checkbox = QCheckBox("Start Task Organizer when I log into my computer")
         self.startup_checkbox.setChecked(startup_enabled)
         self.startup_checkbox.toggled.connect(self.toggle_startup)
         startup_layout.addWidget(self.startup_checkbox)
-        
+
         # Add description
         startup_description = QLabel("When enabled, Task Organizer will automatically start when you log into your computer.")
         startup_description.setWordWrap(True)
         startup_layout.addWidget(startup_description)
         
+        # Add stretch to push button to top
+        startup_layout.addStretch()
         startup_group.setLayout(startup_layout)
-        layout.addWidget(startup_group)
-        
+
+        # Keyboard Shortcuts group (right side)
+        shortcuts_group = QGroupBox("Keyboard Shortcuts")
+        shortcuts_layout = QVBoxLayout()
+
+        # Edit shortcuts button
+        self.edit_shortcuts_button = QPushButton("Edit Shortcuts...")
+        self.edit_shortcuts_button.setFixedHeight(30)
+        self.edit_shortcuts_button.clicked.connect(self.show_keyboard_shortcuts_dialog)
+        shortcuts_layout.addWidget(self.edit_shortcuts_button)
+
         # Add description
-        debug_description = QLabel("Enabling debug logging will create detailed log files in the application's data directory. This can be useful for troubleshooting problems.")
+        shortcuts_description = QLabel("Customize keyboard shortcuts for quick access to frequently used actions.")
+        shortcuts_description.setWordWrap(True)
+        shortcuts_layout.addWidget(shortcuts_description)
+
+# Debug Settings Group
+        debug_group = QGroupBox("Debug Settings")
+        debug_group.setStyleSheet("QGroupBox { background-color: #FFFDE7; border: 1px solid #E0E0E0; border-radius: 5px; margin-top: 1ex; } QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; }")
+
+        debug_layout = QVBoxLayout()
+
+        # Get debug enabled setting
+        debug_enabled = self.settings.get_setting("debug_enabled", False)
+        debug.debug(f"Debug enabled from settings: {debug_enabled}")
+
+        # Debug checkbox
+        self.debug_checkbox = QCheckBox("Enable Debug Logging")
+        self.debug_checkbox.setChecked(debug_enabled)
+        self.debug_checkbox.toggled.connect(self.toggle_debug_logging)
+        debug_layout.addWidget(self.debug_checkbox)
+
+        # Debug description
+        debug_description = QLabel("Enable detailed logging for troubleshooting. Log files are saved to the application directory.")
         debug_description.setWordWrap(True)
         debug_layout.addWidget(debug_description)
-        
+
         debug_group.setLayout(debug_layout)
         layout.addWidget(debug_group)
         
-        # Add stretch to push Done button to bottom
-        layout.addStretch()
-        
-        # Add Save and Cancel buttons at the bottom
-        bottom_button_layout = QHBoxLayout()
-        save_button = QPushButton("Save Settings")
-        save_button.setFixedHeight(30)
-        save_button.setMinimumWidth(120)
-        save_button.clicked.connect(self.save_settings)
-        save_button.setProperty("primary", True)  # Add the primary property
-        save_button.setDefault(True)
+        # Add stretch to push button to top
+        shortcuts_layout.addStretch()
 
-        cancel_button = QPushButton("Cancel")
-        cancel_button.setFixedHeight(30)
-        cancel_button.setMinimumWidth(120)
-        cancel_button.clicked.connect(self.main_window.show_task_view)
-        cancel_button.setProperty("secondary", True)  # Add the secondary property
-        
-        bottom_button_layout.addWidget(save_button)
-        bottom_button_layout.addWidget(cancel_button)
-        bottom_button_layout.addStretch()
-        layout.addLayout(bottom_button_layout)
-        debug.debug("AppSettingsWidget UI setup complete")    
+        shortcuts_group.setLayout(shortcuts_layout)
+
+        # Add both groups to horizontal layout
+        startup_shortcuts_layout.addWidget(startup_group)
+        startup_shortcuts_layout.addWidget(shortcuts_group)
+
+        # Add the horizontal layout to main layout
+        layout.addLayout(startup_shortcuts_layout)   
 
     def open_database_location(self):
         debug.debug("Opening database location")
@@ -521,6 +544,10 @@ class AppSettingsWidget(QWidget):
         # Save the setting (will be saved permanently when clicking Save)
         self.settings.settings["debug_enabled"] = enabled
         debug.debug(f"Updated debug_enabled in settings: {enabled}")
+        
+        # Update main window styling immediately
+        if hasattr(self, 'main_window') and self.main_window:
+            self.main_window.toggle_debug_mode(enabled)
     
     def change_database_location(self):
         debug.debug("Changing database location")
@@ -590,6 +617,56 @@ class AppSettingsWidget(QWidget):
             QMessageBox.information(self, "API Key Deleted", "Your Bee API key has been deleted.")
         else:
             debug.debug("User cancelled Bee API key deletion")
+
+    @debug_method
+    def show_bee_todos(self, checked=False):
+        """Show the Bee To-Dos management dialog"""
+        debug.debug("Opening Bee To-Dos management")
+        try:
+            # Get the API key
+            api_key = self.settings.get_setting("bee_api_key", "")
+            if not api_key:
+                debug.warning("No Bee API key found")
+                QMessageBox.warning(self, "No API Key", "Please add a Bee API key first.")
+                return
+            
+            # Create and show the Bee To-Dos dialog
+            from ui.bee_todos import BeeToDoWidget
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Manage Bee To-Dos")
+            dialog.setModal(True)
+            dialog.resize(800, 600)
+            
+            layout = QVBoxLayout(dialog)
+            bee_widget = BeeToDoWidget(self.main_window)
+            bee_widget.initialize_with_api_key(api_key)
+            layout.addWidget(bee_widget)
+            
+            # Add close button
+            button_layout = QHBoxLayout()
+            button_layout.addStretch()
+            close_button = QPushButton("Close")
+            close_button.clicked.connect(dialog.accept)
+            button_layout.addWidget(close_button)
+            layout.addLayout(button_layout)
+            
+            dialog.exec()
+            
+        except Exception as e:
+            debug.error(f"Error opening Bee To-Dos management: {e}")
+            QMessageBox.warning(self, "Error", f"Could not open Bee To-Dos management: {str(e)}")
+
+    @debug_method
+    def show_keyboard_shortcuts_dialog(self, checked = False):
+        """Show the keyboard shortcuts editing dialog"""
+        debug.debug("Opening keyboard shortcuts dialog")
+        try:
+            from ui.keyboard_shortcuts_dialog import KeyboardShortcutsDialog
+            dialog = KeyboardShortcutsDialog(self.settings, self.main_window, self)
+            dialog.exec()
+        except Exception as e:
+            debug.error(f"Error opening keyboard shortcuts dialog: {e}")
+            QMessageBox.warning(self, "Error", f"Could not open keyboard shortcuts dialog: {str(e)}")
 
     def add_bee_api_key(self):
         """Add a new Bee API key"""

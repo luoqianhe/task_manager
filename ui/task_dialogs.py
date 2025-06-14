@@ -268,8 +268,8 @@ class AddTaskDialog(QDialog):
         # Add widgets layout to attachments layout
         attachments_layout.addLayout(widgets_layout)
         
-        # Add left-aligned buttons for Links and Files (matching Save/Cancel style)
-        buttons_container = QHBoxLayout()
+        # Add left-aligned buttons for Links and Files (top row)
+        top_buttons_container = QHBoxLayout()
         
         # Add Link button
         add_link_button = QPushButton("Add Link")
@@ -277,7 +277,7 @@ class AddTaskDialog(QDialog):
         add_link_button.setFixedHeight(32)
         add_link_button.setIcon(QIcon.fromTheme("list-add"))
         add_link_button.clicked.connect(self.links_widget.add_link)
-        buttons_container.addWidget(add_link_button)
+        top_buttons_container.addWidget(add_link_button)
         
         # Add File button
         add_file_button = QPushButton("Add File")
@@ -285,29 +285,37 @@ class AddTaskDialog(QDialog):
         add_file_button.setFixedHeight(32)
         add_file_button.setIcon(QIcon.fromTheme("list-add"))
         add_file_button.clicked.connect(self.files_widget.add_file)
-        buttons_container.addWidget(add_file_button)
+        top_buttons_container.addWidget(add_file_button)
         
-        # Add buttons container to attachments layout
-        attachments_layout.addLayout(buttons_container)
+        # Add top buttons container to attachments layout
+        attachments_layout.addLayout(top_buttons_container)
         
         # Add attachments layout to main layout
         layout.addLayout(attachments_layout)
         
-        # Dialog control buttons (Save/Cancel)
-        button_layout = QHBoxLayout()
+        # Save and Cancel buttons (bottom row) - positioned to align with buttons above
+        bottom_buttons_container = QHBoxLayout()
+        
+        # Save button (positioned below Add Link button)
         save_btn = QPushButton("Save")
-        save_btn.setFixedHeight(30)
+        save_btn.setFixedWidth(120)
+        save_btn.setFixedHeight(32)
         save_btn.setDefault(True)  # This will apply the default button style for the OS
         save_btn.clicked.connect(self.accept)
+        bottom_buttons_container.addWidget(save_btn)
         
+        # Cancel button (positioned below Add File button)
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFixedHeight(30)
+        cancel_btn.setFixedWidth(120)
+        cancel_btn.setFixedHeight(32)
         cancel_btn.setProperty("secondary", True)  # Mark as secondary button
         cancel_btn.clicked.connect(self.reject)
+        bottom_buttons_container.addWidget(cancel_btn)
         
-        button_layout.addWidget(save_btn)
-        button_layout.addWidget(cancel_btn)
-        layout.addLayout(button_layout)
+        # NO stretch here either - matches the top row positioning
+        
+        # Add bottom buttons container to main layout
+        layout.addLayout(bottom_buttons_container)
         
         # Set tab order
         self.setTabOrder(self.title_input, self.description_input)
@@ -320,7 +328,6 @@ class AddTaskDialog(QDialog):
         self.setTabOrder(add_link_button, add_file_button)
         self.setTabOrder(add_file_button, save_btn)
         self.setTabOrder(save_btn, cancel_btn)
-        debug.debug("AddTaskDialog UI setup complete")
         
     @debug_method
     def add_link(self, check = False):

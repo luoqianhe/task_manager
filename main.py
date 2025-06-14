@@ -71,6 +71,7 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 900, 600)
         
         # Initialize settings manager
+        debug.debug("Creating SettingsManager")
         self.settings = SettingsManager()
         
         # Get OS style information
@@ -82,10 +83,6 @@ class MainWindow(QMainWindow):
             
         # Apply OS-specific window settings
         self.apply_os_window_settings()
-        
-        # Initialize settings manager
-        debug.debug("Creating SettingsManager")
-        self.settings = SettingsManager()
         
         # Set default display settings if not already set
         if not self.settings.get_setting("right_panel_contents"):
@@ -146,7 +143,67 @@ class MainWindow(QMainWindow):
                         self._delayed_restore_states(t, items))
                 else:
                     debug.debug(f"No saved expanded states for tab {i}, skipping")
-                    
+         
+    def apply_debug_styling(self):
+        """Apply red styling to main window when debug mode is enabled"""
+        debug.debug("Applying debug styling to main window")
+        
+        # Check if debug is enabled
+        debug_enabled = self.settings.get_setting("debug_enabled", False)
+        debug.debug(f"Debug enabled: {debug_enabled}")
+        
+        if debug_enabled:
+            # Apply red border and background tint to indicate debug mode
+            debug_style = """
+            QMainWindow {
+                border: 3px solid #ff4444;
+                background-color: rgba(255, 0, 0, 10);
+            }
+            QTabWidget::pane {
+                border: 2px solid #ff4444;
+                background-color: rgba(255, 200, 200, 30);
+            }
+            QTabBar::tab {
+                border: 1px solid #ff4444;
+                background-color: rgba(255, 220, 220, 50);
+            }
+            QTabBar::tab:selected {
+                background-color: rgba(255, 180, 180, 80);
+                border-bottom: 2px solid #ff4444;
+            }
+            """
+            self.setStyleSheet(debug_style)
+            
+            # Update window title to show debug mode
+            current_title = self.windowTitle()
+            if not current_title.endswith(" [DEBUG MODE]"):
+                self.setWindowTitle(current_title + " [DEBUG MODE]")
+                
+            debug.debug("Debug styling applied - red borders and background tint")
+        else:
+            # Remove debug styling
+            self.setStyleSheet("")  # Clear custom styles
+            
+            # Remove debug mode from title
+            current_title = self.windowTitle()
+            if current_title.endswith(" [DEBUG MODE]"):
+                self.setWindowTitle(current_title.replace(" [DEBUG MODE]", ""))
+                
+            debug.debug("Debug styling removed")
+            
+    @debug_method
+    def toggle_debug_mode(self, enabled):
+        """Toggle debug mode and update styling immediately"""
+        debug.debug(f"Toggling debug mode: {enabled}")
+        
+        # Save the setting
+        self.settings.set_setting("debug_enabled", enabled)
+        
+        # Apply styling immediately
+        self.apply_debug_styling()
+        
+        debug.debug(f"Debug mode toggled to: {enabled}")
+        
     @debug_method
     def _delayed_restore_states(self, tree, expanded_items):
         """Helper method for delayed state restoration with better error handling"""
@@ -373,6 +430,9 @@ class MainWindow(QMainWindow):
         debug.debug("Reloading all tabs")
         self.tabs.reload_all()
         
+        # Apply debug styling based on current setting
+        self.apply_debug_styling()
+        
         # Restore expanded states after reload
         current_tab = self.tabs.currentWidget()
         if hasattr(current_tab, 'task_tree'):
@@ -390,7 +450,8 @@ class MainWindow(QMainWindow):
             current_tab.task_tree._save_expanded_states()
             
         self.stacked_widget.setCurrentIndex(1)
-    
+        self.apply_debug_styling()
+         
     @debug_method
     def show_add_dialog(self, checked=False):
         debug.debug("Opening Add Task dialog")
@@ -742,6 +803,47 @@ class MainWindow(QMainWindow):
         debug.debug("Application shutdown complete")
         event.accept()
        
+    @debug_method
+    def update_shortcuts(self):
+        """Update keyboard shortcuts from settings"""
+        debug.debug("Updating keyboard shortcuts from settings")
+        
+        # Clear existing shortcuts
+        if hasattr(self, 'shortcuts_list'):
+            for shortcut in self.shortcuts_list:
+                shortcut.setParent(None)
+        
+        self.shortcuts_list = []
+        
+        # Get shortcuts from settings
+        shortcut_mappings = {
+            "new_task": self.show_add_dialog,
+            "edit_task": self.edit_selected_task,
+            "settings": self.show_settings,
+            "import_csv": self.import_from_csv,
+            "export_csv": self.export_to_csv,
+            "tab_current": lambda: self.tabs.setCurrentIndex(0),
+            "tab_backlog": lambda: self.tabs.setCurrentIndex(1),
+            "tab_completed": lambda: self.tabs.setCurrentIndex(2),
+            "delete_task": self.delete_selected_task if hasattr(self, 'delete_selected_task') else lambda: None,
+            "refresh": self.refresh_tasks if hasattr(self, 'refresh_tasks') else lambda: None,
+        }
+        
+        # Create new shortcuts
+        for key, action in shortcut_mappings.items():
+            sequence = self.settings.get_setting(f"shortcut_{key}", "")
+            if sequence:
+                shortcut = QShortcut(QKeySequence(sequence), self)
+                shortcut.activated.connect(action)
+                self.shortcuts_list.append(shortcut)
+                debug.debug(f"Created shortcut {sequence} for {key}")
+
+    @debug_method
+    def setup_shortcuts(self):
+        """Set up keyboard shortcuts from settings"""
+        debug.debug("Setting up keyboard shortcuts")
+        self.update_shortcuts()
+        
     @debug_method
     def on_settings_tab_changed(self, index):
         debug.debug(f"Settings tab changed to index {index}")

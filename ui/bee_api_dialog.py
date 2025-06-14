@@ -335,7 +335,7 @@ class BeeApiKeyDialog(QDialog):
         self.accept()
         
     @debug_method
-    def handle_cancel(self):
+    def handle_cancel(self, checked = False):
         """Handle the Cancel button click"""
         debug.debug("Cancel button clicked")
         self.reject()
