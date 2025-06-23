@@ -156,11 +156,10 @@ class DatabaseConfig:
         cursor.execute("SELECT COUNT(*) FROM categories")
         if cursor.fetchone()[0] == 0:
             default_categories = [
-                ('Work', '#F0F7FF'),        # Light blue
-                ('Personal', '#E8F5E9'),    # Light green
-                ('Shopping', '#FFF8E1'),    # Light yellow
-                ('Health', '#FFEBEE'),      # Light red
-                ('Learning', '#F3E5F5')     # Light purple
+                ('Work', '#E8F4FD'),        # Very light blue
+                ('Personal', '#F0F7FF'),    # Very light blue-white
+                ('General', '#F8F9FA'),     # Very light gray
+                ('Ideas', '#FFF8E1')        # Very light cream
             ]
             
             cursor.executemany("""
@@ -184,9 +183,9 @@ class DatabaseConfig:
         cursor.execute("SELECT COUNT(*) FROM priorities")
         if cursor.fetchone()[0] == 0:
             default_priorities = [
-                ('High', '#F44336', 1),     # Red (highest priority)
-                ('Medium', '#FFC107', 2),   # Amber (medium priority)
-                ('Low', '#4CAF50', 3),       # Green (lowest priority)
+                ('High', '#E74C3C', 1),     # Professional red
+                ('Medium', '#F39C12', 2),   # Professional orange
+                ('Low', '#95A5A6', 3),      # Professional gray
                 ('Unprioritized', '#AAAAAA', 4)  # Gray (no priority)
             ]
             
@@ -211,11 +210,11 @@ class DatabaseConfig:
         cursor.execute("SELECT COUNT(*) FROM statuses")
         if cursor.fetchone()[0] == 0:
             default_statuses = [
-                ('Not Started', '#F44336', 1),  # Red
-                ('In Progress', '#FFC107', 2),  # Amber
-                ('On Hold', '#9E9E9E', 3),      # Gray
+                ('Not Started', '#BDC3C7', 1),  # Light gray
+                ('In Progress', '#3498DB', 2),  # Professional blue
+                ('On Hold', '#F39C12', 3),      # Professional orange
                 ('Backlog', '#9C27B0', 4),      # Purple
-                ('Completed', '#4CAF50', 5)     # Green
+                ('Completed', '#27AE60', 5)     # Professional green
             ]
             
             cursor.executemany("""

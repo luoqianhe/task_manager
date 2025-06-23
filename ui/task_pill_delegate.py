@@ -1125,30 +1125,37 @@ class TaskPillDelegate(QStyledItemDelegate):
     def _get_font_for_element(self, element_type):
         """Get font settings for a specific element type from settings"""
         settings = self.get_settings_manager()
-        font_family = settings.get_setting("font_family", "Arial")
+        
+        # Get element-specific font family, fallback to global font_family, then Arial
+        default_font_family = settings.get_setting("font_family", "Arial")
         
         if element_type == "title":
+            font_family = settings.get_setting("title_font_family", default_font_family)
             size = settings.get_setting("title_font_size", 14)
             bold = settings.get_setting("title_font_bold", True)
             italic = settings.get_setting("title_font_italic", False)
             underline = settings.get_setting("title_font_underline", False)
         elif element_type == "description":
+            font_family = settings.get_setting("description_font_family", default_font_family)
             size = settings.get_setting("description_font_size", 10)
             bold = settings.get_setting("description_font_bold", False)
             italic = settings.get_setting("description_font_italic", False)
             underline = settings.get_setting("description_font_underline", False)
         elif element_type == "due_date":
+            font_family = settings.get_setting("due_date_font_family", default_font_family)
             size = settings.get_setting("due_date_font_size", 9)
             bold = settings.get_setting("due_date_font_bold", False)
             italic = settings.get_setting("due_date_font_italic", False)
             underline = settings.get_setting("due_date_font_underline", False)
         elif element_type == "panel":
+            font_family = settings.get_setting("panel_font_family", default_font_family)
             size = settings.get_setting("panel_font_size", 8)
             bold = settings.get_setting("panel_font_bold", False)
             italic = settings.get_setting("panel_font_italic", False)
             underline = settings.get_setting("panel_font_underline", False)
         else:
             # Default fallback
+            font_family = default_font_family
             size = 10
             bold = False
             italic = False

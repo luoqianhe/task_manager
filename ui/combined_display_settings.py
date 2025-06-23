@@ -290,16 +290,19 @@ class CombinedDisplaySettingsWidget(QWidget):
         """Load font settings for a specific font type"""
         debug.debug(f"Loading font settings for {font_type}")
         
-        # Load font properties from settings
+        # Load font properties from settings, including element-specific font family
+        # Try element-specific font family first, then fall back to global, then to standard
+        font_family = self.settings.get_setting(f"{font_type}_font_family", 
+                                                self.settings.get_setting("font_family", self.standard_font_family))
         size = self.settings.get_setting(f"{font_type}_font_size", font_obj.pointSize())
         bold = self.settings.get_setting(f"{font_type}_font_bold", font_obj.bold())
         italic = self.settings.get_setting(f"{font_type}_font_italic", font_obj.italic())
         underline = self.settings.get_setting(f"{font_type}_font_underline", font_obj.underline())
         
-        debug.debug(f"Font settings for {font_type}: size={size}, bold={bold}, italic={italic}, underline={underline}")
+        debug.debug(f"Font settings for {font_type}: family={font_family}, size={size}, bold={bold}, italic={italic}, underline={underline}")
         
         # Apply settings to font object
-        font_obj.setFamily(self.standard_font_family)
+        font_obj.setFamily(font_family)
         font_obj.setPointSize(size)
         font_obj.setBold(bold)
         font_obj.setItalic(italic)
@@ -309,6 +312,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         preview_label.setFont(font_obj)
         
         # IMPORTANT: Also save the font settings to ensure consistency
+        self.settings.set_setting(f"{font_type}_font_family", font_family)
         self.settings.set_setting(f"{font_type}_font_size", size)
         self.settings.set_setting(f"{font_type}_font_bold", bold)
         self.settings.set_setting(f"{font_type}_font_italic", italic)
@@ -319,12 +323,17 @@ class CombinedDisplaySettingsWidget(QWidget):
         """Save individual font settings to the settings manager"""
         debug.debug(f"Saving font settings for {font_type}")
         
+        # Save element-specific font family and all font properties
+        self.settings.set_setting(f"{font_type}_font_family", font.family())
         self.settings.set_setting(f"{font_type}_font_size", font.pointSize())
         self.settings.set_setting(f"{font_type}_font_bold", font.bold())
         self.settings.set_setting(f"{font_type}_font_italic", font.italic())
         self.settings.set_setting(f"{font_type}_font_underline", font.underline())
         
-        debug.debug(f"Saved {font_type} font: size={font.pointSize()}, bold={font.bold()}, italic={font.italic()}, underline={font.underline()}")
+        # Also update the global font_family setting for backward compatibility
+        self.settings.set_setting("font_family", font.family())
+        
+        debug.debug(f"Saved {font_type} font: family={font.family()}, size={font.pointSize()}, bold={font.bold()}, italic={font.italic()}, underline={font.underline()}")
 
     def _setup_pill_background_colors(self, parent_layout):
         """Set up the pill background colors section with main pill background"""
@@ -531,7 +540,7 @@ class CombinedDisplaySettingsWidget(QWidget):
         debug.debug("Panel layout section setup complete (without auto-adjust checkbox)")
 
     @debug_method
-    def force_preview_update(self, check = False):
+    def force_preview_update(self, check=False):
         """Force a direct update of the preview when panel dropdowns change (no font colors)"""
         debug.debug("Forcing preview update due to panel dropdown change")
         # Get current settings
@@ -855,7 +864,7 @@ class CombinedDisplaySettingsWidget(QWidget):
             
             debug.debug("All settings loaded successfully")
             
-    def save_settings(self, check=False):
+    def save_settings(self, checked=False):
         """Save all display settings to the settings manager and return to main task view"""
         debug.debug("Saving all display settings")
         

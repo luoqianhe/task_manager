@@ -163,35 +163,39 @@ class TaskPillPreviewWidget(QWidget):
         # Individual font settings from the font objects in the settings widget
         if hasattr(self.settings_widget, 'task_title_font'):
             title_font = self.settings_widget.task_title_font
+            settings.set_setting("title_font_family", title_font.family())
             settings.set_setting("title_font_size", title_font.pointSize())
             settings.set_setting("title_font_bold", title_font.bold())
             settings.set_setting("title_font_italic", title_font.italic())
             settings.set_setting("title_font_underline", title_font.underline())
-            debug.debug(f"Title font: size={title_font.pointSize()}, bold={title_font.bold()}")
+            debug.debug(f"Title font: family={title_font.family()}, size={title_font.pointSize()}, bold={title_font.bold()}")
         
         if hasattr(self.settings_widget, 'task_description_font'):
             desc_font = self.settings_widget.task_description_font
+            settings.set_setting("description_font_family", desc_font.family())
             settings.set_setting("description_font_size", desc_font.pointSize())
             settings.set_setting("description_font_bold", desc_font.bold())
             settings.set_setting("description_font_italic", desc_font.italic())
             settings.set_setting("description_font_underline", desc_font.underline())
-            debug.debug(f"Description font: size={desc_font.pointSize()}, bold={desc_font.bold()}")
+            debug.debug(f"Description font: family={desc_font.family()}, size={desc_font.pointSize()}, bold={desc_font.bold()}")
         
         if hasattr(self.settings_widget, 'task_due_date_font'):
             due_date_font = self.settings_widget.task_due_date_font
+            settings.set_setting("due_date_font_family", due_date_font.family())
             settings.set_setting("due_date_font_size", due_date_font.pointSize())
             settings.set_setting("due_date_font_bold", due_date_font.bold())
             settings.set_setting("due_date_font_italic", due_date_font.italic())
             settings.set_setting("due_date_font_underline", due_date_font.underline())
-            debug.debug(f"Due date font: size={due_date_font.pointSize()}, bold={due_date_font.bold()}")
+            debug.debug(f"Due date font: family={due_date_font.family()}, size={due_date_font.pointSize()}, bold={due_date_font.bold()}")
         
         if hasattr(self.settings_widget, 'panel_text_font'):
             panel_font = self.settings_widget.panel_text_font
+            settings.set_setting("panel_font_family", panel_font.family())
             settings.set_setting("panel_font_size", panel_font.pointSize())
             settings.set_setting("panel_font_bold", panel_font.bold())
             settings.set_setting("panel_font_italic", panel_font.italic())
             settings.set_setting("panel_font_underline", panel_font.underline())
-            debug.debug(f"Panel font: size={panel_font.pointSize()}, bold={panel_font.bold()}")
+            debug.debug(f"Panel font: family={panel_font.family()}, size={panel_font.pointSize()}, bold={panel_font.bold()}")
 
         # Font color settings - CORRECTED
         if hasattr(self.settings_widget, 'title_color_hex'):
@@ -366,7 +370,7 @@ class TaskPillPreviewWidget(QWidget):
         debug.debug("Sample items created successfully")
     
     @debug_method
-    def update_preview(self, check = False):
+    def update_preview(self, check=False):
         """Update the preview based on current settings"""
         debug.debug("Updating preview based on current settings")
         start_time = time.time()
@@ -387,7 +391,7 @@ class TaskPillPreviewWidget(QWidget):
         debug.debug(f"Preview update completed in {end_time - start_time:.3f} seconds")
     
     @debug_method
-    def immediate_update_preview(self, check = False):
+    def immediate_update_preview(self, check=False):
         """Immediately update the preview with current settings"""
         debug.debug("Immediately updating preview")
         start_time = time.time()
@@ -456,35 +460,39 @@ class TaskPillPreviewWidget(QWidget):
         # Individual font settings from the font objects in the settings widget
         if hasattr(self.settings_widget, 'task_title_font'):
             title_font = self.settings_widget.task_title_font
+            settings.set_setting("title_font_family", title_font.family())
             settings.set_setting("title_font_size", title_font.pointSize())
             settings.set_setting("title_font_bold", title_font.bold())
             settings.set_setting("title_font_italic", title_font.italic())
             settings.set_setting("title_font_underline", title_font.underline())
-            debug.debug(f"Title font: size={title_font.pointSize()}, bold={title_font.bold()}")
+            debug.debug(f"Title font: family={title_font.family()}, size={title_font.pointSize()}, bold={title_font.bold()}")
         
         if hasattr(self.settings_widget, 'task_description_font'):
             desc_font = self.settings_widget.task_description_font
+            settings.set_setting("description_font_family", desc_font.family())
             settings.set_setting("description_font_size", desc_font.pointSize())
             settings.set_setting("description_font_bold", desc_font.bold())
             settings.set_setting("description_font_italic", desc_font.italic())
             settings.set_setting("description_font_underline", desc_font.underline())
-            debug.debug(f"Description font: size={desc_font.pointSize()}, bold={desc_font.bold()}")
+            debug.debug(f"Description font: family={desc_font.family()}, size={desc_font.pointSize()}, bold={desc_font.bold()}")
         
         if hasattr(self.settings_widget, 'task_due_date_font'):
             due_date_font = self.settings_widget.task_due_date_font
+            settings.set_setting("due_date_font_family", due_date_font.family())
             settings.set_setting("due_date_font_size", due_date_font.pointSize())
             settings.set_setting("due_date_font_bold", due_date_font.bold())
             settings.set_setting("due_date_font_italic", due_date_font.italic())
             settings.set_setting("due_date_font_underline", due_date_font.underline())
-            debug.debug(f"Due date font: size={due_date_font.pointSize()}, bold={due_date_font.bold()}")
+            debug.debug(f"Due date font: family={due_date_font.family()}, size={due_date_font.pointSize()}, bold={due_date_font.bold()}")
         
         if hasattr(self.settings_widget, 'panel_text_font'):
             panel_font = self.settings_widget.panel_text_font
+            settings.set_setting("panel_font_family", panel_font.family())
             settings.set_setting("panel_font_size", panel_font.pointSize())
             settings.set_setting("panel_font_bold", panel_font.bold())
             settings.set_setting("panel_font_italic", panel_font.italic())
             settings.set_setting("panel_font_underline", panel_font.underline())
-            debug.debug(f"Panel font: size={panel_font.pointSize()}, bold={panel_font.bold()}")
+            debug.debug(f"Panel font: family={panel_font.family()}, size={panel_font.pointSize()}, bold={panel_font.bold()}")
 
         # Background colors
         if hasattr(self.settings_widget, 'files_bg_color_hex'):
